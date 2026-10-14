@@ -1,0 +1,38 @@
+.chart {
+  display: block;
+  width: 100%;
+  height: auto;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-md);
+  background: var(--white);
+}
+
+.axisLabel {
+  fill: var(--ink-faint);
+  font-family: var(--font-text);
+  font-size: 9.5px;
+  font-weight: 600;
+}
+
+.axisLabel[data-used='true'] {
+  fill: var(--ink);
+  font-weight: 700;
+}
+
+.gridLine {
+  stroke: var(--white);
+  stroke-width: 1;
+  opacity: 0.8;
+}
+
+.line {
+  fill: none;
+  stroke: var(--fabric-green-deep);
+  stroke-width: 2;
+  stroke-linejoin: round;
+}
+
+.dot {
+  stroke: var(--white);
+  stroke-width: 1.5;
+}

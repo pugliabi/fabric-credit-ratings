@@ -1,0 +1,19 @@
+.chevron {
+  display: inline-grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  border-radius: 999px;
+  color: var(--fabric-green);
+  border: 1px solid var(--rule-strong);
+  background: var(--white);
+  transition:
+    transform var(--duration) var(--ease),
+    background-color var(--duration) var(--ease);
+}
+
+.chevron[data-open='true'] {
+  transform: rotate(180deg);
+  background: var(--fabric-green-pale);
+}

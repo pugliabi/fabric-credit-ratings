@@ -1,0 +1,12 @@
+.bar {
+  display: flex;
+  gap: 2px;
+  width: 120px;
+  height: 6px;
+}
+
+.segment {
+  flex-basis: 0;
+  border-radius: 3px;
+  background: var(--segment-color);
+}

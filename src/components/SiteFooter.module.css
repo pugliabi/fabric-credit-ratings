@@ -1,0 +1,27 @@
+.footer {
+  margin-top: 64px;
+  border-top: 1px solid var(--rule);
+  background: var(--white);
+}
+
+.inner {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-width: var(--content-width);
+  margin: 0 auto;
+  padding: 28px 24px 36px;
+  color: var(--ink-muted);
+  font-size: 13.5px;
+}
+
+.brand {
+  margin-bottom: 4px;
+  color: var(--fabric-green-deep);
+  font-weight: 650;
+}
+
+.fine {
+  color: var(--ink-faint);
+  font-size: 12.5px;
+}

@@ -1,0 +1,133 @@
+.section {
+  scroll-margin-top: calc(var(--nav-height) + 16px);
+}
+
+.heading {
+  font-size: inherit;
+  font-weight: inherit;
+}
+
+.bar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto auto;
+  align-items: center;
+  gap: 24px;
+  width: 100%;
+  min-height: 76px;
+  padding: 14px 18px 14px 24px;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-lg);
+  background: var(--section-gradient);
+  box-shadow: var(--shadow-sm);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    box-shadow var(--duration) var(--ease),
+    transform var(--duration) var(--ease);
+}
+
+.bar:hover {
+  background: var(--section-gradient-hover);
+  box-shadow: var(--shadow-md);
+}
+
+.bar:active {
+  transform: translateY(1px);
+}
+
+.section[data-open='true'] .bar {
+  box-shadow: var(--shadow-md);
+}
+
+.titleBlock {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.name {
+  color: var(--white);
+  font-family: var(--font-display);
+  font-size: 22px;
+  font-weight: 650;
+  line-height: 1.2;
+}
+
+.meta {
+  margin-top: 2px;
+  overflow: hidden;
+  color: rgb(255 255 255 / 0.85);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.summary {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+}
+
+.summaryText {
+  color: var(--ink-muted);
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.summaryStrong {
+  color: var(--ink);
+  font-weight: 700;
+}
+
+.median {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 56px;
+  padding-left: 20px;
+  border-left: 1px solid var(--rule-strong);
+}
+
+.medianLabel {
+  margin-bottom: 3px;
+  color: var(--ink-faint);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.rows {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 0 6px 18px;
+  margin-left: 14px;
+  border-left: 2px solid var(--rule);
+}
+
+@media (max-width: 760px) {
+  .bar {
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    gap: 14px;
+    padding: 12px 12px 12px 16px;
+  }
+
+  .summary {
+    display: none;
+  }
+
+  .name {
+    font-size: 19px;
+  }
+
+  .median {
+    padding-left: 12px;
+  }
+
+  .rows {
+    padding-left: 10px;
+    margin-left: 6px;
+  }
+}

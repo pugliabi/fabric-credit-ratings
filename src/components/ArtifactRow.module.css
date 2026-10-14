@@ -1,0 +1,123 @@
+.row {
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-md);
+  background: var(--white);
+  scroll-margin-top: calc(var(--nav-height) + 16px);
+  transition:
+    border-color var(--duration) var(--ease),
+    box-shadow var(--duration) var(--ease);
+}
+
+.row[data-open='true'] {
+  border-color: var(--fabric-green-light);
+  box-shadow: var(--shadow-md);
+}
+
+.heading {
+  font-size: inherit;
+  font-weight: inherit;
+}
+
+.trigger {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto 64px 128px auto;
+  align-items: center;
+  gap: 16px;
+  width: 100%;
+  min-height: 72px;
+  padding: 10px 14px 10px 20px;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: var(--row-gradient);
+  text-align: left;
+  cursor: pointer;
+}
+
+.row[data-open='true'] .trigger {
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+.trigger:hover {
+  background: linear-gradient(90deg, #d7ece5 0%, #ffffff 65%);
+}
+
+.nameBlock {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  min-width: 0;
+}
+
+.name {
+  color: var(--ink);
+  font-size: 17px;
+  font-weight: 600;
+}
+
+.status {
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.status[data-status='preview'] {
+  background: var(--band-speculative-bg);
+  color: var(--band-speculative);
+}
+
+.status[data-status='retired'] {
+  background: var(--band-withdrawn-bg);
+  color: var(--band-withdrawn);
+}
+
+.total {
+  justify-self: end;
+  color: var(--ink-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.totalValue {
+  color: var(--ink);
+  font-family: var(--font-display);
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.totalMax {
+  font-size: 13px;
+}
+
+.total[data-overridden='true'] {
+  opacity: 0.55;
+  text-decoration: line-through;
+}
+
+.gradeCell {
+  display: flex;
+  justify-content: center;
+  align-self: stretch;
+  align-items: center;
+  border-left: 1px solid var(--rule-strong);
+}
+
+@media (max-width: 640px) {
+  .trigger {
+    grid-template-columns: minmax(0, 1fr) auto 84px auto;
+    gap: 10px;
+    padding: 10px 10px 10px 14px;
+  }
+
+  .total {
+    display: none;
+  }
+
+  .name {
+    font-size: 15.5px;
+  }
+}

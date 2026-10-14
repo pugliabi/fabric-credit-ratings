@@ -1,0 +1,27 @@
+.root {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows var(--duration) var(--ease);
+}
+
+.root[data-open='true'] {
+  grid-template-rows: 1fr;
+}
+
+.inner {
+  min-height: 0;
+  overflow: hidden;
+  opacity: 0;
+  transition: opacity var(--duration) var(--ease);
+}
+
+.root[data-open='true'] > .inner {
+  opacity: 1;
+}
+
+.root[data-open='false'] > .inner {
+  visibility: hidden;
+  transition:
+    opacity var(--duration) var(--ease),
+    visibility 0s linear var(--duration);
+}

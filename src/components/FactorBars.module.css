@@ -1,0 +1,45 @@
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 5px;
+}
+
+.label {
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.value {
+  color: var(--ink-muted);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.value strong {
+  color: var(--ink);
+  font-size: 15px;
+}
+
+.track {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 3px;
+}
+
+.segment {
+  height: 8px;
+  border-radius: 2px;
+  background: var(--fabric-green-pale);
+}
+
+.segment[data-filled='true'] {
+  background: var(--fill);
+}

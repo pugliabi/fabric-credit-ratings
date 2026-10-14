@@ -1,0 +1,32 @@
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px 3px 8px;
+  border: 1px solid color-mix(in srgb, var(--outlook-color) 28%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--outlook-color) 7%, var(--white));
+  color: var(--outlook-color);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.symbol {
+  font-size: 9px;
+}
+
+@media (max-width: 640px) {
+  .chip[data-compact='true'] {
+    padding: 3px 7px;
+  }
+
+  .chip[data-compact='true'] .label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+}

@@ -1,0 +1,47 @@
+:root {
+  --fabric-green: #117865;
+  --fabric-green-deep: #0c5a4c;
+  --fabric-green-mid: #2e8c78;
+  --fabric-green-soft: #3e9a86;
+  --fabric-green-light: #8ccbbb;
+  --fabric-green-pale: #e6f3ef;
+  --fabric-mist: #f6fbf9;
+  --white: #ffffff;
+
+  --ink: #12302a;
+  --ink-muted: #4f6b64;
+  --ink-faint: #7d948e;
+  --rule: #cfe3dc;
+  --rule-strong: #b3d3c8;
+
+  --band-investment: #117865;
+  --band-investment-bg: #e6f3ef;
+  --band-speculative: #9a6700;
+  --band-speculative-bg: #fbf1dc;
+  --band-distressed: #b42318;
+  --band-distressed-bg: #fdeceb;
+  --band-default: #7a1a12;
+  --band-default-bg: #f6e1df;
+  --band-withdrawn: #5b5f5e;
+  --band-withdrawn-bg: #eef0ef;
+
+  --section-gradient: linear-gradient(90deg, #117865 0%, #2e8c78 30%, #8ccbbb 65%, #ffffff 100%);
+  --section-gradient-hover: linear-gradient(90deg, #0c5a4c 0%, #227e6b 30%, #7fc3b2 65%, #ffffff 100%);
+  --row-gradient: linear-gradient(90deg, #e6f3ef 0%, #ffffff 60%);
+  --header-gradient: linear-gradient(180deg, #117865 0%, #2e8c78 38%, #8ccbbb 70%, #e6f3ef 88%, #f6fbf9 100%);
+
+  --font-text: 'Segoe UI Variable Text', 'Segoe UI', system-ui, -apple-system, sans-serif;
+  --font-display: 'Segoe UI Variable Display', 'Segoe UI', system-ui, -apple-system, sans-serif;
+
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+
+  --shadow-sm: 0 1px 2px rgb(18 48 42 / 0.06);
+  --shadow-md: 0 4px 16px rgb(18 48 42 / 0.08);
+
+  --nav-height: 60px;
+  --content-width: 1040px;
+  --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
+  --duration: 220ms;
+}

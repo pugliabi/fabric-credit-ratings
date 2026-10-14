@@ -1,0 +1,54 @@
+.sum {
+  margin-top: 14px;
+  padding: 12px 14px;
+  border-radius: var(--radius-md);
+  background: var(--fabric-mist);
+  border: 1px solid var(--rule);
+}
+
+.equation {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-variant-numeric: tabular-nums;
+}
+
+.term {
+  display: inline-grid;
+  place-items: center;
+  min-width: 30px;
+  height: 30px;
+  border-radius: var(--radius-sm);
+  background: var(--white);
+  border: 1px solid var(--rule-strong);
+  color: var(--ink);
+  font-family: var(--font-display);
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.op,
+.arrow {
+  color: var(--ink-faint);
+  font-weight: 600;
+}
+
+.total {
+  color: var(--ink);
+  font-family: var(--font-display);
+  font-size: 20px;
+  font-weight: 700;
+}
+
+.max {
+  color: var(--ink-muted);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.flagNote {
+  margin-top: 8px;
+  color: var(--ink-muted);
+  font-size: 13px;
+}
