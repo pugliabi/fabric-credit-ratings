@@ -40,13 +40,13 @@ export function summarize(draft: Draft, artifacts: readonly Artifact[]): DraftSu
   return { scores, rated: Object.keys(scores).length, partial };
 }
 
+function sameTriple(a: DraftTriple, b: DraftTriple): boolean {
+  return a.every((score, i) => score === b[i]);
+}
+
 export function sameDraft(a: Draft, b: Draft): boolean {
   const ids = new Set([...Object.keys(a), ...Object.keys(b)]);
-  for (const id of ids) {
-    const x = a[id] ?? EMPTY_TRIPLE;
-    const y = b[id] ?? EMPTY_TRIPLE;
-    if (x.some((score, i) => score !== y[i])) return false;
-  }
+  for (const id of ids) if (!sameTriple(a[id] ?? EMPTY_TRIPLE, b[id] ?? EMPTY_TRIPLE)) return false;
   return true;
 }
 
@@ -57,10 +57,45 @@ export interface StoredDraft {
   draft: Draft;
 }
 
-/** A stored draft is worth restoring only if it holds edits that were never saved. */
+/**
+ * The stored draft's edits, re-applied on top of the saved card. A row comes from the draft only if it differs from the
+ * card the draft started from, so rows the rater never touched keep a newer save. A row changed both in the draft and
+ * in a newer save keeps the draft's whole row, since that was the rater's last explicit choice.
+ */
 export function restorable(stored: StoredDraft | undefined, saved: Draft): Draft | undefined {
-  if (!stored || sameDraft(stored.draft, stored.base) || sameDraft(stored.draft, saved)) return undefined;
-  return stored.draft;
+  if (!stored) return undefined;
+  const merged: Record<string, DraftTriple> = { ...saved };
+  for (const id of new Set([...Object.keys(stored.draft), ...Object.keys(stored.base)])) {
+    const row = stored.draft[id] ?? EMPTY_TRIPLE;
+    if (!sameTriple(row, stored.base[id] ?? EMPTY_TRIPLE)) merged[id] = row;
+  }
+  return sameDraft(merged, saved) ? undefined : merged;
+}
+
+function isRow(value: unknown): value is DraftTriple {
+  return (
+    Array.isArray(value) &&
+    value.length === 3 &&
+    value.every((score) => score === null || (Number.isInteger(score) && score >= MIN_SCORE && score <= MAX_SCORE))
+  );
+}
+
+function isDraft(value: unknown): value is Draft {
+  return typeof value === 'object' && value !== null && !Array.isArray(value) && Object.values(value).every(isRow);
+}
+
+/** Parses what usePersistentDraft stored. Anything malformed counts as no draft. */
+export function parseStoredDraft(raw: string | null): StoredDraft | undefined {
+  try {
+    const value: unknown = raw ? JSON.parse(raw) : undefined;
+    if (typeof value === 'object' && value !== null && 'base' in value && 'draft' in value) {
+      const { base, draft } = value;
+      if (isDraft(base) && isDraft(draft)) return { base, draft };
+    }
+  } catch {
+    // Unreadable JSON counts as no draft.
+  }
+  return undefined;
 }
 
 export function draftFromScores(scores: Readonly<Record<string, ScoreTriple>>): Draft {

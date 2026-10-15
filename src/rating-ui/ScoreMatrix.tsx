@@ -1,4 +1,4 @@
-import { memo, useState, type CSSProperties, type KeyboardEvent, type SyntheticEvent } from 'react';
+import { memo, useId, useState, type CSSProperties, type KeyboardEvent, type SyntheticEvent } from 'react';
 import { Chevron } from '../components/Chevron';
 import { scoreColor } from '../components/FactorBars';
 import { FACTORS } from '../data/factors';
@@ -13,6 +13,7 @@ const UNSET_POSITION = 4;
 
 interface ScoreMatrixProps {
   workloads: readonly Workload[];
+  /** Every artifact's workload must be in `workloads`, or its row is not shown. */
   artifacts: readonly Artifact[];
   draft: Draft;
   onChange: (artifactId: string, triple: DraftTriple) => void;
@@ -29,6 +30,7 @@ export function ScoreMatrix({
   reference,
   referenceLabel = 'Current',
 }: ScoreMatrixProps) {
+  const idPrefix = useId();
   const [collapsed, setCollapsed] = useState<ReadonlySet<WorkloadId>>(new Set());
 
   const toggle = (id: WorkloadId) =>
@@ -49,7 +51,7 @@ export function ScoreMatrix({
           return triple !== undefined && isComplete(triple);
         }).length;
         const open = !collapsed.has(workload.id);
-        const panelId = `matrix-${workload.id}`;
+        const panelId = `${idPrefix}-${workload.id}`;
 
         return (
           <section key={workload.id} className={styles.group}>
@@ -69,29 +71,27 @@ export function ScoreMatrix({
               </button>
             </h2>
 
-            {open && (
-              <div id={panelId} className={styles.panel}>
-                <div className={styles.columns} aria-hidden="true">
-                  <span>Item</span>
-                  {FACTORS.map((factor) => (
-                    <span key={factor.id}>{factor.label}</span>
-                  ))}
-                  <span />
-                </div>
-                <ul className={styles.rows}>
-                  {items.map((artifact) => (
-                    <MatrixRow
-                      key={artifact.id}
-                      artifact={artifact}
-                      triple={draft[artifact.id] ?? EMPTY_TRIPLE}
-                      reference={reference?.[artifact.id]}
-                      referenceLabel={referenceLabel}
-                      onChange={onChange}
-                    />
-                  ))}
-                </ul>
+            <div id={panelId} className={styles.panel} hidden={!open}>
+              <div className={styles.columns} aria-hidden="true">
+                <span>Item</span>
+                {FACTORS.map((factor) => (
+                  <span key={factor.id}>{factor.label}</span>
+                ))}
+                <span />
               </div>
-            )}
+              <ul className={styles.rows}>
+                {items.map((artifact) => (
+                  <MatrixRow
+                    key={artifact.id}
+                    artifact={artifact}
+                    triple={draft[artifact.id] ?? EMPTY_TRIPLE}
+                    reference={reference?.[artifact.id]}
+                    referenceLabel={referenceLabel}
+                    onChange={onChange}
+                  />
+                ))}
+              </ul>
+            </div>
           </section>
         );
       })}
