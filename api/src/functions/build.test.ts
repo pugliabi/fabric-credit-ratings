@@ -43,7 +43,9 @@ beforeEach(() => {
 });
 
 describe('GET build/snapshot', () => {
-  it("dates the snapshot by the database's clock, read before loading, and writes nothing", async () => {
+  const lockedClock = 'SELECT SYSUTCDATETIME() AS now FROM site_state WITH (READCOMMITTEDLOCK) WHERE id = 1';
+
+  it("dates the snapshot by the database's clock, read under site_state's lock before loading, and writes nothing", async () => {
     const now = new Date('2026-10-15T21:00:00.123Z');
     vi.mocked(db.query).mockResolvedValue([{ now }]);
 
@@ -51,11 +53,24 @@ describe('GET build/snapshot', () => {
 
     expect(snapshot).toMatchObject({ generatedAt: now.toISOString() });
     expect(db.query).toHaveBeenCalledTimes(1);
-    expect(db.query).toHaveBeenCalledWith('SELECT SYSUTCDATETIME() AS now');
+    expect(db.query).toHaveBeenCalledWith(lockedClock);
     const [clock = 0] = vi.mocked(db.query).mock.invocationCallOrder;
     const [load = 0] = vi.mocked(loadDataset).mock.invocationCallOrder;
     expect(clock).toBeLessThan(load);
     expect(markSnapshotTaken).not.toHaveBeenCalled();
+  });
+
+  it('falls back to the plain clock, still before loading, when the site_state row is missing', async () => {
+    const now = new Date('2026-10-15T21:00:00.123Z');
+    vi.mocked(db.query).mockResolvedValueOnce([]).mockResolvedValueOnce([{ now }]);
+
+    const snapshot = await call('buildSnapshot');
+
+    expect(snapshot).toMatchObject({ generatedAt: now.toISOString() });
+    expect(vi.mocked(db.query).mock.calls).toEqual([[lockedClock], ['SELECT SYSUTCDATETIME() AS now']]);
+    const [, fallback = 0] = vi.mocked(db.query).mock.invocationCallOrder;
+    const [load = 0] = vi.mocked(loadDataset).mock.invocationCallOrder;
+    expect(fallback).toBeLessThan(load);
   });
 });
 

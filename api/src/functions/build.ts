@@ -29,15 +29,29 @@ function deployedAt(value: unknown): Date {
 }
 
 /**
- * Read-only: the deploy workflow confirms with build/snapshot/deployed once the site is live. generatedAt comes from
- * the database's clock, the one changed_at uses, read before the load starts, so any change the load could miss is
- * later than it.
+ * The database's clock, the one changed_at uses. markChanged stamps changed_at before its transaction commits, and
+ * RCSI reads don't wait for that, so the read takes site_state's row lock (READCOMMITTEDLOCK): it waits for any
+ * transaction that has already stamped to commit, and a later stamp is later than this time.
  */
-route('buildSnapshot', 'GET', 'build/snapshot', 'build', async () => {
+async function databaseNow(): Promise<Date> {
+  const [locked] = await db.query<{ now: Date }>(
+    'SELECT SYSUTCDATETIME() AS now FROM site_state WITH (READCOMMITTEDLOCK) WHERE id = 1',
+  );
+  if (locked) return locked.now;
+  // Without the row, markChanged has nothing to stamp, so there is nothing to wait for.
   const [clock] = await db.query<{ now: Date }>('SELECT SYSUTCDATETIME() AS now');
   if (!clock) throw new Error('SYSUTCDATETIME() returned no row.');
+  return clock.now;
+}
+
+/**
+ * Read-only: the deploy workflow confirms with build/snapshot/deployed once the site is live. generatedAt is read
+ * before the load starts, so a change is either in the snapshot or later than generatedAt.
+ */
+route('buildSnapshot', 'GET', 'build/snapshot', 'build', async () => {
+  const now = await databaseNow();
   const data = await loadDataset(db);
-  return buildSnapshot(data.workloads, data.artifacts, data.rounds, clock.now);
+  return buildSnapshot(data.workloads, data.artifacts, data.rounds, now);
 });
 
 route('buildSnapshotDeployed', 'POST', 'build/snapshot/deployed', 'build', async (ctx) => {

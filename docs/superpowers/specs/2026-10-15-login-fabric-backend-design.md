@@ -196,7 +196,7 @@ Publishing a round also starts the deploy workflow. An admin can't demote themse
 
 | Method + path | Auth | Result |
 |---|---|---|
-| `GET /api/build/snapshot` | `Authorization: Bearer <SNAPSHOT_TOKEN>` | the snapshot JSON. Writes nothing. `generatedAt` is the database's time (`SYSUTCDATETIME()`), read before the data is loaded |
+| `GET /api/build/snapshot` | `Authorization: Bearer <SNAPSHOT_TOKEN>` | the snapshot JSON. Writes nothing. `generatedAt` is the database's time (`SYSUTCDATETIME()`), read before the data is loaded. The clock read waits for any write transaction that has already marked the site changed, so a change is either in the snapshot or later than its `generatedAt`. |
 | `POST /api/build/snapshot/deployed` | `Authorization: Bearer <SNAPSHOT_TOKEN>` | body `{ generatedAt }`, the deployed snapshot's. 204. Sets `site_state.last_snapshot_at` to it, only ever forward. 400 unless it's an ISO timestamp exactly as the snapshot gave it and no more than 5 minutes in the future. Skips the `Origin` check, since GitHub Actions sends none and the token is the protection, but still needs `Content-Type: application/json` |
 
 ## Auth and security

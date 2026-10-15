@@ -17,7 +17,10 @@ export function isBehind(state: SiteState): boolean {
   return state.changedAt !== null && state.changedAt > state.lastSnapshotAt;
 }
 
-/** Call after any change the public site would show: publish, reopen, published edits, catalog edits. */
+/**
+ * Call inside the same transaction as any change the public site would show: publish, reopen, published edits, catalog
+ * edits.
+ */
 export async function markChanged(db: Db): Promise<void> {
   await db.query('UPDATE site_state SET changed_at = SYSUTCDATETIME() WHERE id = 1');
 }
