@@ -32,6 +32,8 @@ import { findUserById } from '../repo/users.ts';
 // decides on the locked row's status rather than an earlier read.
 
 const NOTE_MAX = 2000;
+/** Azure cuts HTTP functions off at about 230 seconds; this leaves time to answer. */
+const DRAFT_DEADLINE_MS = 200_000;
 
 const noSuchRound = (id: string) => new HttpError(404, `Round ${id} does not exist.`);
 
@@ -155,6 +157,8 @@ route('adminNotePut', 'PUT', 'admin/rounds/{id}/notes/{artifactId}', 'admin', as
 });
 
 route('adminDraft', 'POST', 'admin/rounds/{id}/draft/{artifactId}', 'admin', async (ctx) => {
+  // Started first, so a slow dataset load (a paused database can take 150 s) counts against it too.
+  const deadline = AbortSignal.timeout(DRAFT_DEADLINE_MS);
   const drafter = createDrafter(ctx.config.anthropic);
   if (!drafter) throw new HttpError(400, 'Set ANTHROPIC_API_KEY in the Function App settings to draft with AI.');
   const data = await loadDataset(db);
@@ -166,16 +170,19 @@ route('adminDraft', 'POST', 'admin/rounds/{id}/draft/{artifactId}', 'admin', asy
   if (!point) throw new HttpError(400, `${artifact.name} has no scores in ${target.round.label} yet.`);
   const previous = previousPoint(artifact, data.rounds, target.round.id);
   try {
-    const draft = await drafter({
-      artifact,
-      workload: data.workloads.find((workload) => workload.id === artifact.workload),
-      roundLabel: target.round.label,
-      scores: point.scores,
-      raters: point.raters,
-      ...(previous
-        ? { previous: { roundLabel: previous.roundLabel, scores: previous.scores, note: previous.note } }
-        : {}),
-    });
+    const draft = await drafter(
+      {
+        artifact,
+        workload: data.workloads.find((workload) => workload.id === artifact.workload),
+        roundLabel: target.round.label,
+        scores: point.scores,
+        raters: point.raters,
+        ...(previous
+          ? { previous: { roundLabel: previous.roundLabel, scores: previous.scores, note: previous.note } }
+          : {}),
+      },
+      deadline,
+    );
     return { text: draft };
   } catch (error) {
     ctx.log.warn('AI draft failed', error);

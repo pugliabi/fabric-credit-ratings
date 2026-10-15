@@ -106,10 +106,68 @@ describe('createDrafter', () => {
     expect(create).toHaveBeenCalledTimes(2);
   });
 
+  describe("the caller's deadline", () => {
+    const timedOut = () => new DOMException('The operation was aborted due to timeout', 'TimeoutError');
+
+    it('goes to every call, so it also cuts short the retry waits inside the SDK', async () => {
+      const deadline = new AbortController().signal;
+      const draft = createDrafter(settings);
+      const create = stubbedCreate()
+        .mockResolvedValueOnce(reply('Solid, at 6 of 7 for capability.'))
+        .mockResolvedValueOnce(reply('Solid and complete.'));
+
+      expect(await draft?.(input, deadline)).toBe('Solid and complete.');
+      expect(create).toHaveBeenNthCalledWith(1, expect.anything(), { signal: deadline });
+      expect(create).toHaveBeenNthCalledWith(2, expect.anything(), { signal: deadline });
+    });
+
+    it('ends a call that never answers with the timeout message', async () => {
+      const deadline = new AbortController();
+      const draft = createDrafter(settings);
+      // Like the SDK: nothing comes back until the signal aborts the request.
+      const create = stubbedCreate().mockImplementation(
+        (_body, options) =>
+          new Promise((_resolve, reject) => {
+            options?.signal?.addEventListener('abort', () => reject(new Anthropic.APIUserAbortError()));
+          }) as never,
+      );
+
+      const drafting = draft?.(input, deadline.signal);
+      await Promise.resolve();
+      deadline.abort(timedOut());
+
+      await expect(drafting).rejects.toThrow('Anthropic did not answer in time. Try again.');
+      expect(create).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not start the second attempt once it has passed', async () => {
+      const deadline = new AbortController();
+      const draft = createDrafter(settings);
+      const create = stubbedCreate().mockImplementation(() => {
+        deadline.abort(timedOut());
+        return Promise.resolve(reply('Solid, at 6 of 7 for capability.')) as never;
+      });
+
+      await expect(draft?.(input, deadline.signal)).rejects.toThrow('Anthropic did not answer in time. Try again.');
+      expect(create).toHaveBeenCalledTimes(1);
+    });
+  });
+
   it.each([
     [
       'a timeout',
       new Anthropic.APIConnectionTimeoutError(),
+      'Anthropic did not answer in time. Try again.',
+    ],
+    ['an aborted request', new Anthropic.APIUserAbortError(), 'Anthropic did not answer in time. Try again.'],
+    [
+      'a timed-out signal',
+      new DOMException('The operation was aborted due to timeout', 'TimeoutError'),
+      'Anthropic did not answer in time. Try again.',
+    ],
+    [
+      'an aborted signal',
+      new DOMException('This operation was aborted', 'AbortError'),
       'Anthropic did not answer in time. Try again.',
     ],
     [

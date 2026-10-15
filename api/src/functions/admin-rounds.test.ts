@@ -524,6 +524,22 @@ describe('adminDraft', () => {
     expect(loadDataset).not.toHaveBeenCalled();
   });
 
+  it('gives the whole draft one 200 s deadline, set before the dataset load and passed to the drafter', async () => {
+    const deadline = new AbortController().signal;
+    const timeout = vi.spyOn(AbortSignal, 'timeout').mockReturnValue(deadline);
+    drafter.mockResolvedValue('Solid and complete.');
+
+    try {
+      await call('adminDraft', { id: open.id, artifactId: 'notebook' });
+
+      expect(timeout).toHaveBeenCalledWith(200_000);
+      expect(drafter).toHaveBeenCalledWith(expect.objectContaining({ artifact: notebook }), deadline);
+      expectAscending(callOrder(timeout, vi.mocked(loadDataset), drafter));
+    } finally {
+      timeout.mockRestore();
+    }
+  });
+
   it("drafts from the round's scores and returns the text", async () => {
     drafter.mockResolvedValue('Solid and complete.');
 
@@ -535,6 +551,7 @@ describe('adminDraft', () => {
         scores: { capability: 6, ux: 5, cost: 4 },
         raters: 1,
       }),
+      expect.any(AbortSignal),
     );
   });
 

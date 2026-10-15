@@ -91,10 +91,17 @@ function explain(error: unknown): Error {
   if (error instanceof Anthropic.RateLimitError || (error instanceof Anthropic.APIError && error.status === 529)) {
     return new Error('Anthropic is busy. Try again in a minute.');
   }
-  if (error instanceof Anthropic.APIConnectionTimeoutError) {
-    return new Error('Anthropic did not answer in time. Try again.');
-  }
+  if (timedOut(error)) return new Error('Anthropic did not answer in time. Try again.');
   return error instanceof Error ? error : new Error(message);
+}
+
+/** One attempt's own timeout, or the caller's deadline: the SDK reports that as a user abort. */
+function timedOut(error: unknown): boolean {
+  return (
+    error instanceof Anthropic.APIConnectionTimeoutError ||
+    error instanceof Anthropic.APIUserAbortError ||
+    (error instanceof DOMException && (error.name === 'TimeoutError' || error.name === 'AbortError'))
+  );
 }
 
 function textOf(message: Anthropic.Message): string {
@@ -108,7 +115,8 @@ function textOf(message: Anthropic.Message): string {
 /** Returns undefined when no API key is configured. */
 export function createDrafter(settings: AnthropicSettings) {
   if (!settings.apiKey) return undefined;
-  // Worst case, two drafts that both leak the math, each with its one retry: 4 x 40 s, still inside 230 s.
+  // Each attempt gives up after 40 s. The SDK's waits between retries follow Retry-After with no cap, so only the
+  // caller's signal bounds the whole draft.
   const client = new Anthropic({
     apiKey: settings.apiKey,
     timeout: REQUEST_TIMEOUT_MS,
@@ -117,25 +125,29 @@ export function createDrafter(settings: AnthropicSettings) {
   });
   const model = settings.model || DEFAULT_MODEL;
 
-  /** One retry if the first draft leaks the math. Throws on API errors. */
-  return async function draft(input: DraftInput): Promise<string> {
+  /** One retry if the first draft leaks the math. Throws on API errors, and once `signal` aborts. */
+  return async function draft(input: DraftInput, signal?: AbortSignal): Promise<string> {
     const prompt = promptFor(input);
     let rejected = '';
     for (let attempt = 0; attempt < 2; attempt += 1) {
+      if (signal?.aborted) throw explain(signal.reason);
       const message = await client.messages
-        .create({
-          model,
-          max_tokens: 400,
-          messages: [
-            {
-              role: 'user',
-              content:
-                attempt === 0
-                  ? prompt
-                  : `${prompt}\n\nThe draft below mentions a score, a total, or a letter grade. Rewrite it without any of those.\n\n${rejected}`,
-            },
-          ],
-        })
+        .create(
+          {
+            model,
+            max_tokens: 400,
+            messages: [
+              {
+                role: 'user',
+                content:
+                  attempt === 0
+                    ? prompt
+                    : `${prompt}\n\nThe draft below mentions a score, a total, or a letter grade. Rewrite it without any of those.\n\n${rejected}`,
+              },
+            ],
+          },
+          { signal },
+        )
         .catch((error: unknown) => {
           throw explain(error);
         });
