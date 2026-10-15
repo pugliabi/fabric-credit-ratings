@@ -6,6 +6,6 @@
     }
   },
   "extensions": {
-    "http": { "routePrefix": "api" }
+    "http": { "routePrefix": "" }
   }
 }

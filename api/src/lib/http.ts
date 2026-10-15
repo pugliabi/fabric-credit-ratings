@@ -192,7 +192,8 @@ export function route(name: string, method: Method, path: string, access: Access
   app.http(name, {
     methods,
     authLevel: 'anonymous',
-    route: path,
+    // host.json's routePrefix is empty because the host refuses any route template that starts with "admin".
+    route: `api/${path}`,
     handler: (request, log) => handle(request, log, method, access, handler),
   });
 }

@@ -52,6 +52,16 @@ describe('clientIp', () => {
   });
 });
 
+describe('route registration', () => {
+  it('registers under api/, with the preflight on the first route of each path', () => {
+    const handler = vi.fn(async () => undefined);
+    route('testAdminRounds', 'GET', 'admin/rounds', 'admin', handler);
+    route('testAdminRoundCreate', 'POST', 'admin/rounds', 'admin', handler);
+    expect(registered.get('testAdminRounds')).toMatchObject({ route: 'api/admin/rounds', methods: ['GET', 'OPTIONS'] });
+    expect(registered.get('testAdminRoundCreate')).toMatchObject({ route: 'api/admin/rounds', methods: ['POST'] });
+  });
+});
+
 describe('mutation checks', () => {
   const handler = vi.fn(async () => undefined);
   route('testBuildPost', 'POST', 'test/build', 'build', handler);
