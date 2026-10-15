@@ -10,6 +10,10 @@ const root = fileURLToPath(new URL('.', import.meta.url));
 export default defineConfig(({ mode }) => ({
   base: '/',
   plugins: [react(), deskApi(root, loadEnv(mode, root, ''))],
+  server: {
+    // /api/desk stays with the local desk plugin until Plan 2 removes it.
+    proxy: { '^/api/(?!desk)': 'http://localhost:7071' },
+  },
   build: {
     rolldownOptions: {
       input: {
