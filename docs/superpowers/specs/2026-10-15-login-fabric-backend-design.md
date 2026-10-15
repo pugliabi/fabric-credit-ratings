@@ -205,7 +205,7 @@ Publishing a round also starts the deploy workflow. An admin can't demote themse
 - **Session token.** 32 random bytes, base64url. Only its sha256 is stored. Lifetime is 30 days. When a request arrives and less than 29 days remain, `expires_at` is reset to 30 days from now, so the session row is written at most once a day.
 - **Cookie.** In production it's `__Host-fcr_session` with HttpOnly, Secure, SameSite=Lax, Path=/. In local dev it's `fcr_session` without Secure (controlled by `COOKIE_SECURE=false`).
 - **CORS.** `Access-Control-Allow-Origin` is echoed only for origins in `ALLOWED_ORIGINS` (production: `https://fabriccreditratings.com` and `https://www.fabriccreditratings.com`), with `Allow-Credentials: true`.
-- **CSRF.** SameSite=Lax, plus every mutating request must have `Content-Type: application/json` and an `Origin` header in `ALLOWED_ORIGINS`.
+- **CSRF.** SameSite=Lax, plus every mutating request must have `Content-Type: application/json` and an `Origin` header in `ALLOWED_ORIGINS`, except build-token calls (`build/snapshot/deployed`), which have no browser Origin and are authenticated by `SNAPSHOT_TOKEN`; they still need a JSON content type.
 - **Brute force.** Failures are tracked per login and per IP. Ten failures within 15 minutes lock that key for 15 minutes. Every failure returns the same message: "Wrong login or password".
 - **Permissions** live in one pure module (`api/src/lib/permissions.ts`), so they can be unit-tested:
   - Raters write only their own card, and only in the open round.
