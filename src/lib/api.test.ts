@@ -80,4 +80,65 @@ describe('api', () => {
     stop();
     expect(states).toEqual([true, false]);
   });
+
+  it('never flags a request that answers within SLOW_MS', async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal('fetch', vi.fn(async () => reply(200, {})));
+    const states: boolean[] = [];
+    const stop = onSlow((slow) => states.push(slow));
+    await api('GET', '/catalog');
+    await vi.advanceTimersByTimeAsync(SLOW_MS * 2);
+    stop();
+    expect(states).toEqual([]);
+  });
+
+  it('stays slow until the last slow request finishes', async () => {
+    vi.useFakeTimers();
+    const finishers: ((response: Response) => void)[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => new Promise<Response>((resolve) => finishers.push(resolve))),
+    );
+    const states: boolean[] = [];
+    const stop = onSlow((slow) => states.push(slow));
+    const first = api('GET', '/me');
+    await vi.advanceTimersByTimeAsync(1000);
+    const second = api('GET', '/catalog');
+    await vi.advanceTimersByTimeAsync(SLOW_MS);
+    finishers[0]?.(reply(200, {}));
+    await first;
+    expect(states).not.toContain(false);
+    finishers[1]?.(reply(200, {}));
+    await second;
+    stop();
+    expect(states.at(-1)).toBe(false);
+    expect(states.indexOf(false)).toBe(states.length - 1);
+  });
+
+  it('clears the slow flag when a slow request fails', async () => {
+    vi.useFakeTimers();
+    let answer: (response: Response) => void = () => {};
+    let fail: (reason: Error) => void = () => {};
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockImplementationOnce(() => new Promise<Response>((resolve) => (answer = resolve)))
+        .mockImplementationOnce(() => new Promise<Response>((_, reject) => (fail = reject))),
+    );
+    const states: boolean[] = [];
+    const stop = onSlow((slow) => states.push(slow));
+    const unavailable = api('GET', '/me');
+    const assertUnavailable = expect(unavailable).rejects.toMatchObject({ status: 503 });
+    await vi.advanceTimersByTimeAsync(SLOW_MS);
+    answer(reply(503, { error: 'The ratings database is not responding. Try again in a minute.' }));
+    await assertUnavailable;
+    const offline = api('GET', '/me');
+    const assertOffline = expect(offline).rejects.toMatchObject({ status: 0 });
+    await vi.advanceTimersByTimeAsync(SLOW_MS);
+    fail(new TypeError('Failed to fetch'));
+    await assertOffline;
+    stop();
+    expect(states).toEqual([true, false, true, false]);
+  });
 });

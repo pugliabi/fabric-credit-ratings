@@ -1,0 +1,145 @@
+.login {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  width: 100%;
+  max-width: 420px;
+  margin: 24px auto;
+  padding: 24px 26px;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-lg);
+  background: var(--white);
+  box-shadow: var(--shadow-sm);
+}
+
+.title {
+  font-family: var(--font-display);
+  font-size: 21px;
+  font-weight: 650;
+}
+
+.notice {
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--band-speculative-bg);
+  color: var(--ink);
+  font-size: 14px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.field input {
+  padding: 8px 10px;
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--radius-sm);
+  font: inherit;
+  font-weight: 400;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.primary,
+.secondary {
+  padding: 8px 16px;
+  border-radius: 999px;
+  font-size: 13.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.primary {
+  border: 1px solid var(--fabric-green);
+  background: var(--fabric-green);
+  color: var(--white);
+}
+
+.secondary {
+  border: 1px solid var(--rule-strong);
+  background: var(--white);
+  color: var(--fabric-green-deep);
+}
+
+.primary:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.error {
+  color: var(--band-distressed);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.muted {
+  color: var(--ink-muted);
+  font-size: 13.5px;
+}
+
+.bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 14px;
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 0.85);
+  color: var(--ink);
+  font-size: 13px;
+}
+
+.link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--fabric-green-deep);
+  font: inherit;
+  font-weight: 600;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.dialog {
+  width: min(420px, calc(100vw - 32px));
+  padding: 0;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md);
+}
+
+.dialog::backdrop {
+  background: rgb(0 0 0 / 0.35);
+}
+
+.dialogBody {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 22px 24px;
+}
+
+.wake {
+  position: fixed;
+  bottom: 16px;
+  left: 50%;
+  z-index: 50;
+  max-width: calc(100vw - 32px);
+  padding: 10px 18px;
+  border-radius: 999px;
+  background: var(--ink);
+  box-shadow: var(--shadow-md);
+  color: var(--white);
+  font-size: 13.5px;
+  transform: translateX(-50%);
+}
