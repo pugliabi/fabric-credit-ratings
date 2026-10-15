@@ -26,6 +26,11 @@ describe('login lockout', () => {
     expect(afterFailure(fail(5), at(WINDOW_MS + 5_000)).failures).toBe(1);
   });
 
+  it('never shortens an active lock', () => {
+    const row = afterFailure(fail(MAX_FAILURES - 1), at(WINDOW_MS - 1_000));
+    expect(isLocked(afterFailure(row, at(WINDOW_MS + 1_000)), at(WINDOW_MS + 2_000))).toBe(true);
+  });
+
   it('treats a missing row as unlocked', () => {
     expect(isLocked(undefined, start)).toBe(false);
   });

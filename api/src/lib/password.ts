@@ -4,9 +4,10 @@ export const MIN_PASSWORD_LENGTH = 10;
 const MAX_PASSWORD_LENGTH = 200;
 const COST = 32768;
 const BLOCK_SIZE = 8;
-const PARALLELISM = 1;
+const PARALLELISM = 3;
 const KEY_LENGTH = 64;
 const MAX_MEMORY = 64 * 1024 * 1024;
+const PREFIX = `scrypt$${COST}$${BLOCK_SIZE}$${PARALLELISM}$`;
 
 function derive(password: string, salt: Buffer, keyLength: number, options: ScryptOptions): Promise<Buffer> {
   return new Promise((resolve, reject) => {
@@ -23,17 +24,19 @@ export async function hashPassword(password: string): Promise<string> {
   return ['scrypt', COST, BLOCK_SIZE, PARALLELISM, salt.toString('base64'), key.toString('base64')].join('$');
 }
 
+/** Accepts only the current parameters and key length, so a tampered or truncated row can never match. */
 export async function verifyPassword(password: string, stored: string): Promise<boolean> {
-  const [scheme, n, r, p, salt, key] = stored.split('$');
-  if (scheme !== 'scrypt' || !n || !r || !p || !salt || !key) return false;
+  const options = { N: COST, r: BLOCK_SIZE, p: PARALLELISM };
   try {
-    const expected = Buffer.from(key, 'base64');
-    const actual = await derive(password, Buffer.from(salt, 'base64'), expected.length, {
-      N: Number(n),
-      r: Number(r),
-      p: Number(p),
-    });
-    return actual.length === expected.length && timingSafeEqual(actual, expected);
+    const [salt, key, ...extra] = stored.startsWith(PREFIX) ? stored.slice(PREFIX.length).split('$') : [];
+    const expected = Buffer.from(key ?? '', 'base64');
+    if (!salt || extra.length > 0 || expected.length !== KEY_LENGTH) {
+      // Same scrypt work as a real check, so a login without a usable password can't be spotted by response time.
+      await derive(password, randomBytes(16), KEY_LENGTH, options);
+      return false;
+    }
+    const actual = await derive(password, Buffer.from(salt, 'base64'), KEY_LENGTH, options);
+    return timingSafeEqual(actual, expected);
   } catch {
     return false;
   }

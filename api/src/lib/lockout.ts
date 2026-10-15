@@ -14,6 +14,7 @@ export function isLocked(row: AttemptRow | undefined, now: Date): boolean {
 }
 
 export function afterFailure(row: AttemptRow | undefined, now: Date): AttemptRow {
+  if (row && isLocked(row, now)) return row;
   const inWindow = row !== undefined && now.getTime() - row.windowStart.getTime() < WINDOW_MS;
   const failures = inWindow ? row.failures + 1 : 1;
   return {

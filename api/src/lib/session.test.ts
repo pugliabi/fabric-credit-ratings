@@ -55,7 +55,13 @@ describe('session cookie', () => {
   });
 
   it('clears with an empty value and max age 0', () => {
-    expect(clearedCookie(true)).toMatchObject({ value: '', maxAge: 0 });
+    expect(clearedCookie(true)).toMatchObject({
+      name: '__Host-fcr_session',
+      value: '',
+      secure: true,
+      path: '/',
+      maxAge: 0,
+    });
   });
 
   it('reads one cookie out of a header', () => {

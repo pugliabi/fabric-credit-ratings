@@ -4,7 +4,7 @@ import { hashPassword, passwordProblem, verifyPassword } from './password.ts';
 describe('password hashing', () => {
   it('stores scrypt parameters, salt, and key', async () => {
     const stored = await hashPassword('correct horse battery');
-    expect(stored).toMatch(/^scrypt\$32768\$8\$1\$[A-Za-z0-9+/=]+\$[A-Za-z0-9+/=]+$/);
+    expect(stored).toMatch(/^scrypt\$32768\$8\$3\$[A-Za-z0-9+/=]+\$[A-Za-z0-9+/=]+$/);
   });
 
   it('salts every hash', async () => {
@@ -20,6 +20,22 @@ describe('password hashing', () => {
   it('rejects malformed stored values instead of throwing', async () => {
     expect(await verifyPassword('anything', 'unset')).toBe(false);
     expect(await verifyPassword('anything', 'scrypt$1$2$3$xx$yy')).toBe(false);
+    const good = await hashPassword('correct horse battery');
+    expect(await verifyPassword('correct horse battery', `${good}$extra`)).toBe(false);
+  });
+
+  it('rejects stored values whose key is empty or too short', async () => {
+    const good = await hashPassword('correct horse battery');
+    const keyless = good.slice(0, good.lastIndexOf('$') + 1);
+    expect(await verifyPassword('anything', `${keyless}=`)).toBe(false);
+    expect(await verifyPassword('anything', `${keyless}AA`)).toBe(false);
+    expect(await verifyPassword('anything', `scrypt$32768$8$1$${'A'.repeat(22)}==$=`)).toBe(false);
+  });
+
+  it('rejects stored values with parameters other than the current ones', async () => {
+    const good = await hashPassword('correct horse battery');
+    const tampered = good.replace(/^scrypt\$\d+\$\d+\$\d+\$/, 'scrypt$262144$1$262144$');
+    expect(await verifyPassword('correct horse battery', tampered)).toBe(false);
   });
 });
 
