@@ -8,7 +8,7 @@ import { clearedCookie, expiryFrom, hashToken, newToken, sessionCookie } from '.
 import { LOGIN, rawString, text } from '../lib/validate.ts';
 import { clearAttempt, getAttempts, releaseAttempt, reserveAttempt } from '../repo/attempts.ts';
 import { createSession, deleteSession, deleteUserSessions, pruneExpiredSessions } from '../repo/sessions.ts';
-import { findUserById, findUserByLogin, toSessionUser, updateUser } from '../repo/users.ts';
+import { findUserById, findUserByLogin, replacePasswordHash, toSessionUser } from '../repo/users.ts';
 
 const LOCKED = 'Too many failed tries. Wait 15 minutes, then try again.';
 const WRONG = 'Wrong login or password.';
@@ -69,7 +69,10 @@ route('changePassword', 'PUT', 'me/password', 'user', async (ctx) => {
   const passwordHash = await hashPassword(next);
   const token = sessionToken(ctx.request.headers.get('cookie'), ctx.config);
   await transaction(async (tx) => {
-    await updateUser(tx, record.id, { passwordHash });
+    // False when an admin reset the password or disabled the user after the check above.
+    if (!(await replacePasswordHash(tx, record.id, record.passwordHash, passwordHash))) {
+      throw new HttpError(400, 'Your current password is wrong.');
+    }
     await deleteUserSessions(tx, record.id, token ? hashToken(token) : '');
   });
   return undefined;

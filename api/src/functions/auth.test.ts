@@ -8,7 +8,7 @@ import { dummyHash, hashPassword, verifyPassword } from '../lib/password.ts';
 import { clearedCookie, hashToken } from '../lib/session.ts';
 import { clearAttempt, getAttempts, releaseAttempt, reserveAttempt } from '../repo/attempts.ts';
 import { createSession, deleteSession, deleteUserSessions, pruneExpiredSessions } from '../repo/sessions.ts';
-import { findUserById, findUserByLogin, toSessionUser, updateUser, type UserRecord } from '../repo/users.ts';
+import { findUserById, findUserByLogin, replacePasswordHash, toSessionUser, type UserRecord } from '../repo/users.ts';
 import './auth.ts';
 
 type Handler = (ctx: UserCtx) => Promise<unknown>;
@@ -44,7 +44,7 @@ vi.mock(import('../repo/users.ts'), async (importOriginal) => ({
   ...(await importOriginal()),
   findUserById: vi.fn(),
   findUserByLogin: vi.fn(),
-  updateUser: vi.fn(),
+  replacePasswordHash: vi.fn(),
 }));
 
 const IP = '10.0.0.1';
@@ -275,20 +275,32 @@ describe('changePassword', () => {
   beforeEach(() => {
     vi.mocked(findUserById).mockResolvedValue(user);
     vi.mocked(hashPassword).mockResolvedValue('new-hash');
+    vi.mocked(replacePasswordHash).mockResolvedValue(true);
   });
 
-  it('hashes first, then changes the hash and ends the other sessions in one transaction', async () => {
+  it('hashes first, then replaces the verified hash and ends the other sessions in one transaction', async () => {
     expect(await change({ current: PASSWORD, next: NEXT }, 'fcr_session=own-token')).toBeUndefined();
 
     expect(verifyPassword).toHaveBeenCalledWith(PASSWORD, 'stored');
     expect(hashPassword).toHaveBeenCalledWith(NEXT);
     expect(transaction).toHaveBeenCalledTimes(1);
-    expect(updateUser).toHaveBeenCalledWith(tx, 7, { passwordHash: 'new-hash' });
+    expect(replacePasswordHash).toHaveBeenCalledWith(tx, 7, 'stored', 'new-hash');
     expect(deleteUserSessions).toHaveBeenCalledWith(tx, 7, hashToken('own-token'));
-    const steps = [hashPassword, transaction, updateUser, deleteUserSessions, committed].map((fn) =>
+    const steps = [hashPassword, transaction, replacePasswordHash, deleteUserSessions, committed].map((fn) =>
       order(vi.mocked(fn)),
     );
     expect(steps).toEqual([...steps].sort((a, b) => a - b));
+  });
+
+  it('changes nothing when an admin reset the password or disabled the user after the check', async () => {
+    vi.mocked(replacePasswordHash).mockResolvedValue(false);
+
+    await expect(change({ current: PASSWORD, next: NEXT }, 'fcr_session=own-token')).rejects.toMatchObject({
+      status: 400,
+      message: 'Your current password is wrong.',
+    });
+    expect(deleteUserSessions).not.toHaveBeenCalled();
+    expect(committed).not.toHaveBeenCalled();
   });
 
   it('refuses a wrong current password with 400, hashing and writing nothing', async () => {

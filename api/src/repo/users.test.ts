@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { useTarget } from '../../../db/target.ts';
-import { closeDb, db, transaction, type Db, type Params } from '../lib/db.ts';
-import { countActiveAdminsLocked, createUser } from './users.ts';
+import { closeDb, db, transaction, varchar, type Db, type Params } from '../lib/db.ts';
+import { countActiveAdminsLocked, createUser, replacePasswordHash } from './users.ts';
 
 function answering(rows: object[]): { calls: { text: string; params: Params }[]; fake: Db } {
   const calls: { text: string; params: Params }[] = [];
@@ -28,6 +28,26 @@ describe('countActiveAdminsLocked', () => {
   it('answers 0 when no row comes back', async () => {
     const { fake } = answering([]);
     expect(await countActiveAdminsLocked(fake)).toBe(0);
+  });
+});
+
+describe('replacePasswordHash', () => {
+  it('sets the new hash only for a still-active user with the verified hash, and says it did', async () => {
+    const { calls, fake } = answering([{ id: 7 }]);
+
+    expect(await replacePasswordHash(fake, 7, 'scrypt$verified', 'scrypt$next')).toBe(true);
+    expect(calls).toHaveLength(1);
+    const text = calls[0]?.text.replace(/\s+/g, ' ') ?? '';
+    expect(text).toBe(
+      'UPDATE users SET password_hash = @next, password_changed_at = SYSUTCDATETIME() OUTPUT inserted.id ' +
+        'WHERE id = @id AND active = 1 AND password_hash = @verified',
+    );
+    expect(calls[0]?.params).toEqual({ id: 7, verified: varchar('scrypt$verified'), next: varchar('scrypt$next') });
+  });
+
+  it('reports false when a reset or disable got there first, so nothing changed', async () => {
+    const { fake } = answering([]);
+    expect(await replacePasswordHash(fake, 7, 'scrypt$old', 'scrypt$next')).toBe(false);
   });
 });
 
