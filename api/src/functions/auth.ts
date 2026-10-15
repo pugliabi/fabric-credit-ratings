@@ -44,9 +44,10 @@ route('login', 'POST', 'auth/login', 'public', async (ctx) => {
 });
 
 route('logout', 'POST', 'auth/logout', 'public', async (ctx) => {
+  // Cleared first: an error response still sends ctx.cookies, so a failed delete still logs this browser out.
+  ctx.cookies.push(clearedCookie(ctx.config.cookieSecure));
   const token = sessionToken(ctx.request.headers.get('cookie'), ctx.config);
   if (token) await deleteSession(db, hashToken(token));
-  ctx.cookies.push(clearedCookie(ctx.config.cookieSecure));
   return undefined;
 });
 

@@ -119,6 +119,18 @@ describe('reserveAttempt', () => {
     expect(reservation.locked).toBe(false);
   });
 
+  it('also runs it again when the deadlock surfaces as an aborted transaction', async () => {
+    const { fake } = recorder();
+    const aborted = new sql.TransactionError('Transaction has been aborted.', 'EABORT');
+    Object.defineProperty(aborted, 'originalError', { value: serverError(1205) });
+    vi.mocked(transaction)
+      .mockRejectedValueOnce(aborted)
+      .mockImplementationOnce((work) => work(fake));
+
+    expect((await reserveAttempt(['ip:10.0.0.1'], now)).locked).toBe(false);
+    expect(transaction).toHaveBeenCalledTimes(2);
+  });
+
   it('gives up after two retries', async () => {
     const third = serverError(1205);
     vi.mocked(transaction)

@@ -48,8 +48,8 @@ Deleted: `src/data/rounds/`, `src/data/artifacts.ts`, `src/data/workloads.ts`.
 
 - [ ] **Step 1: Check the tools.**
 
-Run: `az version; gh auth status; node --version`
-Expected: Azure CLI 2.60 or newer, `gh` logged in to github.com with `repo` and `workflow` scopes, and Node v24.
+Run: `az version; gh auth status; node --version; $PSVersionTable.PSVersion`
+Expected: Azure CLI 2.60 or newer, `gh` logged in to github.com with `repo` and `workflow` scopes, Node v24, and PowerShell 7.1 or newer, because `-SkipHttpErrorCheck` and `Read-Host -MaskInput` need it.
 
 - [ ] **Step 2: Find the capacity's subscription and region.**
 
@@ -636,7 +636,7 @@ function Send-WrongLogin([string]$forwardedFor) {
 }
 ```
 
-Each `Send-WrongLogin` prints an `error` of `Wrong login or password.` After each check, run this in the `fcr` SQL query editor:
+Each `Send-WrongLogin` prints an `error` of `Wrong login or password.` If a send prints `Too many failed tries…` instead (check 4: `429`), a key is locked and nothing was counted: run check 5's cleanup, which also lifts the lock, and start again from check 1. After each check, run this in the `fcr` SQL query editor:
 
 ```sql
 SELECT attempt_key, failures FROM login_attempts ORDER BY attempt_key;
@@ -833,7 +833,7 @@ gh run watch (gh run list -R $repo --workflow deploy.yml -L 1 --json databaseId 
 ```
 
 Expected:
-- `deploy.yml` passes. Its "Fetch the published ratings" step logs `Snapshot unchanged.`, because nothing is published in `fcr` yet, so no snapshot commit is made.
+- `deploy.yml` passes. Its "Fetch the published ratings" step logs `Snapshot unchanged.`, because nothing is published in `fcr` yet, so no snapshot commit is made. Its "Tell the API which snapshot is live" step passes with no warning. `fcr`'s `last_snapshot_at` was empty until this run, so without it Step 4.2 reads "behind".
 - `api-deploy.yml` also runs (the API files are new on `main`) and passes.
 
 - [ ] **Step 4: Live check** in a normal browser window, with a private window for a rater.

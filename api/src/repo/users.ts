@@ -83,7 +83,13 @@ export async function updateUser(db: Db, id: number, changes: UserChanges): Prom
   await db.query(`UPDATE users SET ${sets.join(', ')} WHERE id = @id`, params);
 }
 
-export async function countActiveAdmins(db: Db): Promise<number> {
-  const [row] = await db.query<{ n: number }>(`SELECT COUNT(*) AS n FROM users WHERE role = 'admin' AND active = 1`);
+/**
+ * Holds the users it reads until commit, so two admins demoting or deactivating each other take turns instead of both
+ * seeing the other still active. Use inside a transaction, before reading the user being changed.
+ */
+export async function countActiveAdminsLocked(tx: Db): Promise<number> {
+  const [row] = await tx.query<{ n: number }>(
+    `SELECT COUNT(*) AS n FROM users WITH (UPDLOCK, HOLDLOCK) WHERE role = 'admin' AND active = 1`,
+  );
   return row?.n ?? 0;
 }

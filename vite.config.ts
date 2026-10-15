@@ -10,6 +10,11 @@ const root = fileURLToPath(new URL('.', import.meta.url));
 export default defineConfig(({ mode }) => ({
   base: '/',
   plugins: [react(), deskApi(root, loadEnv(mode, root, ''))],
+  server: {
+    // /api/desk stays with the local desk plugin until Plan 2 removes it. FCR_API_TARGET points the rest at a
+    // Functions host on another port.
+    proxy: { '^/api/(?!desk)': process.env.FCR_API_TARGET ?? 'http://localhost:7071' },
+  },
   build: {
     rolldownOptions: {
       input: {

@@ -23,11 +23,12 @@ vi.mock(import('../repo/site.ts'), async (importOriginal) => ({
 }));
 
 const empty: Dataset = { workloads: [], artifacts: [], rounds: [], raterNames: new Map() };
+const log = { warn: vi.fn() };
 
 function call(name: string, body: Record<string, unknown> = {}): Promise<unknown> {
   const handler = handlers.get(name);
   if (!handler) throw new Error(`${name} was not registered.`);
-  return handler({ body } as unknown as UserCtx);
+  return handler({ body, log } as unknown as UserCtx);
 }
 
 const minutesFromNow = (minutes: number) => new Date(Date.now() + minutes * 60_000).toISOString();
@@ -45,7 +46,7 @@ beforeEach(() => {
 describe('GET build/snapshot', () => {
   const lockedClock = 'SELECT SYSUTCDATETIME() AS now FROM site_state WITH (READCOMMITTEDLOCK) WHERE id = 1';
 
-  it("dates the snapshot by the database's clock, read under site_state's lock before loading, and writes nothing", async () => {
+  it("dates the snapshot by the database's clock, read under site_state's lock, and writes nothing", async () => {
     const now = new Date('2026-10-15T21:00:00.123Z');
     vi.mocked(db.query).mockResolvedValue([{ now }]);
 
@@ -58,9 +59,23 @@ describe('GET build/snapshot', () => {
     const [load = 0] = vi.mocked(loadDataset).mock.invocationCallOrder;
     expect(clock).toBeLessThan(load);
     expect(markSnapshotTaken).not.toHaveBeenCalled();
+    expect(log.warn).not.toHaveBeenCalled();
   });
 
-  it('falls back to the plain clock, still before loading, when the site_state row is missing', async () => {
+  it('starts loading only after the locked clock read has returned', async () => {
+    let answer: (rows: { now: Date }[]) => void = () => undefined;
+    vi.mocked(db.query).mockImplementationOnce(() => new Promise((resolve) => (answer = resolve)) as never);
+
+    const pending = call('buildSnapshot');
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(loadDataset).not.toHaveBeenCalled();
+
+    answer([{ now: new Date('2026-10-15T21:00:00.123Z') }]);
+    await pending;
+    expect(loadDataset).toHaveBeenCalledTimes(1);
+  });
+
+  it('falls back to the plain clock, still before loading, and warns when the site_state row is missing', async () => {
     const now = new Date('2026-10-15T21:00:00.123Z');
     vi.mocked(db.query).mockResolvedValueOnce([]).mockResolvedValueOnce([{ now }]);
 
@@ -71,6 +86,9 @@ describe('GET build/snapshot', () => {
     const [, fallback = 0] = vi.mocked(db.query).mock.invocationCallOrder;
     const [load = 0] = vi.mocked(loadDataset).mock.invocationCallOrder;
     expect(fallback).toBeLessThan(load);
+    expect(log.warn).toHaveBeenCalledWith(
+      'site_state has no row, so the admin page will show the site as behind until npm run db:apply adds it.',
+    );
   });
 });
 

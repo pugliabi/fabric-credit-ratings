@@ -90,6 +90,7 @@ route('adminRoundUpdate', 'PUT', 'admin/rounds/{id}', 'admin', async (ctx): Prom
     if (current.status === 'open') throw new HttpError(409, `${current.label} is already open.`);
     const open = await findOpenRound(tx);
     if (open) throw new HttpError(409, `Publish ${open.label} before reopening another round.`);
+    // Unlocked is enough: a round only becomes published from open, and findOpenRound refused while any was open.
     const latest = await findLatestPublishedRound(tx);
     if (latest && latest.id !== current.id) {
       throw new HttpError(409, `Only the most recent published round (${latest.label}) can be reopened.`);
@@ -106,8 +107,8 @@ route('adminReview', 'GET', 'admin/rounds/{id}/review', 'admin', async (ctx) =>
 
 route('adminScoresPut', 'PUT', 'admin/rounds/{id}/scores/{userId}', 'admin', async (ctx) => {
   const round = await requireRound(ctx.params.id);
-  const userId = Number(ctx.params.userId);
-  const owner = Number.isInteger(userId) ? await findUserById(db, userId) : undefined;
+  const userId = ctx.params.userId ?? '';
+  const owner = /^\d{1,9}$/.test(userId) ? await findUserById(db, Number(userId)) : undefined;
   if (!owner) throw new HttpError(404, 'That user does not exist.');
   const { scores, errors } = validateScores(ctx.body.scores, await knownArtifactIds());
   if (errors.length > 0) throw new HttpError(400, errors.join(' '));
@@ -128,7 +129,7 @@ route('adminNotePut', 'PUT', 'admin/rounds/{id}/notes/{artifactId}', 'admin', as
   if (!(await knownArtifactIds()).has(artifactId)) throw new HttpError(404, 'That item does not exist.');
   if (typeof ctx.body.body !== 'string') throw new HttpError(400, 'Send the write-up as text.');
   const body = ctx.body.body.trim();
-  if (body.length > NOTE_MAX) throw new HttpError(400, 'Keep the write-up under 2,000 characters.');
+  if (body.length > NOTE_MAX) throw new HttpError(400, 'Keep the write-up to 2,000 characters or fewer.');
   await transaction(async (tx) => {
     const current = await lockRound(tx, round.id);
     if (!current) throw noSuchRound(round.id);
@@ -156,10 +157,13 @@ route('adminDraft', 'POST', 'admin/rounds/{id}/draft/{artifactId}', 'admin', asy
       roundLabel: target.round.label,
       scores: point.scores,
       raters: point.raters,
-      ...(previous ? { previous: { roundLabel: previous.roundLabel, scores: previous.scores, note: previous.note } } : {}),
+      ...(previous
+        ? { previous: { roundLabel: previous.roundLabel, scores: previous.scores, note: previous.note } }
+        : {}),
     });
     return { text: draft };
   } catch (error) {
+    ctx.log.warn('AI draft failed', error);
     throw new HttpError(502, error instanceof Error ? error.message : String(error));
   }
 });

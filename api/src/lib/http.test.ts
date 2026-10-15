@@ -1,6 +1,7 @@
 import { HttpRequest, InvocationContext, type HttpFunctionOptions, type HttpResponseInit } from '@azure/functions';
 import sql from 'mssql';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { DatabaseUnavailableError } from './db.ts';
 import { clientIp, corsHeaders, route } from './http.ts';
 
 const registered = vi.hoisted(() => new Map<string, HttpFunctionOptions>());
@@ -140,6 +141,13 @@ describe('error responses', () => {
     }
   });
 
+  it('reads the number through the error mssql raises for an aborted transaction', async () => {
+    const aborted = new sql.TransactionError('Transaction has been aborted.', 'EABORT');
+    Object.defineProperty(aborted, 'originalError', { value: sqlError(2627) });
+    thrown = aborted;
+    expect(await get()).toMatchObject({ status: 409 });
+  });
+
   it('answers a deadlock that outlasted its retries with 503', async () => {
     thrown = sqlError(1205);
     expect(await get()).toMatchObject({
@@ -154,5 +162,19 @@ describe('error responses', () => {
       status: 500,
       jsonBody: { error: 'Something went wrong on the server. Try again.' },
     });
+  });
+
+  it('still sends the cookies a handler set before it failed', async () => {
+    const cookie = { name: 'fcr_session', value: '', maxAge: 0 };
+    route('testCookieThenThrow', 'GET', 'test/cookie-then-throw', 'public', async (ctx) => {
+      ctx.cookies.push(cookie);
+      throw new DatabaseUnavailableError('The database is paused.');
+    });
+    const options = registered.get('testCookieThenThrow');
+    if (!options) throw new Error('testCookieThenThrow was not registered.');
+    const request = new HttpRequest({ method: 'GET', url: 'http://localhost/api/test/cookie-then-throw' });
+    const log = new InvocationContext({ logHandler: () => undefined });
+
+    expect(await options.handler(request, log)).toMatchObject({ status: 503, cookies: [cookie] });
   });
 });

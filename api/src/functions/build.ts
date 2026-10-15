@@ -1,3 +1,4 @@
+import type { InvocationContext } from '@azure/functions';
 import { buildSnapshot } from '../domain/snapshot.ts';
 import { db } from '../lib/db.ts';
 import { HttpError } from '../lib/errors.ts';
@@ -33,12 +34,13 @@ function deployedAt(value: unknown): Date {
  * RCSI reads don't wait for that, so the read takes site_state's row lock (READCOMMITTEDLOCK): it waits for any
  * transaction that has already stamped to commit, and a later stamp is later than this time.
  */
-async function databaseNow(): Promise<Date> {
+async function databaseNow(log: InvocationContext): Promise<Date> {
   const [locked] = await db.query<{ now: Date }>(
     'SELECT SYSUTCDATETIME() AS now FROM site_state WITH (READCOMMITTEDLOCK) WHERE id = 1',
   );
   if (locked) return locked.now;
   // Without the row, markChanged has nothing to stamp, so there is nothing to wait for.
+  log.warn('site_state has no row, so the admin page will show the site as behind until npm run db:apply adds it.');
   const [clock] = await db.query<{ now: Date }>('SELECT SYSUTCDATETIME() AS now');
   if (!clock) throw new Error('SYSUTCDATETIME() returned no row.');
   return clock.now;
@@ -48,8 +50,8 @@ async function databaseNow(): Promise<Date> {
  * Read-only: the deploy workflow confirms with build/snapshot/deployed once the site is live. generatedAt is read
  * before the load starts, so a change is either in the snapshot or later than generatedAt.
  */
-route('buildSnapshot', 'GET', 'build/snapshot', 'build', async () => {
-  const now = await databaseNow();
+route('buildSnapshot', 'GET', 'build/snapshot', 'build', async (ctx) => {
+  const now = await databaseNow(ctx.log);
   const data = await loadDataset(db);
   return buildSnapshot(data.workloads, data.artifacts, data.rounds, now);
 });

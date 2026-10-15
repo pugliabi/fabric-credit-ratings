@@ -1,5 +1,27 @@
-import { describe, expect, it } from 'vitest';
-import { createDrafter, mentionsMath, promptFor } from './draft-why.ts';
+import Anthropic from '@anthropic-ai/sdk';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { createDrafter, mentionsMath, promptFor, type DraftInput } from './draft-why.ts';
+
+const clients = vi.hoisted(() => [] as { options: unknown; client: unknown }[]);
+
+vi.mock(import('@anthropic-ai/sdk'), async (importOriginal) => {
+  const real = await importOriginal();
+  class Recording extends real.default {
+    constructor(options?: ConstructorParameters<typeof real.default>[0]) {
+      super(options);
+      clients.push({ options, client: this });
+    }
+  }
+  return { ...real, default: Recording };
+});
+
+const input: DraftInput = {
+  artifact: { id: 'notebook', name: 'Notebook', workload: 'data-engineering', status: 'ga' },
+  workload: { id: 'data-engineering', name: 'Data Engineering', shortName: 'Data Eng', blurb: 'Notebooks and Spark' },
+  roundLabel: 'Q4 2026',
+  scores: { capability: 6, ux: 5, cost: 4 },
+  raters: 2,
+};
 
 describe('mentionsMath', () => {
   it('flags grades, totals, and sums', () => {
@@ -8,25 +30,106 @@ describe('mentionsMath', () => {
     expect(mentionsMath('5 + 6 + 7')).toBe(true);
     expect(mentionsMath('A dependable workhorse with rough edges.')).toBe(false);
   });
+
+  it('flags single-letter grades with a sign, and the "6 of 7" form the prompt uses', () => {
+    expect(mentionsMath('It earns an A- this quarter.')).toBe(true);
+    expect(mentionsMath('An A+ effort.')).toBe(true);
+    expect(mentionsMath('Rated B+')).toBe(true);
+    expect(mentionsMath('It slipped to B-.')).toBe(true);
+    expect(mentionsMath('An AA-rated tool.')).toBe(true);
+    expect(mentionsMath('capability 6 of 7')).toBe(true);
+    expect(mentionsMath('cost is 3 OF 7 now')).toBe(true);
+    expect(mentionsMath('a total of 15/21')).toBe(true);
+    expect(mentionsMath('Six out of seven raters agree.')).toBe(true);
+  });
+
+  it('leaves words that only contain grade letters alone', () => {
+    expect(mentionsMath('ACCESS and CCA')).toBe(false);
+    expect(mentionsMath('A B-tree index and an A-list feature.')).toBe(false);
+    expect(mentionsMath('One of 7 workloads.')).toBe(false);
+  });
 });
 
 describe('promptFor', () => {
   it('names the workload and forbids the math', () => {
-    const prompt = promptFor({
-      artifact: { id: 'notebook', name: 'Notebook', workload: 'data-engineering', status: 'ga' },
-      workload: { id: 'data-engineering', name: 'Data Engineering', shortName: 'Data Eng', blurb: 'Notebooks and Spark' },
-      roundLabel: 'Q4 2026',
-      scores: { capability: 6, ux: 5, cost: 4 },
-      raters: 2,
-    });
+    const prompt = promptFor(input);
     expect(prompt).toContain('Workload: Data Engineering (Notebooks and Spark)');
     expect(prompt).toContain('average of 2 raters');
     expect(prompt).toContain('Never mention scores');
   });
+
+  it('names the workload id, with no empty brackets, when the workload row is missing', () => {
+    const { workload: _, ...withoutWorkload } = input;
+    expect(promptFor(withoutWorkload)).toContain('Workload: data-engineering\n');
+  });
 });
 
 describe('createDrafter', () => {
+  const settings = { apiKey: 'k', workspaceId: '', model: '' };
+
+  /** The client the drafter built, with its messages.create stubbed. */
+  function stubbedCreate() {
+    const client = clients.at(-1)?.client as Anthropic | undefined;
+    if (!client) throw new Error('createDrafter built no client.');
+    return vi.spyOn(client.messages, 'create');
+  }
+
+  const reply = (text: string) => ({ content: [{ type: 'text', text }] }) as never;
+
+  beforeEach(() => {
+    clients.length = 0;
+  });
+
   it('is off without an API key', () => {
     expect(createDrafter({ apiKey: '', workspaceId: '', model: '' })).toBeUndefined();
+    expect(clients).toEqual([]);
+  });
+
+  it('gives up on a slow provider well inside the 230 s HTTP limit', () => {
+    createDrafter({ ...settings, workspaceId: 'ws' });
+    expect(clients).toHaveLength(1);
+    expect(clients[0]?.options).toMatchObject({
+      apiKey: 'k',
+      timeout: 40_000,
+      maxRetries: 1,
+      defaultHeaders: { 'anthropic-workspace-id': 'ws' },
+    });
+  });
+
+  it('asks once more when the first draft leaks the math', async () => {
+    const draft = createDrafter(settings);
+    const create = stubbedCreate()
+      .mockResolvedValueOnce(reply('Solid, at 6 of 7 for capability.'))
+      .mockResolvedValueOnce(reply('Solid and complete.'));
+
+    expect(await draft?.(input)).toBe('Solid and complete.');
+    expect(create).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([
+    [
+      'a timeout',
+      new Anthropic.APIConnectionTimeoutError(),
+      'Anthropic did not answer in time. Try again.',
+    ],
+    [
+      'an unknown model',
+      new Anthropic.NotFoundError(404, { type: 'error', error: { type: 'not_found_error' } }, undefined, new Headers()),
+      "ANTHROPIC_MODEL names a model this key can't use. Check the setting in the Function App.",
+    ],
+    [
+      'a rate limit',
+      new Anthropic.RateLimitError(429, { type: 'error' }, undefined, new Headers()),
+      'Anthropic is busy. Try again in a minute.',
+    ],
+    [
+      'an overload',
+      new Anthropic.InternalServerError(529, { type: 'error' }, undefined, new Headers()),
+      'Anthropic is busy. Try again in a minute.',
+    ],
+  ])('explains %s', async (_, error, message) => {
+    const draft = createDrafter(settings);
+    stubbedCreate().mockRejectedValueOnce(error);
+    await expect(draft?.(input)).rejects.toThrow(message);
   });
 });

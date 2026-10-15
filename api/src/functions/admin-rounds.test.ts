@@ -4,6 +4,7 @@ import type { Artifact, Round } from '../../../src/domain/types.ts';
 import type { Dataset } from '../domain/dataset.ts';
 import type { Config } from '../lib/config.ts';
 import { transaction, type Db } from '../lib/db.ts';
+import { createDrafter, type Drafter } from '../lib/draft-why.ts';
 import { startDeploy } from '../lib/github.ts';
 import type { UserCtx } from '../lib/http.ts';
 import { listArtifacts } from '../repo/catalog.ts';
@@ -11,6 +12,7 @@ import { loadDataset } from '../repo/dataset.ts';
 import { saveNote } from '../repo/notes.ts';
 import {
   countScorecards,
+  createRound,
   findLatestPublishedRound,
   findOpenRound,
   findRound,
@@ -33,7 +35,12 @@ vi.mock(import('../lib/http.ts'), () => ({
     handlers.set(name, handler);
   },
 }));
-vi.mock(import('../lib/db.ts'), async (importOriginal) => ({ ...(await importOriginal()), transaction: vi.fn() }));
+vi.mock(import('../lib/db.ts'), async (importOriginal) => ({
+  ...(await importOriginal()),
+  db: { query: () => Promise.reject(new Error('The repo functions are mocked.')) },
+  transaction: vi.fn(),
+}));
+vi.mock(import('../lib/draft-why.ts'), () => ({ createDrafter: vi.fn() }));
 vi.mock(import('../lib/github.ts'), () => ({ startDeploy: vi.fn() }));
 vi.mock(import('../repo/catalog.ts'), () => ({ listArtifacts: vi.fn() }));
 vi.mock(import('../repo/dataset.ts'), () => ({ loadDataset: vi.fn() }));
@@ -111,7 +118,7 @@ beforeEach(() => {
 describe('adminRoundUpdate: publish', () => {
   const publish = { status: 'published', publishedOn: '2026-10-15' };
 
-  it('locks, counts, publishes, and marks the site changed in one transaction, then deploys after the commit', async () => {
+  it('publishes in one locked transaction that marks the site changed, then deploys after the commit', async () => {
     vi.mocked(countScorecards).mockResolvedValue(2);
 
     const result = await call('adminRoundUpdate', { id: open.id }, publish);
@@ -184,7 +191,7 @@ describe('adminRoundUpdate: publish', () => {
 describe('adminRoundUpdate: reopen', () => {
   const reopen = { status: 'open' };
 
-  it('locks, checks no round is open and none is newer, reopens, and marks the site changed in one transaction', async () => {
+  it('checks no round is open or newer, reopens, and marks the site changed in one locked transaction', async () => {
     vi.mocked(findRound).mockResolvedValue(published);
     vi.mocked(lockRound).mockResolvedValue(published);
     vi.mocked(findLatestPublishedRound).mockResolvedValue(published);
@@ -192,6 +199,7 @@ describe('adminRoundUpdate: reopen', () => {
     const result = await call('adminRoundUpdate', { id: open.id }, reopen);
 
     expect(transaction).toHaveBeenCalledTimes(1);
+    expect(lockRound).toHaveBeenCalledWith(tx, open.id);
     expect(findOpenRound).toHaveBeenCalledWith(tx);
     expect(findLatestPublishedRound).toHaveBeenCalledWith(tx);
     expect(reopenRound).toHaveBeenCalledWith(tx, open.id);
@@ -239,6 +247,46 @@ describe('adminRoundUpdate: reopen', () => {
 
     expect(reopenRound).not.toHaveBeenCalled();
     expect(markChanged).not.toHaveBeenCalled();
+  });
+});
+
+describe('adminRoundCreate', () => {
+  const next = { id: '2027-Q1', label: 'Q1 2027' };
+
+  it('creates the round when none is open and the id is new', async () => {
+    vi.mocked(findRound).mockResolvedValue(undefined);
+
+    expect(await call('adminRoundCreate', {}, next)).toEqual(rounds);
+    expect(createRound).toHaveBeenCalledWith(expect.anything(), '2027-Q1', 'Q1 2027');
+  });
+
+  it('refuses a bad id with 400 before any query', async () => {
+    await expect(call('adminRoundCreate', {}, { ...next, id: '2027-q1' })).rejects.toMatchObject({
+      status: 400,
+      message: 'Round ids look like 2027-Q1.',
+    });
+    expect(findOpenRound).not.toHaveBeenCalled();
+    expect(createRound).not.toHaveBeenCalled();
+  });
+
+  it('refuses with 409 while a round is open', async () => {
+    vi.mocked(findOpenRound).mockResolvedValue(open);
+
+    await expect(call('adminRoundCreate', {}, next)).rejects.toMatchObject({
+      status: 409,
+      message: 'Publish Q4 2026 before starting a new round.',
+    });
+    expect(createRound).not.toHaveBeenCalled();
+  });
+
+  it('refuses with 409 an id that already exists', async () => {
+    vi.mocked(findRound).mockResolvedValue(published);
+
+    await expect(call('adminRoundCreate', {}, { ...next, id: published.id })).rejects.toMatchObject({
+      status: 409,
+      message: 'Round 2026-Q4 already exists.',
+    });
+    expect(createRound).not.toHaveBeenCalled();
   });
 });
 
@@ -303,6 +351,23 @@ describe('adminScoresPut', () => {
     await expect(call('adminScoresPut', { id: open.id, userId: '99' }, body)).rejects.toMatchObject({ status: 404 });
     expect(transaction).not.toHaveBeenCalled();
   });
+
+  it('answers 404 for a user id that only parses as a number, without looking it up', async () => {
+    for (const userId of ['1e1', '0x7', '7.0', '-7', ' 7', '']) {
+      await expect(call('adminScoresPut', { id: open.id, userId }, body)).rejects.toMatchObject({
+        status: 404,
+        message: 'That user does not exist.',
+      });
+    }
+    expect(findUserById).not.toHaveBeenCalled();
+  });
+
+  it('refuses bad scores with 400 before any transaction', async () => {
+    await expect(
+      call('adminScoresPut', { id: open.id, userId: '7' }, { scores: { notebook: [9, 5, 4] } }),
+    ).rejects.toMatchObject({ status: 400, message: '"notebook" needs three whole scores from 1 to 7.' });
+    expect(transaction).not.toHaveBeenCalled();
+  });
 });
 
 describe('adminNotePut', () => {
@@ -312,6 +377,7 @@ describe('adminNotePut', () => {
     const result = await call('adminNotePut', { id: open.id, artifactId: 'notebook' }, { body: '  Solid.  ' });
 
     expect(transaction).toHaveBeenCalledTimes(1);
+    expect(lockRound).toHaveBeenCalledWith(tx, open.id);
     expect(saveNote).toHaveBeenCalledWith(tx, open.id, 'notebook', 'Solid.', admin.id);
     expect(markChanged).toHaveBeenCalledWith(tx);
     expectAscending(callOrder(vi.mocked(lockRound), vi.mocked(saveNote), vi.mocked(markChanged), committed));
@@ -341,14 +407,95 @@ describe('adminNotePut', () => {
     }
     expect(transaction).not.toHaveBeenCalled();
   });
+
+  it('takes a write-up of exactly 2,000 characters and refuses one longer, before any transaction', async () => {
+    await call('adminNotePut', { id: open.id, artifactId: 'notebook' }, { body: 'x'.repeat(2_000) });
+    expect(saveNote).toHaveBeenCalledWith(tx, open.id, 'notebook', 'x'.repeat(2_000), admin.id);
+    vi.mocked(transaction).mockClear();
+
+    await expect(
+      call('adminNotePut', { id: open.id, artifactId: 'notebook' }, { body: 'x'.repeat(2_001) }),
+    ).rejects.toMatchObject({ status: 400, message: 'Keep the write-up to 2,000 characters or fewer.' });
+    expect(transaction).not.toHaveBeenCalled();
+  });
+
+  it('answers 404 for an unknown item before any transaction', async () => {
+    await expect(call('adminNotePut', { id: open.id, artifactId: 'nope' }, { body: 'Solid.' })).rejects.toMatchObject({
+      status: 404,
+      message: 'That item does not exist.',
+    });
+    expect(transaction).not.toHaveBeenCalled();
+  });
 });
 
 describe('adminDraft', () => {
+  const drafter = vi.fn<Drafter>();
+  const scored: Dataset = {
+    ...dataset,
+    rounds: [
+      {
+        round: open,
+        notes: {},
+        scorecards: [{ rater: '7', submittedAt: '2026-10-15T12:00:00.000Z', scores: { notebook: [6, 5, 4] } }],
+      },
+    ],
+  };
+
+  beforeEach(() => {
+    vi.mocked(createDrafter).mockReturnValue(drafter);
+    vi.mocked(loadDataset).mockResolvedValue(scored);
+  });
+
   it('answers 400 without an Anthropic key, before loading any data', async () => {
+    vi.mocked(createDrafter).mockReturnValue(undefined);
+
     await expect(call('adminDraft', { id: open.id, artifactId: 'notebook' })).rejects.toMatchObject({
       status: 400,
       message: 'Set ANTHROPIC_API_KEY in the Function App settings to draft with AI.',
     });
+    expect(createDrafter).toHaveBeenCalledWith(config.anthropic);
     expect(loadDataset).not.toHaveBeenCalled();
+  });
+
+  it("drafts from the round's scores and returns the text", async () => {
+    drafter.mockResolvedValue('Solid and complete.');
+
+    expect(await call('adminDraft', { id: open.id, artifactId: 'notebook' })).toEqual({ text: 'Solid and complete.' });
+    expect(drafter).toHaveBeenCalledWith(
+      expect.objectContaining({
+        artifact: notebook,
+        roundLabel: 'Q4 2026',
+        scores: { capability: 6, ux: 5, cost: 4 },
+        raters: 1,
+      }),
+    );
+  });
+
+  it('answers 404 for an unknown round or item, and 400 for an item nobody has scored, without drafting', async () => {
+    await expect(call('adminDraft', { id: '2027-Q1', artifactId: 'notebook' })).rejects.toMatchObject({
+      status: 404,
+      message: 'Round 2027-Q1 does not exist.',
+    });
+    await expect(call('adminDraft', { id: open.id, artifactId: 'nope' })).rejects.toMatchObject({
+      status: 404,
+      message: 'That item does not exist.',
+    });
+    vi.mocked(loadDataset).mockResolvedValue(dataset);
+    await expect(call('adminDraft', { id: open.id, artifactId: 'notebook' })).rejects.toMatchObject({
+      status: 400,
+      message: 'Notebook has no scores in Q4 2026 yet.',
+    });
+    expect(drafter).not.toHaveBeenCalled();
+  });
+
+  it("answers 502 with the drafter's message, and logs the failure", async () => {
+    const failure = new Error('Anthropic is busy. Try again in a minute.');
+    drafter.mockRejectedValue(failure);
+
+    await expect(call('adminDraft', { id: open.id, artifactId: 'notebook' })).rejects.toMatchObject({
+      status: 502,
+      message: 'Anthropic is busy. Try again in a minute.',
+    });
+    expect(log.warn).toHaveBeenCalledWith('AI draft failed', failure);
   });
 });
