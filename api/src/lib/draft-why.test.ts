@@ -48,6 +48,13 @@ describe('mentionsMath', () => {
     expect(mentionsMath('A B-tree index and an A-list feature.')).toBe(false);
     expect(mentionsMath('One of 7 workloads.')).toBe(false);
   });
+
+  it('flags a score over 7 or 21 written with a slash, but not 24/7', () => {
+    for (const text of ['capability 6/7', 'rated 6 / 7', 'a total of 15/21', 'a perfect 21/21']) {
+      expect(mentionsMath(text)).toBe(true);
+    }
+    expect(mentionsMath('Support is 24/7.')).toBe(false);
+  });
 });
 
 describe('promptFor', () => {

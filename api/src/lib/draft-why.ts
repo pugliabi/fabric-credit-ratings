@@ -31,7 +31,7 @@ export interface DraftInput {
 // The bare one-letter grades (A, B, C, E) are ordinary words, so only their signed forms count. A sign followed by a
 // letter is a hyphenated word ("B-tree"), but "AA-rated" still names AA.
 const GRADE = /(?<![A-Za-z0-9+-])(?:AAA|AA[+-]?|A[+-]|BBB[+-]?|BB[+-]?|B[+-]|CCC|CC)(?![A-Za-z0-9+])/;
-const OUT_OF = /\bout of (?:7|seven|21)\b|\b\d{1,2}\s*of\s*(?:7|21)\b|\/\s*(?:7|21)\b/i;
+const OUT_OF = /\bout of (?:7|seven|21)\b|\b\d{1,2}\s*of\s*(?:7|21)\b|\b(?:[1-9]|1\d|2[01])\s*\/\s*(?:7|21)\b/i;
 
 /** True when a draft leaks a grade, a total, or arithmetic. */
 export function mentionsMath(text: string): boolean {
