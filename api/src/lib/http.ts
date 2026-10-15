@@ -87,12 +87,12 @@ async function readBody(request: HttpRequest): Promise<Record<string, unknown>> 
 }
 
 /** SQL Server's error numbers for a duplicate key in a unique index or a primary key, and for a deadlock victim. */
-const DUPLICATE_KEY = [2601, 2627];
+export const DUPLICATE_KEY = [2601, 2627];
 const DEADLOCK_VICTIM = [1205];
 const UNAVAILABLE = 'The ratings database is not responding. Try again in a minute.';
 
 /** mssql copies the server's error number onto its RequestError; the driver's own error keeps it under info. */
-function hasSqlNumber(error: unknown, numbers: readonly number[]): boolean {
+export function hasSqlNumber(error: unknown, numbers: readonly number[]): boolean {
   if (typeof error !== 'object' || error === null) return false;
   const { number, originalError } = error as { number?: unknown; originalError?: { info?: { number?: unknown } } };
   return numbers.some((n) => number === n || originalError?.info?.number === n);
