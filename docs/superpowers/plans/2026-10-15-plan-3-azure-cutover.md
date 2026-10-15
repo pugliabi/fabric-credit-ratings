@@ -111,7 +111,7 @@ git commit -m "Ignore the local Azure names file"
 npm run db:apply -- --server $sqlServer --database $sqlDatabase
 ```
 
-Expected: `Database: fcr-<guid> on <id>.database.fabric.microsoft.com`, then `Applied 12 schema batches.`
+Expected: `Database: fcr-<guid> on <id>.database.fabric.microsoft.com`, then `Applied 14 schema batches.`
 
 - [ ] **Step 3: Full seed.** This loads the catalog and the Q4 2026 round from the repo files that Task 3 deletes, so it must run first. Use the admin password you want in production.
 

@@ -112,6 +112,7 @@ scores (
   updated_at  datetime2 NOT NULL,
   PRIMARY KEY (round_id, user_id, artifact_id)
 )
+CREATE INDEX ix_scores_artifact ON scores(artifact_id);  -- an item delete's FK check seeks instead of scanning
 notes (
   round_id    varchar(8)  NOT NULL REFERENCES rounds(id),
   artifact_id varchar(64) NOT NULL REFERENCES artifacts(id),
@@ -120,6 +121,7 @@ notes (
   updated_by  int NULL REFERENCES users(id),     -- NULL for seeded notes
   PRIMARY KEY (round_id, artifact_id)
 )
+CREATE INDEX ix_notes_artifact ON notes(artifact_id);
 site_state (
   id               int PRIMARY KEY CHECK (id = 1),
   last_snapshot_at datetime2 NULL,               -- set by POST /api/build/snapshot/deployed
@@ -153,10 +155,10 @@ All responses are JSON. Errors look like `{ "error": "<message>" }`, with status
 
 | Method + path | Body | Result |
 |---|---|---|
-| `POST /api/auth/login` | `{ login, password }` | 200 `{ id, login, displayName, role }` and sets the session cookie |
-| `POST /api/auth/logout` | none | 204. Deletes the session and clears the cookie |
+| `POST /api/auth/login` | `{ login, password }` | 200 `{ id, login, displayName, role }` and sets the session cookie. The session is created only if the user is still active with the password that was checked, so a reset or disable that lands during the login gives 401 "Wrong login or password." |
+| `POST /api/auth/logout` | none | 204. Clears the cookie, then deletes the session. If the delete fails, the answer is 503 (database not responding) or 500, and it still clears the cookie, so the browser is logged out either way. A logout with no session cookie answers 204 without touching the database |
 | `GET /api/me` | none | 200 `{ id, login, displayName, role }` or 401 |
-| `PUT /api/me/password` | `{ current, next }` | 204. Ends the user's other sessions |
+| `PUT /api/me/password` | `{ current, next }` | 204. The new hash and the end of the user's other sessions commit in one transaction |
 
 ### Rater (any logged-in user)
 
@@ -165,7 +167,7 @@ All responses are JSON. Errors look like `{ "error": "<message>" }`, with status
 | `GET /api/catalog` | none | `{ workloads, artifacts }` in sort order |
 | `GET /api/rounds/open` | none | `{ round }` or `{ round: null }` |
 | `GET /api/rounds/open/my-scores` | none | `{ round, scores: Record<artifactId, [c,u,k]>, updatedAt, previous }`, where `previous` is the caller's card from the newest published round they scored. 409 when no round is open |
-| `PUT /api/rounds/open/my-scores` | `{ round, scores }` | 200, the same shape as GET. Replaces the caller's card. 409 if `round` is not the open round |
+| `PUT /api/rounds/open/my-scores` | `{ round, scores }` | 200, the same shape as GET. Replaces the caller's card. 409 if `round` is not the open round, or if an item on the card was deleted after the check ("An item on this card was just deleted. Reload the page to get the current list.") |
 
 The rater page's "Start from current ratings" uses the bundled `snapshot.json` (rounded averages), not an API call. "Start from my <previous round> scores" uses `previous`.
 
@@ -175,28 +177,28 @@ The rater page's "Start from current ratings" uses the bundled `snapshot.json` (
 |---|---|---|
 | `GET /api/admin/rounds` | none | every round, with scorecard and note counts |
 | `POST /api/admin/rounds` | `{ id, label }` | opens a round and returns every round. 409 if one is already open or the id exists |
-| `PUT /api/admin/rounds/:id` | `{ status: 'published', publishedOn }` or `{ status: 'open' }` | publish, or reopen the latest published round when no round is open. Returns `{ rounds, deploy }` |
+| `PUT /api/admin/rounds/:id` | `{ status: 'published', publishedOn }` or `{ status: 'open' }` | publish, or reopen the latest published round when no round is open. Returns `{ rounds, deploy }`. A `publishedOn` earlier than the latest published round's gets 400 ("Publish dates can't be earlier than <label>'s (<date>)."); the same day and future dates are allowed |
 | `GET /api/admin/rounds/:id/review` | none | the raters, and per item: averaged scores, grade, change from the previous published round, per-rater scores. Plus the notes and whether AI drafting is configured |
-| `PUT /api/admin/rounds/:id/scores/:userId` | `{ scores }` | replaces any user's card in any round, published included. Returns the review |
-| `PUT /api/admin/rounds/:id/notes/:artifactId` | `{ body }` | 204. Saves the why text. An empty body deletes it. A body that isn't text gets 400 |
-| `POST /api/admin/rounds/:id/draft/:artifactId` | none | `{ text }`, an AI-drafted why (existing `draft-why` logic) |
+| `PUT /api/admin/rounds/:id/scores/:userId` | `{ scores }` | replaces any user's card in any round, published included. Returns the review. A `userId` that isn't 1 to 9 digits gets 404. An item deleted after the check gets 409, as on the rater's save |
+| `PUT /api/admin/rounds/:id/notes/:artifactId` | `{ body }` | 204. Saves the why text. An empty body deletes it. A body that isn't text gets 400. An item deleted after the check gets 409 ("That item was just deleted. Reload the page to get the current list.") |
+| `POST /api/admin/rounds/:id/draft/:artifactId` | none | `{ text }`, an AI-drafted why (existing `draft-why` logic), or 502 with the reason. Each Anthropic call times out after 40 s, with one retry |
 | `GET /api/admin/catalog` | none | workloads and items with sort orders, and whether each item is referenced |
-| `POST /api/admin/workloads`, `PUT /api/admin/workloads/:id` | `{ id?, name, shortName, blurb, sortOrder? }` | create or edit. Create ignores `sortOrder` and appends to the end; an edit without it keeps the current order. Returns the admin catalog |
-| `POST /api/admin/artifacts`, `PUT /api/admin/artifacts/:id`, `DELETE /api/admin/artifacts/:id` | `{ id?, name, workload, status, sortOrder? }` | create, edit, or delete (delete only when unreferenced, else 409). Create ignores `sortOrder` and appends to the end of the item's workload. Returns the admin catalog |
+| `POST /api/admin/workloads`, `PUT /api/admin/workloads/:id` | `{ id?, name, shortName, blurb, sortOrder? }` | create or edit. Create ignores `sortOrder` and appends to the end; an edit without it keeps the current order. Returns the admin catalog. A new id that names a built-in object property (`constructor`, `__proto__`, `toString`, …) or `prototype` gets 400 ("Workload id <id> is reserved. Pick another id.") |
+| `POST /api/admin/artifacts`, `PUT /api/admin/artifacts/:id`, `DELETE /api/admin/artifacts/:id` | `{ id?, name, workload, status, sortOrder? }` | create, edit, or delete (delete only when unreferenced, else 409). Create ignores `sortOrder` and appends to the end of the item's workload, and refuses the same reserved ids ("Item id <id> is reserved. Pick another id."). Returns the admin catalog |
 | `GET /api/admin/users`, `POST /api/admin/users` | `{ login, displayName, role, password }` | list or create. Returns every user |
-| `PUT /api/admin/users/:id` | any of `{ displayName, role, active, password }` | edit. Disabling or a new password ends the user's sessions; setting your own password keeps your current session. Returns every user |
+| `PUT /api/admin/users/:id` | any of `{ displayName, role, active, password }` | edit. Disabling or a new password ends the user's sessions; setting your own password keeps your current session. Returns every user. An id that isn't 1 to 9 digits gets 404 |
 | `GET /api/admin/site` | none | `{ lastSnapshotAt, behind, deployConfigured }` |
 | `POST /api/admin/site/update` | none | starts the deploy workflow. 502 if GitHub refuses or dispatch isn't configured |
 
-`behind` is true when `site_state.changed_at` is at or later than `last_snapshot_at`, or when no deploy has confirmed a snapshot yet. Every handler that changes public data stamps `changed_at`: publish, reopen, edits to published scores or notes, and catalog edits. A computed "newest `updated_at`" query would miss a reopened round.
+`behind` is true when `site_state.changed_at` is at or after `last_snapshot_at`, or when no deploy has confirmed a snapshot yet. Both are compared to the millisecond, and a tie counts as behind. Every handler that changes public data stamps `changed_at`: publish, reopen, edits to published scores or notes, and catalog edits. A computed "newest `updated_at`" query would miss a reopened round.
 
-Publishing a round also starts the deploy workflow. An admin can't demote or disable themselves, and a change that would leave no active admin is refused. The check runs under a lock, so two admins changing each other at once can't both succeed.
+Publishing a round also starts the deploy workflow. An admin can't demote or disable themselves, and a change that would leave no active admin is refused. The check runs under a lock, so two admins changing each other at once can't both succeed. A caller who lost admin rights while the request waited for that lock gets 403 ("Only admins can do that.").
 
 ### Build
 
 | Method + path | Auth | Result |
 |---|---|---|
-| `GET /api/build/snapshot` | `Authorization: Bearer <SNAPSHOT_TOKEN>` | the snapshot JSON. Writes nothing. `generatedAt` is the database's time (`SYSUTCDATETIME()`), read before the data is loaded. The clock read waits for any write transaction that has already marked the site changed, so a change is either in the snapshot or later than its `generatedAt`. |
+| `GET /api/build/snapshot` | `Authorization: Bearer <SNAPSHOT_TOKEN>` | the snapshot JSON. Writes nothing. `generatedAt` is the database's time (`SYSUTCDATETIME()`), read before the data is loaded. The clock read waits for any write transaction that has already marked the site changed, so a change is either in the snapshot or stamped no earlier than its `generatedAt`. `markChanged` stamps twice in one batch: the first UPDATE takes the row lock, and the second records the time once it holds it. |
 | `POST /api/build/snapshot/deployed` | `Authorization: Bearer <SNAPSHOT_TOKEN>` | body `{ generatedAt }`, the deployed snapshot's. 204. Sets `site_state.last_snapshot_at` to it, only ever forward. 400 unless it's an ISO timestamp exactly as the snapshot gave it and no more than 5 minutes in the future. Skips the `Origin` check, since GitHub Actions sends none and the token is the protection, but still needs `Content-Type: application/json` |
 
 ## Auth and security
@@ -387,8 +389,10 @@ vitest.config.ts
   - a boundary test that keeps the formula out of the site sources.
 - **Integration, against `fcr-dev` (runs when `FCR_API_URL` is set):**
   - origin check, user creation and login, raters kept out of admin routes;
+  - a taken login and an admin removing their own admin access both get 409;
   - a card saved in the open round shows in the admin review, and a stale round gets 409;
-  - the snapshot needs the build token and has no rater names;
+  - the snapshot needs the build token and has no rater names, and deploy confirmations need the token too;
+  - an admin password reset ends the user's sessions and swaps the password;
   - disabling a user ends their sessions, and a login locks after 10 failures.
 - **Browser end-to-end against `fcr-dev` (Plan 2, Task 12):** rater and admin scoring, review and whys, editing a rater's card, publish, snapshot, a silent edit flagged as "behind", the next round, catalog edits, and session end.
 - **Live check after cutover (Plan 3, Task 10):** a rater logs in, saves, and changes their password. The admin creates users and starts a site update.

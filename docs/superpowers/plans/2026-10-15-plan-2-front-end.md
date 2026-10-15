@@ -297,7 +297,7 @@ git commit -m "Front end: API client with session-expiry and slow-request signal
 **Files:**
 - Create: `src/account/useSession.ts`, `src/account/LoginForm.tsx`, `src/account/Unavailable.tsx`, `src/account/AccountBar.tsx`, `src/account/ChangePasswordDialog.tsx`, `src/account/WakeNotice.tsx`, `src/account/Account.module.css`
 
-- [ ] **Step 1: Create `src/account/useSession.ts`.**
+- [ ] **Step 1: Create `src/account/useSession.ts`.** Logout doesn't swallow failures. The API clears the cookie before it deletes the session, so after an error answer the cookie is usually gone, but a gateway error, a lost answer, or a 400/403/415 refused before the handler leaves it. So on any failure the hook sends one more `POST /auth/logout`, which answers 204 without touching the database when no cookie is left. A 204 means signed out, with no message. Otherwise the hook rethrows the first error. As built on `p2-front-end` (`83ad1ed`), `api()` takes a fourth `options` argument (`wakeNotice: false` skips the wake notice, `signal` aborts the request), which the Task 1 block above doesn't show; that `src/lib/api.ts` wins. The Log out button runs `logout` through `runLogout` in `src/account/logout.ts`. It shows the first error followed by "You are still logged in.", or for status 0 "Could not reach the ratings server. You are still logged in. Check your connection, then log out again."
 
 ```ts
 import { useCallback, useEffect, useState } from 'react';
@@ -311,6 +311,9 @@ export type Session =
   | { status: 'unavailable'; message: string };
 
 const EXPIRED = 'Your session ended. Log in again; unsaved scores are still in this browser.';
+
+/** The second logout needs no database once the cookie is gone, so it answers fast or not at all. */
+const LOGOUT_RETRY_MS = 5000;
 
 /** Who is logged in. Any 401 from any API call drops back to the login form. */
 export function useSession() {
@@ -346,8 +349,14 @@ export function useSession() {
     setSession({ status: 'signed-in', user });
   }, []);
 
+  /** Rejects, with the first failure, when this browser may still hold the session cookie. */
   const logout = useCallback(async () => {
-    await api('POST', '/auth/logout').catch(() => undefined);
+    try {
+      await api('POST', '/auth/logout');
+    } catch (reason) {
+      const retry = { wakeNotice: false, signal: AbortSignal.timeout(LOGOUT_RETRY_MS) };
+      await api('POST', '/auth/logout', undefined, retry).catch(() => Promise.reject(reason));
+    }
     setSession({ status: 'signed-out', notice: '' });
   }, []);
 
@@ -1980,8 +1989,8 @@ export default defineConfig({
   base: '/',
   plugins: [react()],
   server: {
-    // FCR_API_TARGET points /api at a Functions host on another port.
-    proxy: { '/api': process.env.FCR_API_TARGET ?? 'http://localhost:7071' },
+    // FCR_API_TARGET points /api at a Functions host on another port; an empty value falls back to 7071.
+    proxy: { '/api': process.env.FCR_API_TARGET || 'http://localhost:7071' },
   },
   build: {
     rolldownOptions: {
@@ -1995,7 +2004,7 @@ export default defineConfig({
 });
 ```
 
-The desk is gone, so the proxy takes all of `/api`. Running a second checkout alongside this one:
+The desk is gone, so the proxy takes all of `/api`. Set `FCR_API_TARGET` in the shell, not in `.env`: `process.env` in `vite.config.ts` holds only the shell's variables. Running a second checkout alongside this one:
 - The proxy keeps the browser's `Origin` (`changeOrigin` rewrites only `Host`). A Vite on any port other than 5173 needs that origin in its host's `ALLOWED_ORIGINS`, or every write, login included, gets 403.
 - Vite moves to 5174 on its own when 5173 is taken, with only a console line. Either put `"ALLOWED_ORIGINS": "http://localhost:5173,http://localhost:5174,http://localhost:5175"` in each checkout's `api/local.settings.json`, or start Vite with `--port <n> --strictPort`.
 - A second host starts with `cd api; npm run build; npx func start --port 7072`, and its Vite with `$env:FCR_API_TARGET = 'http://localhost:7072'; npm run dev`.
@@ -2119,7 +2128,7 @@ export function RaterCardEditor({ review, rater, catalog, onSaved, onCancel }: R
 }
 ```
 
-- [ ] **Step 2: Create `src/admin/ReviewTab.tsx`.** Notes save per item through `PUT /admin/rounds/:id/notes/:artifactId`, 700 ms after typing stops. An item stays "unsaved" if its text changed while its save was in flight.
+- [ ] **Step 2: Create `src/admin/ReviewTab.tsx`.** Notes save per item through `PUT /admin/rounds/:id/notes/:artifactId`, 700 ms after typing stops. An item stays "unsaved" if its text changed while its save was in flight. The limit matches the server's: up to 2,000 characters after trimming are accepted. A longer note isn't sent; it stays unsaved, with the server's wording ("Keep the write-up to 2,000 characters or fewer.") under the box. The box has no `maxLength`, which would cut a paste short without saying so and would count the untrimmed text.
 
 ```tsx
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -2132,6 +2141,9 @@ import { RaterCardEditor } from './RaterCardEditor';
 import styles from './Admin.module.css';
 
 const SAVE_DELAY = 700;
+/** The server's limit, counted on the trimmed text, with its wording. */
+const NOTE_MAX = 2000;
+const NOTE_TOO_LONG = 'Keep the write-up to 2,000 characters or fewer.';
 
 interface ReviewTabProps {
   rounds: readonly AdminRound[];
@@ -2213,7 +2225,13 @@ function RoundReviewPanel({ review, catalog, users, onReview }: RoundReviewPanel
 
   useEffect(() => {
     if (edits.dirty.size === 0) return;
-    const sent = Object.fromEntries([...edits.dirty].map((id) => [id, edits.notes[id] ?? '']));
+    // A note over the limit stays unsaved, with its full text in the box, until it's shortened.
+    const sent = Object.fromEntries(
+      [...edits.dirty]
+        .map((id) => [id, edits.notes[id] ?? ''] as const)
+        .filter(([, body]) => body.trim().length <= NOTE_MAX),
+    );
+    if (Object.keys(sent).length === 0) return;
     const timer = setTimeout(() => {
       setSaveState('saving');
       void (async () => {
@@ -2400,12 +2418,17 @@ function RoundReviewPanel({ review, catalog, users, onReview }: RoundReviewPanel
                   <textarea
                     className={styles.note}
                     rows={3}
-                    maxLength={2000}
                     value={note}
                     placeholder="Why this rating. Leave blank and use Draft with AI for a first pass."
                     aria-label={`Why this rating for ${artifact.name}`}
+                    aria-invalid={note.trim().length > NOTE_MAX || undefined}
                     onChange={(event) => setNote(artifact.id, event.target.value)}
                   />
+                  {note.trim().length > NOTE_MAX && (
+                    <p className={styles.error} role="alert">
+                      {NOTE_TOO_LONG}
+                    </p>
+                  )}
                   <div className={styles.cardActions}>
                     <button
                       type="button"
@@ -4192,8 +4215,8 @@ git status --short
 
 Expected: a clean tree. `fcr-dev` keeps Q4 2026 (published) and Q1 2027 (open).
 
-- [ ] **Step 10: Re-run the API integration test** (Plan 1 Task 17 Step 4). First log out of or close the admin window and the private window, and don't log in through any local site while it runs. Run one copy of the suite per database at a time, because each copy's `beforeAll` deletes every `itest-` row. Never run `db:seed --force` during it. From a second checkout, set `FCR_API_URL` to that checkout's host port, and check that its `api/local.settings.json` points at `fcr-dev`: the suite's own cleanup connects with the settings file of the checkout it runs from.
-Expected: `Tests  9 passed (9)` against the new open round, `2027-Q1`. "9 skipped" means `FCR_API_URL` wasn't set. After Steps 5 and 6, `site_state.changed_at` and `last_snapshot_at` are both set, and the suite must leave both unchanged, because it writes only to the open round; it asserts `last_snapshot_at`. If a stamp moves, an open-round write stamped the site or something else wrote public data. Treat that as an API bug, and don't loosen the test.
+- [ ] **Step 10: Re-run the API integration test** (Plan 1 Task 17 Step 4). First log out of or close the admin window and the private window, and don't log in through any local site while it runs. Run one copy of the suite per database at a time, because each copy's `beforeAll` deletes every `itest-` row. Never run `db:seed --force` during it. From a second checkout, set `FCR_API_URL` to that checkout's host port, and check that its `api/local.settings.json` points at `fcr-dev`. The suite connects for its own checks with the settings file of the checkout it runs from. It refuses a database whose name doesn't start with `fcr-dev`, and fails if the host's database differs from its own.
+Expected: `Tests  12 passed (12)` against the new open round, `2027-Q1`. "12 skipped" means `FCR_API_URL` wasn't set. After Steps 5 and 6, `site_state.changed_at` and `last_snapshot_at` are both set. The suite writes only to the open round, and its `afterAll` asserts the whole `site_state` row is unchanged. If a stamp moves, an open-round write stamped the site or something else wrote public data. Treat that as an API bug, and don't loosen the test.
 
 ---
 

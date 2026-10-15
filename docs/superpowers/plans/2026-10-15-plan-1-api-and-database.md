@@ -508,7 +508,7 @@ Expected: `api/package-lock.json` created. The Core Tools install downloads the 
     "AzureWebJobsStorage": "",
     "SQL_SERVER": "<id>.database.fabric.microsoft.com",
     "SQL_DATABASE": "fcr-dev-<guid>",
-    "ALLOWED_ORIGINS": "http://localhost:5173",
+    "ALLOWED_ORIGINS": "http://localhost:5173,http://localhost:5174,http://localhost:5175",
     "COOKIE_SECURE": "false",
     "SNAPSHOT_TOKEN": "dev-snapshot-token",
     "ANTHROPIC_API_KEY": "",
@@ -1157,6 +1157,8 @@ export const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 /** Lowercase letters, digits, dot, dash, underscore; 2 to 40 characters. */
 export const LOGIN = /^[a-z0-9][a-z0-9._-]{1,39}$/;
 export const SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+/** Digits only, so 1e1 or 0x7 can't name a user; at most 9, so the bound value always fits SQL int. */
+export const USER_ID = /^\d{1,9}$/;
 
 type Body = Record<string, unknown>;
 
@@ -1397,6 +1399,11 @@ CREATE TABLE dbo.scores (
 );
 GO
 
+-- An artifact delete's foreign-key check seeks this instead of scanning, and waiting on, every card being saved.
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ix_scores_artifact' AND object_id = OBJECT_ID('dbo.scores'))
+CREATE INDEX ix_scores_artifact ON dbo.scores (artifact_id);
+GO
+
 IF OBJECT_ID('dbo.notes') IS NULL
 CREATE TABLE dbo.notes (
   round_id varchar(8) NOT NULL CONSTRAINT fk_notes_round REFERENCES dbo.rounds (id),
@@ -1406,6 +1413,10 @@ CREATE TABLE dbo.notes (
   updated_by int NULL CONSTRAINT fk_notes_user REFERENCES dbo.users (id),
   CONSTRAINT pk_notes PRIMARY KEY (round_id, artifact_id)
 );
+GO
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ix_notes_artifact' AND object_id = OBJECT_ID('dbo.notes'))
+CREATE INDEX ix_notes_artifact ON dbo.notes (artifact_id);
 GO
 
 IF OBJECT_ID('dbo.site_state') IS NULL
@@ -1630,7 +1641,7 @@ Edit `api/local.settings.json`: set `SQL_SERVER` and `SQL_DATABASE` to the value
 - [ ] **Step 6: Apply the schema twice.**
 
 Run: `npm run db:apply`
-Expected: `Database: fcr-dev-<guid> on <id>.database.fabric.microsoft.com`, then `Applied 12 schema batches.` (The first connection can take 10 to 60 seconds while the database wakes.)
+Expected: `Database: fcr-dev-<guid> on <id>.database.fabric.microsoft.com`, then `Applied 14 schema batches.` (The first connection can take 10 to 60 seconds while the database wakes.)
 
 Run: `npm run db:apply`
 Expected: the same output with no errors, which shows the batches are idempotent.
@@ -1751,12 +1762,26 @@ export async function countActiveAdminsLocked(tx: Db): Promise<number> {
 import type { SessionUser } from '../../../src/domain/api-types.ts';
 import type { Db } from '../lib/db.ts';
 
-export async function createSession(db: Db, tokenHash: string, userId: number, expiresAt: Date): Promise<void> {
-  await db.query('INSERT INTO sessions (token_hash, user_id, expires_at) VALUES (@tokenHash, @userId, @expiresAt)', {
-    tokenHash,
-    userId,
-    expiresAt,
-  });
+/**
+ * Inserts only if the user is still active with the password hash that was just verified, and reports whether it did.
+ * HOLDLOCK reads the committed row, waiting for a reset or disable in flight, and takes the user row before sessions,
+ * the same order as admin-users.ts's transaction, so the two can't deadlock.
+ */
+export async function createSession(
+  db: Db,
+  tokenHash: string,
+  userId: number,
+  expiresAt: Date,
+  passwordHash: string,
+): Promise<boolean> {
+  const rows = await db.query<{ userId: number }>(
+    `INSERT INTO sessions (token_hash, user_id, expires_at)
+     OUTPUT inserted.user_id AS userId
+     SELECT @tokenHash, u.id, @expiresAt FROM users u WITH (HOLDLOCK)
+     WHERE u.id = @userId AND u.active = 1 AND u.password_hash = @passwordHash`,
+    { tokenHash, userId, expiresAt, passwordHash },
+  );
+  return rows.length === 1;
 }
 
 /** Only live sessions of active users. */
@@ -2210,16 +2235,34 @@ export async function siteState(db: Db): Promise<SiteState> {
 
 export function isBehind(state: SiteState): boolean {
   if (!state.lastSnapshotAt) return true;
-  return state.changedAt !== null && state.changedAt > state.lastSnapshotAt;
+  // Both come back truncated to milliseconds; a tie may hide a change made just after the snapshot's clock read.
+  return state.changedAt !== null && state.changedAt >= state.lastSnapshotAt;
 }
 
-/** Call after any change the public site would show: publish, reopen, published edits, catalog edits. */
+/**
+ * Call after any change the public site would show (publish, reopen, published edits, catalog edits): inside its
+ * transaction as the last statement, or after it commits. SYSUTCDATETIME() is fixed when a statement starts, before it
+ * waits for the row lock, so the first UPDATE takes the lock and the second stamps a time later than any snapshot clock
+ * read that got past it. The first must be a real write: a lock on an unchanged row doesn't hold back locking readers.
+ */
 export async function markChanged(db: Db): Promise<void> {
-  await db.query('UPDATE site_state SET changed_at = SYSUTCDATETIME() WHERE id = 1');
+  await db.query(
+    `UPDATE site_state SET changed_at = SYSUTCDATETIME() WHERE id = 1;
+     UPDATE site_state SET changed_at = SYSUTCDATETIME() WHERE id = 1;`,
+  );
 }
 
-export async function markSnapshotTaken(db: Db): Promise<void> {
-  await db.query('UPDATE site_state SET last_snapshot_at = SYSUTCDATETIME() WHERE id = 1');
+/**
+ * Call once the site built from a snapshot is live, with that snapshot's generatedAt: the database time read before
+ * its dataset was loaded, so a change made during the build still shows as behind. Never moves the stamp back, so a
+ * late confirmation of an older deploy doesn't undo a newer one's.
+ */
+export async function markSnapshotTaken(db: Db, takenAt: Date): Promise<void> {
+  await db.query(
+    `UPDATE site_state SET last_snapshot_at = @takenAt
+     WHERE id = 1 AND (last_snapshot_at IS NULL OR last_snapshot_at < @takenAt)`,
+    { takenAt },
+  );
 }
 ```
 
@@ -2367,7 +2410,7 @@ try {
 }
 ```
 
-- [ ] **Step 2: Seed `fcr-dev`.**
+- [ ] **Step 2: Seed `fcr-dev`.** `Read-Host -MaskInput` needs PowerShell 7.1 or newer. In Windows PowerShell 5.1, read the password with `$env:FCR_ADMIN_PASSWORD = [Net.NetworkCredential]::new('', (Read-Host 'Admin password (10+ characters)' -AsSecureString)).Password` instead. The seed only reads `FCR_ADMIN_PASSWORD`, so either way works; run `Remove-Item Env:FCR_ADMIN_PASSWORD` afterward.
 
 ```powershell
 $env:FCR_ADMIN_PASSWORD = Read-Host 'Admin password (10+ characters)' -MaskInput
@@ -2386,7 +2429,7 @@ Rounds: 1 rounds, 0 scorecards, 0 notes
 - [ ] **Step 3: Run it again.**
 
 Run: `npm run db:seed -- --admin pugliabi --name "<your display name>"`
-Expected: `Admin pugliabi: already exists, password unchanged`, with the same counts and no errors.
+Expected: `Admin pugliabi: already exists (admin, active), not changed. --name was not applied.`, with the same counts and no errors. The re-run doesn't read `FCR_ADMIN_PASSWORD`.
 
 - [ ] **Step 4: Commit.**
 
@@ -2572,10 +2615,13 @@ function sameSecret(given: string, expected: string): boolean {
   return expected !== '' && timingSafeEqual(digest(given), digest(expected));
 }
 
-/** Cross-site form posts can't send JSON, and other sites' Origin headers are refused. */
-function checkMutation(request: HttpRequest, config: Config): void {
+/**
+ * Cross-site form posts can't send JSON, and other sites' Origin headers are refused. Build calls skip the Origin
+ * check: GitHub Actions sends none, and their bearer token is never attached by a browser, so CSRF can't use it.
+ */
+function checkMutation(request: HttpRequest, config: Config, access: Access): void {
   const origin = request.headers.get('origin');
-  if (!origin || !config.allowedOrigins.includes(origin)) {
+  if (access !== 'build' && (!origin || !config.allowedOrigins.includes(origin))) {
     throw new HttpError(403, 'This request came from a page that is not allowed to change ratings.');
   }
   const type = request.headers.get('content-type') ?? '';
@@ -2626,7 +2672,7 @@ async function handle(
   }
   const cookies: Cookie[] = [];
   try {
-    if (method !== 'GET') checkMutation(request, config);
+    if (method !== 'GET') checkMutation(request, config, access);
     if (access === 'build') {
       const given = request.headers.get('authorization')?.replace(/^Bearer\s+/i, '') ?? '';
       if (!sameSecret(given, config.snapshotToken)) throw new HttpError(401, 'A valid build token is required.');
@@ -2689,11 +2735,11 @@ route('health', 'GET', 'health', 'public', async () => {
 });
 ```
 
-- [ ] **Step 6: Create `api/src/functions/auth.ts`.**
+- [ ] **Step 6: Create `api/src/functions/auth.ts`.** As built, login's lockout differs from the block below, and `api/src/functions/auth.ts` wins: it validates the login against `LOGIN`, takes a lock-free look at both keys, then reserves the attempt on both (`reserveAttempt`) before the password check, and on success clears the login key and hands back the IP attempt (`releaseAttempt`). The session insert is guarded (`7e573e9`), logout clears the cookie first (`dbcbb18`), and a password change commits the new hash and the end of the other sessions together (`29bfb0c`), as shown here.
 
 ```ts
 import { sessionToken } from '../lib/current-user.ts';
-import { db } from '../lib/db.ts';
+import { db, transaction } from '../lib/db.ts';
 import { HttpError } from '../lib/errors.ts';
 import { route } from '../lib/http.ts';
 import { afterFailure, isLocked } from '../lib/lockout.ts';
@@ -2723,15 +2769,19 @@ route('login', 'POST', 'auth/login', 'public', async (ctx) => {
   await clearAttempt(db, loginKey);
   await pruneExpiredSessions(db);
   const token = newToken();
-  await createSession(db, hashToken(token), user.id, expiryFrom(now));
+  // False when an admin reset the password or disabled the user after the check above.
+  if (!(await createSession(db, hashToken(token), user.id, expiryFrom(now), user.passwordHash))) {
+    throw new HttpError(401, 'Wrong login or password.');
+  }
   ctx.cookies.push(sessionCookie(ctx.config.cookieSecure, token));
   return toSessionUser(user);
 });
 
 route('logout', 'POST', 'auth/logout', 'public', async (ctx) => {
+  // Cleared first: an error response still sends ctx.cookies, so a failed delete still logs this browser out.
+  ctx.cookies.push(clearedCookie(ctx.config.cookieSecure));
   const token = sessionToken(ctx.request.headers.get('cookie'), ctx.config);
   if (token) await deleteSession(db, hashToken(token));
-  ctx.cookies.push(clearedCookie(ctx.config.cookieSecure));
   return undefined;
 });
 
@@ -2746,9 +2796,12 @@ route('changePassword', 'PUT', 'me/password', 'user', async (ctx) => {
   }
   const problem = passwordProblem(next);
   if (problem) throw new HttpError(400, problem);
-  await updateUser(db, record.id, { passwordHash: await hashPassword(next) });
+  const passwordHash = await hashPassword(next);
   const token = sessionToken(ctx.request.headers.get('cookie'), ctx.config);
-  await deleteUserSessions(db, record.id, token ? hashToken(token) : '');
+  await transaction(async (tx) => {
+    await updateUser(tx, record.id, { passwordHash });
+    await deleteUserSessions(tx, record.id, token ? hashToken(token) : '');
+  });
   return undefined;
 });
 ```
@@ -3003,20 +3056,69 @@ export function buildReview(data: Dataset, roundId: string, today: string, aiEna
 Run: `npx vitest run api/src/domain`
 Expected: 9 tests pass.
 
-- [ ] **Step 5: Create `api/src/functions/build.ts`.**
+- [ ] **Step 5: Create `api/src/functions/build.ts`.** The snapshot GET writes nothing (`9611edd`). Its `generatedAt` is the database's clock, read under `site_state`'s row lock before the load (`cde0634`). The deploy workflow confirms the live snapshot with `POST build/snapshot/deployed`, which moves `last_snapshot_at` forward.
 
 ```ts
+import type { InvocationContext } from '@azure/functions';
 import { buildSnapshot } from '../domain/snapshot.ts';
 import { db } from '../lib/db.ts';
+import { HttpError } from '../lib/errors.ts';
 import { route } from '../lib/http.ts';
 import { loadDataset } from '../repo/dataset.ts';
 import { markSnapshotTaken } from '../repo/site.ts';
 
-route('buildSnapshot', 'GET', 'build/snapshot', 'build', async () => {
+/** Slack for this host's clock running behind the database's, which dated the snapshot. */
+const MAX_AHEAD_MS = 5 * 60_000;
+
+function deployedAt(value: unknown): Date {
+  if (typeof value !== 'string') {
+    throw new HttpError(400, 'generatedAt is required: send the generatedAt of the snapshot that was deployed.');
+  }
+  const at = new Date(value);
+  if (Number.isNaN(at.getTime()) || at.toISOString() !== value) {
+    throw new HttpError(
+      400,
+      'generatedAt must be an ISO timestamp exactly as the snapshot gave it, such as 2026-10-15T21:00:00.000Z.',
+    );
+  }
+  if (at.getTime() > Date.now() + MAX_AHEAD_MS) {
+    throw new HttpError(
+      400,
+      'generatedAt is more than 5 minutes in the future. Send the generatedAt of the snapshot that was deployed.',
+    );
+  }
+  return at;
+}
+
+/**
+ * The database's clock, the one changed_at uses. markChanged stamps changed_at before its transaction commits, and
+ * RCSI reads don't wait for that, so the read takes site_state's row lock (READCOMMITTEDLOCK): it waits for any
+ * transaction that has already stamped to commit, and a later stamp is later than this time.
+ */
+async function databaseNow(log: InvocationContext): Promise<Date> {
+  const [locked] = await db.query<{ now: Date }>(
+    'SELECT SYSUTCDATETIME() AS now FROM site_state WITH (READCOMMITTEDLOCK) WHERE id = 1',
+  );
+  if (locked) return locked.now;
+  // Without the row, markChanged has nothing to stamp, so there is nothing to wait for.
+  log.warn('site_state has no row, so the admin page will show the site as behind until npm run db:apply adds it.');
+  const [clock] = await db.query<{ now: Date }>('SELECT SYSUTCDATETIME() AS now');
+  if (!clock) throw new Error('SYSUTCDATETIME() returned no row.');
+  return clock.now;
+}
+
+/**
+ * Read-only: the deploy workflow confirms with build/snapshot/deployed once the site is live. generatedAt is read
+ * before the load starts, so a change is either in the snapshot or later than generatedAt.
+ */
+route('buildSnapshot', 'GET', 'build/snapshot', 'build', async (ctx) => {
+  const now = await databaseNow(ctx.log);
   const data = await loadDataset(db);
-  const snapshot = buildSnapshot(data.workloads, data.artifacts, data.rounds, new Date());
-  await markSnapshotTaken(db);
-  return snapshot;
+  return buildSnapshot(data.workloads, data.artifacts, data.rounds, now);
+});
+
+route('buildSnapshotDeployed', 'POST', 'build/snapshot/deployed', 'build', async (ctx) => {
+  await markSnapshotTaken(db, deployedAt(ctx.body.generatedAt));
 });
 ```
 
@@ -3309,7 +3411,7 @@ describe('createDrafter', () => {
 Run: `npx vitest run api/src/lib/draft-why.test.ts`
 Expected: FAIL, cannot resolve `./draft-why.ts`.
 
-- [ ] **Step 2: Create `api/src/lib/draft-why.ts`.** This is `scripts/draft-why.ts` with three changes: the caller passes the workload, settings come from the Function App, and the error messages point at app settings instead of `.env`.
+- [ ] **Step 2: Create `api/src/lib/draft-why.ts`.** This is `scripts/draft-why.ts` with three changes: the caller passes the workload, settings come from the Function App, and the error messages point at app settings instead of `.env`. As built (`fc3a229`), the file differs from the block below, and `api/src/lib/draft-why.ts` wins. The client is built with `timeout: 40_000` and `maxRetries: 1`, so each Anthropic call gives up after 40 s with one retry. `mentionsMath` uses two regexes, `GRADE` and `OUT_OF`: signed grades such as `A-` or `B+` without flagging "B-tree", plus "6 of 7", "out of seven", "/7", and "/21". `explain()` adds messages for a model the key can't use (404), a rate limit or overload (429, 529), and a timeout. A missing workload row renders as its id in the prompt.
 
 ```ts
 import Anthropic from '@anthropic-ai/sdk';
@@ -3452,7 +3554,7 @@ export type Drafter = NonNullable<ReturnType<typeof createDrafter>>;
 Run: `npx vitest run api/src/lib/draft-why.test.ts`
 Expected: 3 tests pass.
 
-- [ ] **Step 3: Create `api/src/functions/admin-rounds.ts`.** As built (`f8bdb00`, `817d1d6`, `8090e47`), the writes differ from the block below, and `api/src/functions/admin-rounds.ts` wins. Publish, reopen, `adminScoresPut`, and `adminNotePut` each run in one `transaction`: `lockRound(tx, round.id)` first (from the Task 9 fix), then the status checks on the locked row, then the write, then `markChanged(tx)` as the last statement. Scores and notes stamp only when the locked round is published. Publish starts the deploy after the commit. Reopen accepts only the latest published round. A note body that isn't a string gets 400.
+- [ ] **Step 3: Create `api/src/functions/admin-rounds.ts`.** As built (`f8bdb00`, `817d1d6`, `8090e47`), the writes differ from the block below, and `api/src/functions/admin-rounds.ts` wins. Publish, reopen, `adminScoresPut`, and `adminNotePut` each run in one `transaction`: `lockRound(tx, round.id)` first (from the Task 9 fix), then the status checks on the locked row, then the write, then `markChanged(tx)` as the last statement. Scores and notes stamp only when the locked round is published. Publish starts the deploy after the commit, and refuses a `publishedOn` earlier than the latest published round's with 400 (`e9fe8cf`). Reopen accepts only the latest published round. A note body that isn't a string gets 400. `adminScoresPut` takes `userId` only as 1 to 9 digits (`USER_ID`), and both saves turn a foreign-key refusal (547, the item was deleted after the check) into a 409 (`beb3ca5`, `saveForItems`).
 
 ```ts
 import type { DeployResult, PublishResult, RoundReview } from '../../../src/domain/api-types.ts';
@@ -3630,7 +3732,7 @@ git commit -m "API: admin rounds, review, score and note editing, AI drafting"
 - Create: `api/src/functions/admin-catalog.ts`, `api/src/functions/admin-users.ts`, `api/src/functions/admin-site.ts`
 - Modify: `api/src/index.ts`
 
-- [ ] **Step 1: Create `api/src/functions/admin-catalog.ts`.** Every write and its `markChanged(tx)` share one transaction, with the stamp last. As built (`1ed2260`), `saveCatalog` also takes a `refused` mapping, so a create that loses a race on its id (2601/2627) or a delete that loses a race with a new score or note (547) answers the route's 409 instead of a 500.
+- [ ] **Step 1: Create `api/src/functions/admin-catalog.ts`.** Every write and its `markChanged(tx)` share one transaction, with the stamp last. As built (`1ed2260`), `saveCatalog` also takes a `refused` mapping, so a create that loses a race on its id (2601/2627) or a delete that loses a race with a new score or note (547) answers the route's 409 instead of a 500. Creates refuse ids that name a built-in object property (`constructor`, `__proto__`, `toString`, …) or `prototype` with 400, before the format check (`3777692`): ids are keys of plain objects in the API and the editors. A delete's foreign-key checks seek `ix_scores_artifact` and `ix_notes_artifact` (Task 8) instead of scanning, and waiting on, every card being saved.
 
 ```ts
 import type { AdminCatalog } from '../../../src/domain/api-types.ts';
@@ -3649,9 +3751,12 @@ import {
 import { markChanged } from '../repo/site.ts';
 
 const RELEASE_STATUSES = ['ga', 'preview', 'retired'] as const;
+/** Ids are keys of plain objects in the API and the editors, where these names already resolve to built-ins. */
+const RESERVED_IDS: ReadonlySet<string> = new Set([...Object.getOwnPropertyNames(Object.prototype), 'prototype']);
 
 function slug(body: Record<string, unknown>, label: string): string {
   const id = text(body, 'id', label, 64);
+  if (RESERVED_IDS.has(id)) throw new HttpError(400, `${label} ${id} is reserved. Pick another id.`);
   if (!SLUG.test(id)) throw new HttpError(400, `${label} must be lowercase words joined by dashes, like copy-job.`);
   return id;
 }
@@ -3734,7 +3839,7 @@ route('adminArtifactDelete', 'DELETE', 'admin/artifacts/{id}', 'admin', async (c
 });
 ```
 
-- [ ] **Step 2: Create `api/src/functions/admin-users.ts`.** `adminUserUpdate` hashes a new password first, then runs one transaction: the locked admin count, the target re-read on `tx`, the last-admin check, the update, and the session delete. As built (`1ed2260`), `adminUserCreate` also turns a duplicate-login race (2601/2627) into the same 409.
+- [ ] **Step 2: Create `api/src/functions/admin-users.ts`.** `adminUserUpdate` takes ids only as 1 to 9 digits (`USER_ID`, so `1e1` or `0x7` is a 404) and hashes a new password first. Then it runs one transaction: the locked admin count, the caller re-read on `tx` (403 if they stopped being an active admin while the request waited), the target re-read, the last-admin check, the update, and the session delete. As built (`1ed2260`), `adminUserCreate` also turns a duplicate-login race (2601/2627) into the same 409.
 
 ```ts
 import { sessionToken } from '../lib/current-user.ts';
@@ -3744,7 +3849,16 @@ import { route } from '../lib/http.ts';
 import { hashPassword, passwordProblem } from '../lib/password.ts';
 import { userChangeProblem } from '../lib/permissions.ts';
 import { hashToken } from '../lib/session.ts';
-import { LOGIN, oneOf, optionalBool, optionalOneOf, optionalText, rawString, text } from '../lib/validate.ts';
+import {
+  LOGIN,
+  USER_ID,
+  oneOf,
+  optionalBool,
+  optionalOneOf,
+  optionalText,
+  rawString,
+  text,
+} from '../lib/validate.ts';
 import { deleteUserSessions } from '../repo/sessions.ts';
 import {
   countActiveAdminsLocked,
@@ -3777,8 +3891,8 @@ route('adminUserCreate', 'POST', 'admin/users', 'admin', async (ctx) => {
 });
 
 route('adminUserUpdate', 'PUT', 'admin/users/{id}', 'admin', async (ctx) => {
-  const id = Number(ctx.params.id);
-  if (!Number.isInteger(id) || !(await findUserById(db, id))) throw noSuchUser();
+  const id = USER_ID.test(ctx.params.id ?? '') ? Number(ctx.params.id) : NaN;
+  if (Number.isNaN(id) || !(await findUserById(db, id))) throw noSuchUser();
   const displayName = optionalText(ctx.body, 'displayName', 'Name', 80);
   const role = optionalOneOf(ctx.body, 'role', 'Role', ROLES);
   const active = optionalBool(ctx.body, 'active', 'Active');
@@ -3790,6 +3904,9 @@ route('adminUserUpdate', 'PUT', 'admin/users/{id}', 'admin', async (ctx) => {
   const own = id === ctx.user.id ? sessionToken(ctx.request.headers.get('cookie'), ctx.config) : undefined;
   await transaction(async (tx) => {
     const admins = await countActiveAdminsLocked(tx);
+    // The session was checked before the lock, and a change that committed while this request waited can demote it.
+    const actor = await findUserById(tx, ctx.user.id);
+    if (!actor?.active || actor.role !== 'admin') throw new HttpError(403, 'Only admins can do that.');
     const target = await findUserById(tx, id);
     if (!target) throw noSuchUser();
     const problem = userChangeProblem(ctx.user, target, { role, active }, admins);
@@ -3881,7 +3998,20 @@ git commit -m "API: admin catalog, user management, and public-site status"
   },
 ```
 
-- [ ] **Step 2: Write the integration test.** It runs only when `FCR_API_URL` is set and cleans up after itself. As built (`5f8be72`, from the Task 17 brief), the file differs from the block below, and `api/src/integration.test.ts` wins. It has a ninth test: deploy confirmations need the build token and no particular `Origin`, sent with a `generatedAt` the API refuses so `fcr-dev` isn't stamped. `clearTestRows` also deletes the suite's notes. `afterAll` logs the admin out and checks that `site_state.last_snapshot_at` didn't move. `api/src/functions/auth.test.ts` pins the login order (look, reserve, verify, clear) with mocked repos, and since `dbcbb18` logout's cookie handling too.
+- [ ] **Step 2: Write the integration test.** It runs only when `FCR_API_URL` is set and cleans up after itself. As built (`5f8be72`, then `78dc8cb`), the file differs from the block below, and `api/src/integration.test.ts` wins:
+  - **12 tests.** On top of the 8 below:
+    - deploy confirmations need the build token and no particular `Origin` (sent with a `generatedAt` the API refuses, so `fcr-dev` isn't stamped);
+    - a second user with a taken login gets 409;
+    - the admin removing their own admin access gets 409;
+    - an admin password reset ends the rater's sessions and swaps the password.
+  - **Fails fast.** It throws, naming the variables, when `FCR_ADMIN_LOGIN`, `FCR_ADMIN_PASSWORD`, or `FCR_SNAPSHOT_TOKEN` is missing. It refuses to run unless `SQL_DATABASE` starts with `fcr-dev`. After creating the rater, it checks that the host and the suite use the same database.
+  - **Its own addresses.** Every request sends `X-Forwarded-For` with a per-run TEST-NET-3 address (`203.0.113.x`), so its lockout traffic never shares the `ip:unknown` row with other local hosts. The lock test uses a new address per try, so only the login's own key reaches the limit.
+  - **Cleanup.** `clearTestRows` also deletes the suite's notes and its `ip:203.0.113.%` attempts.
+  - **`afterAll` checks:**
+    - the admin's logout answers 204;
+    - no `itest-` users, no `login:itest-%` or `ip:203.0.113.%` attempts, and no session for the admin's token remain;
+    - the whole `site_state` row (`changed_at` and `last_snapshot_at`) is unchanged.
+  - **`api/src/functions/auth.test.ts`** pins the login order (look, reserve, verify, clear) with mocked repos. Since `dbcbb18` it covers logout's cookie handling too.
 
 `api/src/integration.test.ts`:
 
@@ -4035,7 +4165,7 @@ describe.skipIf(!BASE)('API against the dev database', () => {
 - [ ] **Step 3: Confirm the default run skips it.**
 
 Run: `npm test`
-Expected: all unit tests pass; the 9 integration tests show as skipped.
+Expected: all unit tests pass; the 12 integration tests show as skipped. The run shows 16 skipped in all, because the 4 opt-in database tests (`FCR_DB_TESTS`) skip too.
 
 - [ ] **Step 4: Run it against `fcr-dev`.** Close every local site and host using `fcr-dev`, in this checkout and in worktrees, and run one copy of the suite at a time.
 
@@ -4055,14 +4185,7 @@ try {
 }
 ```
 
-Expected: 9 tests pass (`Tests  9 passed (9)`; "skipped" means `FCR_API_URL` wasn't set). `afterAll` logs the admin out, deletes the `itest-` rows, and checks that the logout succeeded and `site_state.last_snapshot_at` is unchanged. Afterward, in the `fcr-dev` SQL query editor:
-
-```sql
-SELECT (SELECT COUNT(*) FROM users WHERE login LIKE 'itest-%') AS users,
-       (SELECT COUNT(*) FROM login_attempts WHERE attempt_key LIKE 'login:itest-%') AS attempts;
-```
-
-Expected: `0` and `0`.
+Expected: 12 tests pass (`Tests  12 passed (12)`; "12 skipped" means `FCR_API_URL` wasn't set). `afterAll` logs the admin out and deletes the suite's rows. It then checks that no `itest-` users, suite attempts, or admin session remain, and that `site_state` is unchanged, so a green run is the cleanup check. If `afterAll` fails on `site_state`, an open-round write stamped the site: treat it as an API bug.
 
 - [ ] **Step 5: Commit.**
 
