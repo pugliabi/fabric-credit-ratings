@@ -226,17 +226,23 @@ export async function transaction<T>(work: (tx: Db) => Promise<T>): Promise<T> {
 }
 
 /**
- * The SQL Server error number on an mssql error. mssql copies it onto its RequestError; the driver's own error keeps it
- * under info; and the error for a transaction the server aborted wraps the RequestError.
+ * The SQL Server error number on an mssql error. mssql copies it onto its RequestError, the driver's error keeps it
+ * as number or under info, and the error for a transaction the server aborted wraps a RequestError, which can itself
+ * wrap the driver's error: so this follows originalError a few levels. A string number is an mssql code, not SQL's.
  */
 export function sqlErrorNumber(error: unknown): number | undefined {
-  if (typeof error !== 'object' || error === null) return undefined;
-  const { number, originalError } = error as {
-    number?: unknown;
-    originalError?: { number?: unknown; info?: { number?: unknown } };
-  };
-  const found = [number, originalError?.number, originalError?.info?.number].find((n) => typeof n === 'number');
-  return found as number | undefined;
+  let current = error;
+  for (let depth = 0; depth < 4 && typeof current === 'object' && current !== null; depth += 1) {
+    const { number, info, originalError } = current as {
+      number?: unknown;
+      info?: { number?: unknown };
+      originalError?: unknown;
+    };
+    if (typeof number === 'number') return number;
+    if (typeof info?.number === 'number') return info.number;
+    current = originalError;
+  }
+  return undefined;
 }
 
 export function isConnectionError(error: unknown): boolean {

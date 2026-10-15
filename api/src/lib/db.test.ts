@@ -208,8 +208,22 @@ describe('sqlErrorNumber', () => {
     expect(sqlErrorNumber(aborted)).toBe(1205);
   });
 
-  it('is undefined for anything without one', () => {
-    for (const error of [undefined, null, 'EREQUEST', 1205, new Error('plain'), { number: '1205' }]) {
+  it("reads it three levels down: an aborted transaction around mssql's wrap of the driver's own error", () => {
+    // The driver's own RequestError has number and code but no info, so mssql's wrap sets its number to the code.
+    const driver = Object.assign(new Error('Transaction was deadlocked.'), { code: 'EREQUEST', number: 1205 });
+    const wrapped = new sql.RequestError(driver);
+    expect(wrapped.number).toBe('EREQUEST');
+    const aborted = new sql.TransactionError('Transaction has been aborted.', 'EABORT');
+    Object.defineProperty(aborted, 'originalError', { value: wrapped });
+
+    expect(sqlErrorNumber(wrapped)).toBe(1205);
+    expect(sqlErrorNumber(aborted)).toBe(1205);
+  });
+
+  it('is undefined for anything without one, and stops on an error that wraps itself', () => {
+    const loop: { originalError?: unknown } = {};
+    loop.originalError = loop;
+    for (const error of [undefined, null, 'EREQUEST', 1205, new Error('plain'), { number: '1205' }, loop]) {
       expect(sqlErrorNumber(error)).toBeUndefined();
     }
   });
