@@ -204,6 +204,20 @@ describe('catalog writes', () => {
     expect(transaction).not.toHaveBeenCalled();
   });
 
+  it('refuses ids that are built-in object property names with 400, before opening a transaction', async () => {
+    for (const id of ['constructor', 'prototype', '__proto__', 'hasOwnProperty', 'toString']) {
+      await expect(call('adminWorkloadCreate', {}, { ...newWorkload, id })).rejects.toMatchObject({
+        status: 400,
+        message: `Workload id ${id} is reserved. Pick another id.`,
+      });
+      await expect(call('adminArtifactCreate', {}, { ...newArtifact, id })).rejects.toMatchObject({
+        status: 400,
+        message: `Item id ${id} is reserved. Pick another id.`,
+      });
+    }
+    expect(transaction).not.toHaveBeenCalled();
+  });
+
   it('passes constraint errors from the update routes through unmapped', async () => {
     const duplicate = sqlError(2627);
     vi.mocked(updateWorkload).mockRejectedValue(duplicate);

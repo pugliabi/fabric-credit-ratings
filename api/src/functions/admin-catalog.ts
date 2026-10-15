@@ -14,9 +14,12 @@ import {
 import { markChanged } from '../repo/site.ts';
 
 const RELEASE_STATUSES = ['ga', 'preview', 'retired'] as const;
+/** Ids are keys of plain objects in the API and the editors, where these names already resolve to built-ins. */
+const RESERVED_IDS: ReadonlySet<string> = new Set([...Object.getOwnPropertyNames(Object.prototype), 'prototype']);
 
 function slug(body: Record<string, unknown>, label: string): string {
   const id = text(body, 'id', label, 64);
+  if (RESERVED_IDS.has(id)) throw new HttpError(400, `${label} ${id} is reserved. Pick another id.`);
   if (!SLUG.test(id)) throw new HttpError(400, `${label} must be lowercase words joined by dashes, like copy-job.`);
   return id;
 }
