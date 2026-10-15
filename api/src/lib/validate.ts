@@ -9,6 +9,14 @@ export const SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 /** Digits only, so 1e1 or 0x7 can't name a user; at most 9, so the bound value always fits SQL int. */
 export const USER_ID = /^\d{1,9}$/;
 
+/** Ids are keys of plain objects in the API and the editors, where these names already resolve to built-ins. */
+const RESERVED_IDS: ReadonlySet<string> = new Set([...Object.getOwnPropertyNames(Object.prototype), 'prototype']);
+
+/** True for a workload or item id that can't be used as a plain-object key. */
+export function isReservedId(id: string): boolean {
+  return RESERVED_IDS.has(id);
+}
+
 type Body = Record<string, unknown>;
 
 /** YYYY-MM-DD that names a real calendar day, so 2026-02-31 and 2026-13-01 fail. */

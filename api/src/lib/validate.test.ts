@@ -1,8 +1,31 @@
 import { describe, expect, it } from 'vitest';
 import { HttpError } from './errors.ts';
-import { ROUND_ID, isIsoDate, oneOf, optionalBool, optionalInt, text, validateScores } from './validate.ts';
+import {
+  ROUND_ID,
+  isIsoDate,
+  isReservedId,
+  oneOf,
+  optionalBool,
+  optionalInt,
+  text,
+  validateScores,
+} from './validate.ts';
 
 const known = new Set(['notebook', 'pipeline']);
+
+describe('isReservedId', () => {
+  it("is true for Object.prototype's own property names and prototype", () => {
+    for (const id of ['constructor', '__proto__', 'prototype', 'hasOwnProperty', 'toString', 'valueOf']) {
+      expect(isReservedId(id)).toBe(true);
+    }
+  });
+
+  it('is false for ordinary ids, including ones that only start like a built-in', () => {
+    for (const id of ['notebook', 'copy-job', 'proto', 'constructors', 'Constructor']) {
+      expect(isReservedId(id)).toBe(false);
+    }
+  });
+});
 
 describe('validateScores', () => {
   it('keeps whole 1 to 7 triples for known items', () => {

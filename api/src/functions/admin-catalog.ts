@@ -2,7 +2,7 @@ import type { AdminCatalog } from '../../../src/domain/api-types.ts';
 import { db, transaction, type Db } from '../lib/db.ts';
 import { HttpError } from '../lib/errors.ts';
 import { CONSTRAINT_CONFLICT, DEADLOCK_VICTIM, DUPLICATE_KEY, hasSqlNumber, route } from '../lib/http.ts';
-import { SLUG, oneOf, optionalInt, text } from '../lib/validate.ts';
+import { SLUG, isReservedId, oneOf, optionalInt, text } from '../lib/validate.ts';
 import {
   adminCatalog,
   createArtifact,
@@ -14,12 +14,10 @@ import {
 import { markChanged } from '../repo/site.ts';
 
 const RELEASE_STATUSES = ['ga', 'preview', 'retired'] as const;
-/** Ids are keys of plain objects in the API and the editors, where these names already resolve to built-ins. */
-const RESERVED_IDS: ReadonlySet<string> = new Set([...Object.getOwnPropertyNames(Object.prototype), 'prototype']);
 
 function slug(body: Record<string, unknown>, label: string): string {
   const id = text(body, 'id', label, 64);
-  if (RESERVED_IDS.has(id)) throw new HttpError(400, `${label} ${id} is reserved. Pick another id.`);
+  if (isReservedId(id)) throw new HttpError(400, `${label} ${id} is reserved. Pick another id.`);
   if (!SLUG.test(id)) throw new HttpError(400, `${label} must be lowercase words joined by dashes, like copy-job.`);
   return id;
 }
