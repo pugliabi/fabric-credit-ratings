@@ -18,7 +18,9 @@ describe('cardWriteProblem', () => {
   });
 
   it('keeps raters out of published rounds', () => {
-    expect(cardWriteProblem(rater, published, 2)).toBe('Q4 2026 is published. Scores can no longer be changed.');
+    expect(cardWriteProblem(rater, published, 2)).toBe(
+      'Q4 2026 is published, so scores can no longer be changed. Ask an admin if a score needs correcting.',
+    );
   });
 
   it('lets admins write any card in any round', () => {
@@ -31,12 +33,15 @@ describe('userChangeProblem', () => {
   const otherAdmin = { id: 5, role: 'admin' as const, active: true };
 
   it('stops admins from demoting or disabling themselves', () => {
-    expect(userChangeProblem(admin, self, { role: 'rater' }, 2)).toBe('You cannot remove your own admin access.');
-    expect(userChangeProblem(admin, self, { active: false }, 2)).toBe('You cannot remove your own admin access.');
+    const message = 'You cannot remove your own admin access. Ask another admin to make this change.';
+    expect(userChangeProblem(admin, self, { role: 'rater' }, 2)).toBe(message);
+    expect(userChangeProblem(admin, self, { active: false }, 2)).toBe(message);
   });
 
   it('keeps at least one active admin', () => {
-    expect(userChangeProblem(admin, otherAdmin, { active: false }, 1)).toBe('Keep at least one active admin.');
+    expect(userChangeProblem(admin, otherAdmin, { active: false }, 1)).toBe(
+      'Keep at least one active admin. Make another user an admin first.',
+    );
   });
 
   it('allows ordinary changes', () => {

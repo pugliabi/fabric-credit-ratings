@@ -1,13 +1,20 @@
 import type { Score, ScoreTriple } from '../../../src/domain/types.ts';
 import { HttpError } from './errors.ts';
 
-export const ROUND_ID = /^\d{4}-[A-Za-z0-9]{1,3}$/;
+export const ROUND_ID = /^\d{4}-[A-Z0-9]{1,3}$/;
 export const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 /** Lowercase letters, digits, dot, dash, underscore; 2 to 40 characters. */
 export const LOGIN = /^[a-z0-9][a-z0-9._-]{1,39}$/;
 export const SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
 type Body = Record<string, unknown>;
+
+/** YYYY-MM-DD that names a real calendar day, so 2026-02-31 and 2026-13-01 fail. */
+export function isIsoDate(value: string): boolean {
+  if (!ISO_DATE.test(value)) return false;
+  const [y, m, d] = value.split('-').map(Number) as [number, number, number];
+  return new Date(Date.UTC(y, m - 1, d)).toISOString().slice(0, 10) === value;
+}
 
 function isScore(value: unknown): value is Score {
   return typeof value === 'number' && Number.isInteger(value) && value >= 1 && value <= 7;
@@ -25,7 +32,7 @@ export function validateScores(
   }
   for (const [id, triple] of Object.entries(raw)) {
     if (!knownIds.has(id)) {
-      errors.push(`Unknown item "${id}".`);
+      errors.push(`Unknown item "${id}". Reload the page to get the current list.`);
       continue;
     }
     if (!Array.isArray(triple) || triple.length !== 3 || !triple.every(isScore)) {
@@ -67,7 +74,7 @@ export function optionalInt(body: Body, key: string, label: string): number | un
   const value = body[key];
   if (value === undefined) return undefined;
   if (typeof value !== 'number' || !Number.isInteger(value) || value < 0 || value > 1_000_000) {
-    throw new HttpError(400, `${label} must be a whole number.`);
+    throw new HttpError(400, `${label} must be a whole number from 0 to 1,000,000.`);
   }
   return value;
 }

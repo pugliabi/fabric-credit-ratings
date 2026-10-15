@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { HttpError } from './errors.ts';
-import { ROUND_ID, oneOf, optionalBool, text, validateScores } from './validate.ts';
+import { ROUND_ID, isIsoDate, oneOf, optionalBool, optionalInt, text, validateScores } from './validate.ts';
 
 const known = new Set(['notebook', 'pipeline']);
 
@@ -13,7 +13,7 @@ describe('validateScores', () => {
     const { scores, errors } = validateScores({ ghost: [5, 5, 5], notebook: [0, 5, 5], pipeline: [5, 5] }, known);
     expect(scores).toEqual({});
     expect(errors).toEqual([
-      'Unknown item "ghost".',
+      'Unknown item "ghost". Reload the page to get the current list.',
       '"notebook" needs three whole scores from 1 to 7.',
       '"pipeline" needs three whole scores from 1 to 7.',
     ]);
@@ -44,8 +44,33 @@ describe('body fields', () => {
     expect(() => optionalBool({ active: 'no' }, 'active', 'Active')).toThrow('Active must be true or false.');
   });
 
+  it('reads optional whole numbers in range', () => {
+    expect(optionalInt({}, 'count', 'Count')).toBeUndefined();
+    expect(optionalInt({ count: 12 }, 'count', 'Count')).toBe(12);
+    expect(() => optionalInt({ count: 1.5 }, 'count', 'Count')).toThrow(
+      new HttpError(400, 'Count must be a whole number from 0 to 1,000,000.'),
+    );
+    expect(() => optionalInt({ count: 1_000_001 }, 'count', 'Count')).toThrow(
+      'Count must be a whole number from 0 to 1,000,000.',
+    );
+  });
+
   it('recognizes round ids', () => {
     expect(ROUND_ID.test('2027-Q1')).toBe(true);
     expect(ROUND_ID.test('Q1')).toBe(false);
+  });
+
+  it('accepts uppercase round ids', () => {
+    expect(ROUND_ID.test('2027-Q1')).toBe(true);
+  });
+
+  it('rejects lowercase round ids', () => {
+    expect(ROUND_ID.test('2027-q1')).toBe(false);
+  });
+
+  it('accepts only real calendar dates', () => {
+    expect(isIsoDate('2026-02-31')).toBe(false);
+    expect(isIsoDate('2026-13-01')).toBe(false);
+    expect(isIsoDate('2028-02-29')).toBe(true);
   });
 });
