@@ -1,11 +1,13 @@
 import type { Cookie } from '@azure/functions';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Config } from '../lib/config.ts';
+import { DatabaseUnavailableError } from '../lib/db.ts';
 import type { UserCtx } from '../lib/http.ts';
 import { LOCK_MS, MAX_FAILURES, type AttemptRow } from '../lib/lockout.ts';
 import { dummyHash, verifyPassword } from '../lib/password.ts';
+import { clearedCookie, hashToken } from '../lib/session.ts';
 import { clearAttempt, getAttempts, releaseAttempt, reserveAttempt } from '../repo/attempts.ts';
-import { createSession, pruneExpiredSessions } from '../repo/sessions.ts';
+import { createSession, deleteSession, pruneExpiredSessions } from '../repo/sessions.ts';
 import { findUserByLogin, type UserRecord } from '../repo/users.ts';
 import './auth.ts';
 
@@ -32,6 +34,7 @@ vi.mock(import('../repo/attempts.ts'), () => ({
 vi.mock(import('../repo/sessions.ts'), async (importOriginal) => ({
   ...(await importOriginal()),
   createSession: vi.fn(),
+  deleteSession: vi.fn(),
   pruneExpiredSessions: vi.fn(),
 }));
 vi.mock(import('../repo/users.ts'), async (importOriginal) => ({
@@ -182,5 +185,42 @@ describe('login', () => {
     expect(warn).toHaveBeenCalledWith('Releasing the IP attempt failed', expect.any(Error));
     expect(createSession).toHaveBeenCalled();
     expect(cookies).toHaveLength(1);
+  });
+});
+
+describe('logout', () => {
+  function logout(cookie?: string): { result: Promise<unknown>; cookies: Cookie[] } {
+    const handler = handlers.get('logout');
+    if (!handler) throw new Error('logout was not registered.');
+    const cookies: Cookie[] = [];
+    const request = { headers: new Headers(cookie ? { cookie } : {}) };
+    const result = handler({ request, config, cookies, log: { warn } } as unknown as UserCtx);
+    return { result, cookies };
+  }
+
+  it('ends the server session and clears the cookie', async () => {
+    const { result, cookies } = logout('fcr_session=the-token');
+
+    expect(await result).toBeUndefined();
+    expect(deleteSession).toHaveBeenCalledWith(expect.anything(), hashToken('the-token'));
+    expect(cookies).toEqual([clearedCookie(false)]);
+  });
+
+  it('still clears the cookie when ending the server session fails, and lets the failure through', async () => {
+    const down = new DatabaseUnavailableError('The database is paused.');
+    vi.mocked(deleteSession).mockRejectedValue(down);
+
+    const { result, cookies } = logout('fcr_session=the-token');
+
+    await expect(result).rejects.toBe(down);
+    expect(cookies).toEqual([clearedCookie(false)]);
+  });
+
+  it('clears the cookie without touching the database when there is no session cookie', async () => {
+    const { result, cookies } = logout();
+
+    expect(await result).toBeUndefined();
+    expect(deleteSession).not.toHaveBeenCalled();
+    expect(cookies).toEqual([clearedCookie(false)]);
   });
 });
