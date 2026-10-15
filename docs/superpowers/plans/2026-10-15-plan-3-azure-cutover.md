@@ -613,46 +613,69 @@ Run: `gh variable set API_URL -R $repo --body "https://$apiHost"`
 
 From now on, `deploy.yml` fetches the snapshot from the API, and the health check in `api-deploy.yml` runs after every API deploy. Both workflows first run with it in Task 10.
 
-- [ ] **Step 5: Check that lockout sees the real client address.** The per-address lockout keys on the first `X-Forwarded-For` entry. This checks whether Azure's front end lets a client spoof that entry.
+- [ ] **Step 5: Check that lockout sees the real client address.** The per-address lockout keys on the last `X-Forwarded-For` entry, the one Azure's front end should append (`clientIp` in `api/src/lib/http.ts`). Anything that isn't a bare IP address of at most 45 characters becomes `ip:unknown`. These checks confirm that on the deployed app the last entry is the caller's real address and a client can't set it. The login `ip-check` doesn't exist, so the tries can't lock the admin; all the checks together add 6 failures to `login:ip-check`, under the lock at 10.
 
 ```powershell
-$wrong = @{ login = 'pugliabi'; password = 'not-the-password' } | ConvertTo-Json
-Invoke-RestMethod -Method Post "https://$apiHost/api/auth/login" -ContentType 'application/json' -Body $wrong `
-  -Headers @{ Origin = 'https://fabriccreditratings.com'; 'X-Forwarded-For' = '198.51.100.7' } -SkipHttpErrorCheck
-Invoke-RestMethod https://api64.ipify.org
-```
-
-In the `fcr` SQL query editor:
-
-```sql
-SELECT attempt_key, failures FROM login_attempts;
-```
-
-Expected: `login:pugliabi` and `ip:<the address ipify printed>`, both with 1 failure, and no `ip:198.51.100.7`.
-
-If `ip:198.51.100.7` is there, the front end appends the real address last. Fix it like this:
-- In `api/src/lib/http.ts`, replace `clientIp` with:
-
-```ts
-/** The last X-Forwarded-For entry is the one Azure's front end added; earlier entries come from the client. */
-export function clientIp(forwardedFor: string | null): string {
-  const last = forwardedFor?.split(',').at(-1)?.trim() ?? '';
-  if (!last) return 'unknown';
-  const bracketed = /^\[([^\]]+)\](?::\d+)?$/.exec(last);
-  if (bracketed?.[1]) return bracketed[1];
-  const parts = last.split(':');
-  return parts.length === 2 ? (parts[0] ?? last) : last;
+. ./infra/names.ps1
+$wrong = @{ login = 'ip-check'; password = 'not-the-password' } | ConvertTo-Json -Compress
+function Send-WrongLogin([string]$forwardedFor) {
+  $headers = @{ Origin = 'https://fabriccreditratings.com' }
+  if ($forwardedFor) { $headers['X-Forwarded-For'] = $forwardedFor }
+  Invoke-RestMethod -Method Post "https://$apiHost/api/auth/login" -ContentType 'application/json' -Body $wrong `
+    -Headers $headers -SkipHttpErrorCheck
 }
 ```
 
-- In `api/src/lib/http.test.ts`, change the first expectation to `expect(clientIp('10.0.0.1, 203.0.113.7:51234')).toBe('203.0.113.7');`.
-- Run `npm test`, then commit with "Take the client address from the last forwarded entry" and push. Repeat this step.
+Each `Send-WrongLogin` prints `Wrong login or password.` After each check, run this in the `fcr` SQL query editor:
 
-Clean up either way:
+```sql
+SELECT attempt_key, failures FROM login_attempts ORDER BY attempt_key;
+```
+
+**Check 1: the real address, with no header sent.**
+
+```powershell
+Send-WrongLogin
+Invoke-RestMethod https://api.ipify.org; Invoke-RestMethod https://api64.ipify.org
+```
+
+Expected: `login:ip-check` and one `ip:` row, each with 1 failure. The `ip:` address is exactly one of the two printed addresses, with no port. Anything else fails, including `ip:unknown` and private or Azure addresses (`10.*`, `172.16.*` to `172.31.*`, `100.64.*`, `169.254.*`).
+
+**Check 2: spoofed headers.**
+
+```powershell
+Send-WrongLogin '198.51.100.7'
+Send-WrongLogin '198.51.100.7, 198.51.100.8'
+Send-WrongLogin 'not-an-ip'
+```
+
+Expected: the same two rows, each now with 4 failures, and no others: no `ip:198.51.100.*` and no `ip:unknown`.
+
+**Check 3: a second network.** Move this computer to another network, such as a phone hotspot, and run check 1's commands again.
+
+Expected: a new `ip:` row with 1 failure for the address ipify now prints, and `login:ip-check` at 5. If the key is the same as in check 1, every caller shares one front-end address, which the `isIP` check can't catch.
+
+**Check 4: IPv6**, when both this network and the API have it.
+
+```powershell
+$wrong | curl.exe -6 -sS -o NUL -w '%{http_code}\n' "https://$apiHost/api/auth/login" `
+  -H 'Origin: https://fabriccreditratings.com' -H 'Content-Type: application/json' --data-binary '@-'
+curl.exe -6 -sS https://api64.ipify.org
+```
+
+Expected: `401`, then an IPv6 address, and a new row `ip:<that address>` in lowercase with no port and 1 failure; `login:ip-check` at 6. If curl can't resolve or connect, one side has no IPv6: skip this check. A row of `ip:unknown`, or an address with a port glued on (such as `…:1:443`), means the platform sends IPv6 without brackets, and `clientIp` needs to handle that form. An uppercase address means `clientIp` should lowercase it.
+
+**Check 5: clean up**, whatever the results:
 
 ```sql
 DELETE FROM login_attempts;
 ```
+
+If check 2 shows `ip:198.51.100.*` or `ip:unknown`, the platform passes the client's `X-Forwarded-For` through without appending the real address, so the client picks the per-address key. `clientIp` already reads the last entry, so reading a different entry won't help. Either:
+- switch to a header the platform sets and the client can't override, once this same check shows a client-sent copy is replaced; or
+- (a spec change, ask first) skip the per-address key when it's `unknown` and rely on the per-login limit.
+
+The same options apply if check 1 shows `ip:unknown` (no usable header) or check 3 shows one key for both networks (a shared front-end address). Whatever the fix, keep `clientIp`'s `isIP` check and 45-character cap: they stop a client-chosen value from becoming an over-long key, which fails the `login_attempts` write, or a non-ASCII one, which aliases other keys. After a header switch, commit it with its tests and push, which redeploys the API, then repeat this step.
 
 ---
 

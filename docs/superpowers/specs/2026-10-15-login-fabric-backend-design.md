@@ -364,7 +364,7 @@ vitest.config.ts
 
 - Flex Consumption supports Node 24 and App Service managed certificates (site-scoped, added in the portal).
 - Fabric's docs require the Read item permission and the "Service principals can use Fabric APIs" tenant setting for a service principal or managed identity to connect. Newer tenants may split that setting; Plan 3 says which one to pick.
-- Whether Azure's front end lets a client spoof the first `X-Forwarded-For` entry. Plan 3 Task 8 tests this, and switches the lockout to the last entry if so.
+- Whether the last `X-Forwarded-For` entry, which the per-address lockout keys on, is the caller's real address on the deployed app, or one a client can set. Plan 3 Task 8 Step 5 checks this. If a client can set it, the lockout switches to a header the platform sets and the client can't override, or (a spec change, decided then) skips the per-address key when it's `unknown` and relies on the per-login limit.
 - The first connection to an idle Fabric SQL database can take up to a minute. The UI shows the "Waking the ratings database" notice after 4 seconds.
 
 ## Local development
