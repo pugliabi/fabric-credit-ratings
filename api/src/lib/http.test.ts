@@ -1,4 +1,5 @@
 import { HttpRequest, InvocationContext, type HttpFunctionOptions, type HttpResponseInit } from '@azure/functions';
+import sql from 'mssql';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { clientIp, corsHeaders, route } from './http.ts';
 
@@ -97,5 +98,51 @@ describe('mutation checks', () => {
       expect((await post(name, { ...json, origin: 'https://evil.example' })).status).toBe(403);
     }
     expect(handler).not.toHaveBeenCalled();
+  });
+});
+
+describe('error responses', () => {
+  let thrown: unknown;
+  route('testThrows', 'GET', 'test/throws', 'public', async () => {
+    throw thrown;
+  });
+
+  /** What mssql rejects with when the server refuses a statement. */
+  function sqlError(number: number): sql.RequestError {
+    return new sql.RequestError(Object.assign(new Error(`SQL Server error ${number}`), { info: { number } }));
+  }
+
+  async function get(): Promise<HttpResponseInit> {
+    const options = registered.get('testThrows');
+    if (!options) throw new Error('testThrows was not registered.');
+    const request = new HttpRequest({ method: 'GET', url: 'http://localhost/api/test/throws' });
+    const log = new InvocationContext({ logHandler: () => undefined });
+    return (await options.handler(request, log)) as HttpResponseInit;
+  }
+
+  it('answers a duplicate key from a concurrent change with 409', async () => {
+    for (const number of [2601, 2627]) {
+      thrown = sqlError(number);
+      expect(await get()).toMatchObject({
+        status: 409,
+        jsonBody: { error: 'That conflicts with a change someone just made. Reload the page and try again.' },
+      });
+    }
+  });
+
+  it('answers a deadlock that outlasted its retries with 503', async () => {
+    thrown = sqlError(1205);
+    expect(await get()).toMatchObject({
+      status: 503,
+      jsonBody: { error: 'The ratings database is not responding. Try again in a minute.' },
+    });
+  });
+
+  it('answers any other SQL error with 500', async () => {
+    thrown = sqlError(547);
+    expect(await get()).toMatchObject({
+      status: 500,
+      jsonBody: { error: 'Something went wrong on the server. Try again.' },
+    });
   });
 });

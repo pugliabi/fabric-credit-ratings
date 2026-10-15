@@ -86,11 +86,32 @@ async function readBody(request: HttpRequest): Promise<Record<string, unknown>> 
   throw new HttpError(400, 'The request body must be a JSON object.');
 }
 
+/** SQL Server's error numbers for a duplicate key in a unique index or a primary key, and for a deadlock victim. */
+const DUPLICATE_KEY = [2601, 2627];
+const DEADLOCK_VICTIM = [1205];
+const UNAVAILABLE = 'The ratings database is not responding. Try again in a minute.';
+
+/** mssql copies the server's error number onto its RequestError; the driver's own error keeps it under info. */
+function hasSqlNumber(error: unknown, numbers: readonly number[]): boolean {
+  if (typeof error !== 'object' || error === null) return false;
+  const { number, originalError } = error as { number?: unknown; originalError?: { info?: { number?: unknown } } };
+  return numbers.some((n) => number === n || originalError?.info?.number === n);
+}
+
 function describe(error: unknown, log: InvocationContext): [number, string] {
   if (error instanceof HttpError) return [error.status, error.message];
   if (error instanceof DatabaseUnavailableError || isConnectionError(error)) {
     log.warn('Database unavailable', error);
-    return [503, 'The ratings database is not responding. Try again in a minute.'];
+    return [503, UNAVAILABLE];
+  }
+  // A check-then-write that lost a race to a concurrent request, such as two rounds opened at once.
+  if (hasSqlNumber(error, DUPLICATE_KEY)) {
+    log.warn('Duplicate key', error);
+    return [409, 'That conflicts with a change someone just made. Reload the page and try again.'];
+  }
+  if (hasSqlNumber(error, DEADLOCK_VICTIM)) {
+    log.warn('Deadlock victim', error);
+    return [503, UNAVAILABLE];
   }
   log.error('Unhandled error', error);
   return [500, 'Something went wrong on the server. Try again.'];
