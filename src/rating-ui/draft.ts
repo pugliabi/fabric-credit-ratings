@@ -1,5 +1,5 @@
 import { ARTIFACTS } from '../data/artifacts';
-import { MAX_SCORE, MIN_SCORE } from '../domain/scale';
+import { MAX_SCORE, MIN_SCORE } from '../domain/grades';
 import type { FactorValues, Score, ScoreTriple } from '../domain/types';
 
 /** null = slider not touched yet. */

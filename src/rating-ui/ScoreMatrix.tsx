@@ -4,7 +4,7 @@ import { scoreColor } from '../components/FactorBars';
 import { ARTIFACTS } from '../data/artifacts';
 import { FACTORS } from '../data/factors';
 import { WORKLOADS } from '../data/workloads';
-import { MAX_SCORE, MIN_SCORE } from '../domain/scale';
+import { MAX_SCORE, MIN_SCORE } from '../domain/grades';
 import type { Artifact, FactorValues, Score, WorkloadId } from '../domain/types';
 import { formatScore } from '../lib/format';
 import { EMPTY_TRIPLE, isBlank, isComplete, toScore, type Draft, type DraftScore, type DraftTriple } from './draft';

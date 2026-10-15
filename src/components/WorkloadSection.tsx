@@ -1,5 +1,5 @@
 import { useRef, type KeyboardEvent } from 'react';
-import { gradeIndex, isInvestmentGrade, medianGrade } from '../domain/scale';
+import { gradeIndex, isInvestmentGrade, medianGrade } from '../domain/grades';
 import type { Artifact, Rating, Workload } from '../domain/types';
 import { pluralize } from '../lib/format';
 import { ArtifactRow, UnratedRow } from './ArtifactRow';

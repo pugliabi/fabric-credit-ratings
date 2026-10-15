@@ -1,5 +1,5 @@
 import type { CSSProperties } from 'react';
-import { BAND_META, BAND_ORDER, GRADES, bandOf } from '../domain/scale';
+import { BAND_META, BAND_ORDER, GRADES, bandOf } from '../domain/grades';
 import styles from './ScaleLegend.module.css';
 
 export function ScaleLegend() {

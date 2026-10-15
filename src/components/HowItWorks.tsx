@@ -1,6 +1,6 @@
 import type { CSSProperties } from 'react';
 import { FACTORS } from '../data/factors';
-import { BAND_META, MAX_SCORE, MIN_SCORE } from '../domain/scale';
+import { BAND_META, MAX_SCORE, MIN_SCORE } from '../domain/grades';
 import type { Band } from '../domain/types';
 import { GradeBadge } from './GradeBadge';
 import styles from './HowItWorks.module.css';

@@ -1,6 +1,6 @@
 import { ARTIFACTS } from '../data/artifacts';
 import { buildRatings, publishedRounds } from '../domain/aggregate';
-import { notchDelta } from '../domain/scale';
+import { notchDelta } from '../domain/grades';
 import type { FactorValues, RatingPoint, RoundData, ScoreTriple } from '../domain/types';
 import { pluralize } from '../lib/format';
 

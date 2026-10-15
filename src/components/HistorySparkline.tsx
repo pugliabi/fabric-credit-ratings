@@ -1,4 +1,4 @@
-import { BAND_META, BAND_ORDER, GRADES, bandOf, gradeIndex, spokenGrade } from '../domain/scale';
+import { BAND_META, BAND_ORDER, GRADES, bandOf, gradeIndex, spokenGrade } from '../domain/grades';
 import type { Grade, RatingPoint } from '../domain/types';
 import { formatMonth, formatMonthYear, parseDate } from '../lib/format';
 import styles from './HistorySparkline.module.css';

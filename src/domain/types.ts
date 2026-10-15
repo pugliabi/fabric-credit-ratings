@@ -34,19 +34,8 @@ export type FactorValues = Record<FactorId, number>;
 
 export type ReleaseStatus = 'ga' | 'preview' | 'retired';
 
-export type WorkloadId =
-  | 'data-engineering'
-  | 'storage'
-  | 'mirroring'
-  | 'real-time'
-  | 'power-bi'
-  | 'fabric-iq'
-  | 'onelake'
-  | 'data-science-ai'
-  | 'cicd'
-  | 'mcp'
-  | 'developer-platform'
-  | 'governance';
+/** Workload ids come from the catalog table, so any slug is valid. */
+export type WorkloadId = string;
 
 export interface Workload {
   id: WorkloadId;

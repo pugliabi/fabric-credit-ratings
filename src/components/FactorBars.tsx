@@ -1,6 +1,6 @@
 import type { CSSProperties } from 'react';
 import { FACTORS } from '../data/factors';
-import { MAX_SCORE } from '../domain/scale';
+import { MAX_SCORE } from '../domain/grades';
 import type { FactorValues } from '../domain/types';
 import { formatScore } from '../lib/format';
 import styles from './FactorBars.module.css';

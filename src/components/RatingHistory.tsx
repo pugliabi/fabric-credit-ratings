@@ -1,4 +1,4 @@
-import { notchDelta } from '../domain/scale';
+import { notchDelta } from '../domain/grades';
 import type { RatingPoint } from '../domain/types';
 import { formatFullDate, formatScore, pluralize } from '../lib/format';
 import { GradeBadge } from './GradeBadge';

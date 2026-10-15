@@ -1,5 +1,5 @@
 import type { CSSProperties } from 'react';
-import { BAND_META, BAND_ORDER, bandOf } from '../domain/scale';
+import { BAND_META, BAND_ORDER, bandOf } from '../domain/grades';
 import type { Grade } from '../domain/types';
 import styles from './DistributionBar.module.css';
 

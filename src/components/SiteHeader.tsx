@@ -1,4 +1,4 @@
-import { isInvestmentGrade, medianGrade } from '../domain/scale';
+import { isInvestmentGrade, medianGrade } from '../domain/grades';
 import type { Rating } from '../domain/types';
 import { formatFullDate } from '../lib/format';
 import { GradeBadge } from './GradeBadge';

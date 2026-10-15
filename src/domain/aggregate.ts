@@ -1,4 +1,4 @@
-import { WITHDRAWN_GRADE, gradeForTotal } from './scale.ts';
+import { WITHDRAWN_GRADE, gradeForTotal } from './formula.ts';
 import type { Artifact, FactorId, FactorValues, Rating, RatingPoint, RoundData, ScoreTriple } from './types.ts';
 
 /** Position of each factor inside a ScoreTriple. */
