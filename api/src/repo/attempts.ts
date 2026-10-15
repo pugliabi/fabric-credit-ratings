@@ -1,16 +1,9 @@
-import { transaction, varchar, type Db, type Param } from '../lib/db.ts';
+import { sqlErrorNumber, transaction, varchar, type Db, type Param } from '../lib/db.ts';
 import { MAX_FAILURES, afterFailure, isLocked, type AttemptRow } from '../lib/lockout.ts';
 
 /** SQL Server's error number for the statement it rolled back to break a deadlock. */
 const DEADLOCK_VICTIM = 1205;
 const DEADLOCK_RETRIES = 2;
-
-/** mssql copies the server's error number onto its RequestError; the driver's own error keeps it under info. */
-function isDeadlockVictim(error: unknown): boolean {
-  if (typeof error !== 'object' || error === null) return false;
-  const { number, originalError } = error as { number?: unknown; originalError?: { info?: { number?: unknown } } };
-  return number === DEADLOCK_VICTIM || originalError?.info?.number === DEADLOCK_VICTIM;
-}
 
 export async function getAttempts(db: Db, keys: readonly string[]): Promise<Map<string, AttemptRow>> {
   if (keys.length === 0) return new Map();
@@ -74,7 +67,7 @@ export async function reserveAttempt(
         return { locked: false, rows };
       });
     } catch (error) {
-      if (retries >= DEADLOCK_RETRIES || !isDeadlockVictim(error)) throw error;
+      if (retries >= DEADLOCK_RETRIES || sqlErrorNumber(error) !== DEADLOCK_VICTIM) throw error;
     }
   }
 }

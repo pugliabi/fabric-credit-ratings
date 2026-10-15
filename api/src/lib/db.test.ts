@@ -1,7 +1,16 @@
 import sql from 'mssql';
 import { TimeoutError as PoolTimeoutError } from 'tarn';
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
-import { DatabaseUnavailableError, closeDb, db, isConnectionError, transaction, varchar, type Db } from './db.ts';
+import {
+  DatabaseUnavailableError,
+  closeDb,
+  db,
+  isConnectionError,
+  sqlErrorNumber,
+  transaction,
+  varchar,
+  type Db,
+} from './db.ts';
 
 vi.mock('@azure/identity', () => ({
   DefaultAzureCredential: class {
@@ -182,6 +191,27 @@ describe('db.query', () => {
     const { parameters } = query.mock.contexts[0] as sql.Request;
     expect(parameters.key).toMatchObject({ type: sql.VarChar, length: 8_000, value: '2026-q3' });
     expect(parameters.label).toMatchObject({ type: sql.NVarChar, length: 4_000, value: 'Round 1' });
+  });
+});
+
+describe('sqlErrorNumber', () => {
+  const driverError = (number: number) => Object.assign(new Error(`Server error ${number}.`), { info: { number } });
+
+  it("reads the server's number from mssql's RequestError and from the driver's own error", () => {
+    expect(sqlErrorNumber(new sql.RequestError(driverError(2627)))).toBe(2627);
+    expect(sqlErrorNumber({ originalError: driverError(1205) })).toBe(1205);
+  });
+
+  it('reads it through the error mssql raises for a transaction the server aborted', () => {
+    const aborted = new sql.TransactionError('Transaction has been aborted.', 'EABORT');
+    Object.defineProperty(aborted, 'originalError', { value: new sql.RequestError(driverError(1205)) });
+    expect(sqlErrorNumber(aborted)).toBe(1205);
+  });
+
+  it('is undefined for anything without one', () => {
+    for (const error of [undefined, null, 'EREQUEST', 1205, new Error('plain'), { number: '1205' }]) {
+      expect(sqlErrorNumber(error)).toBeUndefined();
+    }
   });
 });
 

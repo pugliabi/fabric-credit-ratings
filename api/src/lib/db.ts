@@ -225,6 +225,20 @@ export async function transaction<T>(work: (tx: Db) => Promise<T>): Promise<T> {
   }
 }
 
+/**
+ * The SQL Server error number on an mssql error. mssql copies it onto its RequestError; the driver's own error keeps it
+ * under info; and the error for a transaction the server aborted wraps the RequestError.
+ */
+export function sqlErrorNumber(error: unknown): number | undefined {
+  if (typeof error !== 'object' || error === null) return undefined;
+  const { number, originalError } = error as {
+    number?: unknown;
+    originalError?: { number?: unknown; info?: { number?: unknown } };
+  };
+  const found = [number, originalError?.number, originalError?.info?.number].find((n) => typeof n === 'number');
+  return found as number | undefined;
+}
+
 export function isConnectionError(error: unknown): boolean {
   if (error instanceof DatabaseUnavailableError || error instanceof PoolTimeoutError) return true;
   if (typeof error !== 'object' || error === null) return false;

@@ -141,6 +141,13 @@ describe('error responses', () => {
     }
   });
 
+  it('reads the number through the error mssql raises for an aborted transaction', async () => {
+    const aborted = new sql.TransactionError('Transaction has been aborted.', 'EABORT');
+    Object.defineProperty(aborted, 'originalError', { value: sqlError(2627) });
+    thrown = aborted;
+    expect(await get()).toMatchObject({ status: 409 });
+  });
+
   it('answers a deadlock that outlasted its retries with 503', async () => {
     thrown = sqlError(1205);
     expect(await get()).toMatchObject({

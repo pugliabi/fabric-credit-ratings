@@ -11,7 +11,7 @@ import {
 import type { SessionUser } from '../../../src/domain/api-types.ts';
 import { loadConfig, type Config } from './config.ts';
 import { resolveSession } from './current-user.ts';
-import { DatabaseUnavailableError, isConnectionError } from './db.ts';
+import { DatabaseUnavailableError, isConnectionError, sqlErrorNumber } from './db.ts';
 import { HttpError } from './errors.ts';
 
 export type Access = 'public' | 'build' | 'user' | 'admin';
@@ -91,11 +91,9 @@ export const DUPLICATE_KEY = [2601, 2627];
 const DEADLOCK_VICTIM = [1205];
 const UNAVAILABLE = 'The ratings database is not responding. Try again in a minute.';
 
-/** mssql copies the server's error number onto its RequestError; the driver's own error keeps it under info. */
 export function hasSqlNumber(error: unknown, numbers: readonly number[]): boolean {
-  if (typeof error !== 'object' || error === null) return false;
-  const { number, originalError } = error as { number?: unknown; originalError?: { info?: { number?: unknown } } };
-  return numbers.some((n) => number === n || originalError?.info?.number === n);
+  const number = sqlErrorNumber(error);
+  return number !== undefined && numbers.includes(number);
 }
 
 function describe(error: unknown, log: InvocationContext): [number, string] {
