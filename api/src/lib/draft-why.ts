@@ -3,6 +3,8 @@ import { FACTORS } from '../../../src/data/factors.ts';
 import type { Artifact, FactorValues, Workload } from '../../../src/domain/types.ts';
 
 const DEFAULT_MODEL = 'claude-sonnet-5-5';
+/** The admin's request waits on this call, and Azure cuts HTTP functions off at about 230 seconds. */
+const REQUEST_TIMEOUT_MS = 40_000;
 const STATUS_LABEL = { ga: 'general availability', preview: 'preview', retired: 'retired' } as const;
 
 const EXAMPLES = [
@@ -26,13 +28,14 @@ export interface DraftInput {
   previous?: { roundLabel: string; scores: FactorValues; note: string };
 }
 
+// The bare one-letter grades (A, B, C, E) are ordinary words, so only their signed forms count. A sign followed by a
+// letter is a hyphenated word ("B-tree"), but "AA-rated" still names AA.
+const GRADE = /(?<![A-Za-z0-9+-])(?:AAA|AA[+-]?|A[+-]|BBB[+-]?|BB[+-]?|B[+-]|CCC|CC)(?![A-Za-z0-9+])/;
+const OUT_OF = /\bout of (?:7|seven|21)\b|\b\d{1,2}\s*of\s*(?:7|21)\b|\/\s*(?:7|21)\b/i;
+
 /** True when a draft leaks a grade, a total, or arithmetic. */
 export function mentionsMath(text: string): boolean {
-  return (
-    /\b(AAA|AA\+|AA-|AA|A\+|A-|BBB\+|BBB-|BBB|BB\+|BB-|BB|B\+|B-|CCC|CC)\b/.test(text) ||
-    /\/\s*21|out of 21|\/\s*7\b|out of 7/.test(text) ||
-    /\d\s*\+\s*\d/.test(text)
-  );
+  return GRADE.test(text) || OUT_OF.test(text) || /\d\s*\+\s*\d/.test(text);
 }
 
 function scoreLine(scores: FactorValues): string {
@@ -52,7 +55,7 @@ export function promptFor(input: DraftInput): string {
   return `Write the "why this rating" paragraph for a Microsoft Fabric item on a bond-style ratings site.
 
 Item: ${artifact.name}
-Workload: ${workload?.name ?? artifact.workload} (${workload?.blurb ?? ''})
+Workload: ${workload ? `${workload.name}${workload.blurb ? ` (${workload.blurb})` : ''}` : artifact.workload}
 Release status: ${STATUS_LABEL[artifact.status]}
 Review: ${roundLabel}, ${raters === 1 ? 'one rater' : `average of ${raters} raters`}
 ${prior}
@@ -71,7 +74,7 @@ Rules:
 - Never mention scores, totals, letter grades, rater counts, or arithmetic. The reader must not be able to reconstruct the rating from the paragraph.`;
 }
 
-/** Turns the two setup errors people actually hit into instructions. */
+/** Turns the errors people actually hit into instructions. */
 function explain(error: unknown): Error {
   const message = error instanceof Error ? error.message : String(error);
   if (message.includes('anthropic-workspace-id')) {
@@ -81,6 +84,15 @@ function explain(error: unknown): Error {
   }
   if (error instanceof Anthropic.AuthenticationError) {
     return new Error('Anthropic rejected ANTHROPIC_API_KEY. Check the key in the Function App settings.');
+  }
+  if (error instanceof Anthropic.NotFoundError) {
+    return new Error("ANTHROPIC_MODEL names a model this key can't use. Check the setting in the Function App.");
+  }
+  if (error instanceof Anthropic.RateLimitError || (error instanceof Anthropic.APIError && error.status === 529)) {
+    return new Error('Anthropic is busy. Try again in a minute.');
+  }
+  if (error instanceof Anthropic.APIConnectionTimeoutError) {
+    return new Error('Anthropic did not answer in time. Try again.');
   }
   return error instanceof Error ? error : new Error(message);
 }
@@ -96,8 +108,11 @@ function textOf(message: Anthropic.Message): string {
 /** Returns undefined when no API key is configured. */
 export function createDrafter(settings: AnthropicSettings) {
   if (!settings.apiKey) return undefined;
+  // Worst case, two drafts that both leak the math, each with its one retry: 4 x 40 s, still inside 230 s.
   const client = new Anthropic({
     apiKey: settings.apiKey,
+    timeout: REQUEST_TIMEOUT_MS,
+    maxRetries: 1,
     ...(settings.workspaceId ? { defaultHeaders: { 'anthropic-workspace-id': settings.workspaceId } } : {}),
   });
   const model = settings.model || DEFAULT_MODEL;
