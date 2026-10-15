@@ -1,25 +1,29 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { SessionUser } from '../domain/api-types';
-import { api, ApiError, onSignedOut } from '../lib/api';
-import { EXPIRED, sessionAfterError, sessionAfterSignedOut, type Session } from './useSession';
+import { ApiError, api, onSignedOut } from '../lib/api';
+import { runLogout, type LogoutState } from './logout';
+import { createSessionActions, EXPIRED, sessionAfterError, sessionAfterSignedOut, type Session } from './useSession';
 
 const user: SessionUser = { id: 1, login: 'ann', displayName: 'Ann', role: 'rater' };
+const WAKING = 'The ratings database is not responding. Try again in a minute.';
 
 function reply(status: number, body?: unknown): Response {
   return new Response(body === undefined ? null : JSON.stringify(body), { status });
 }
 
-/** Mirrors the hook's listener: every 401 runs sessionAfterSignedOut on the current state. */
-function track(initial: Session) {
+/** The hook's actions and 401 listener, wired to a plain variable instead of React state. */
+function harness(initial: Session) {
   let session = initial;
-  const stop = onSignedOut(() => {
-    session = sessionAfterSignedOut(session);
+  const actions = createSessionActions((next) => {
+    session = typeof next === 'function' ? next(session) : next;
   });
-  return { current: () => session, stop };
+  const stop = onSignedOut(actions.signedOut);
+  return { actions, current: () => session, stop };
 }
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  vi.useRealTimers();
 });
 
 describe('sessionAfterError', () => {
@@ -28,8 +32,7 @@ describe('sessionAfterError', () => {
   });
 
   it('reports any other failure as the server being unavailable, in its own words', () => {
-    const waking = 'The ratings database is not responding. Try again in a minute.';
-    expect(sessionAfterError(new ApiError(503, waking))).toEqual({ status: 'unavailable', message: waking });
+    expect(sessionAfterError(new ApiError(503, WAKING))).toEqual({ status: 'unavailable', message: WAKING });
     expect(sessionAfterError(new ApiError(0, 'Could not reach the ratings server.'))).toEqual({
       status: 'unavailable',
       message: 'Could not reach the ratings server.',
@@ -53,34 +56,113 @@ describe('sessionAfterSignedOut', () => {
   });
 });
 
-describe('session expiry through the API client', () => {
+describe('session actions', () => {
+  it('checks /me: logged in, nobody logged in, or the server unavailable', async () => {
+    const answers = [reply(200, user), reply(401, { error: 'Log in to continue.' }), reply(503, { error: WAKING })];
+    vi.stubGlobal('fetch', vi.fn(async () => answers.shift()));
+    const session = harness({ status: 'loading' });
+    await session.actions.check();
+    expect(session.current()).toEqual({ status: 'signed-in', user });
+    await session.actions.check();
+    expect(session.current()).toEqual({ status: 'signed-out', notice: '' });
+    await session.actions.check();
+    session.stop();
+    expect(session.current()).toEqual({ status: 'unavailable', message: WAKING });
+  });
+
+  it('logs in, and leaves the form as it was when the password is wrong', async () => {
+    const answers = [reply(401, { error: 'Wrong login or password.' }), reply(200, user)];
+    vi.stubGlobal('fetch', vi.fn(async () => answers.shift()));
+    const session = harness({ status: 'signed-out', notice: EXPIRED });
+    await expect(session.actions.login('ann', 'not-it')).rejects.toMatchObject({ message: 'Wrong login or password.' });
+    expect(session.current()).toEqual({ status: 'signed-out', notice: EXPIRED });
+    await session.actions.login('ann', 'the-right-one');
+    session.stop();
+    expect(session.current()).toEqual({ status: 'signed-in', user });
+  });
+
+  it('logs out only once the server has ended the session', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => reply(204)));
+    const session = harness({ status: 'signed-in', user });
+    await session.actions.logout();
+    session.stop();
+    expect(session.current()).toEqual({ status: 'signed-out', notice: '' });
+  });
+
+  it('stays logged in, and says why, when logging out fails', async () => {
+    const answers: (() => Response)[] = [
+      () => reply(503, { error: WAKING }),
+      () => {
+        throw new TypeError('Failed to fetch');
+      },
+    ];
+    vi.stubGlobal('fetch', vi.fn(async () => answers.shift()?.()));
+    const session = harness({ status: 'signed-in', user });
+    await expect(session.actions.logout()).rejects.toMatchObject({ status: 503, message: WAKING });
+    await expect(session.actions.logout()).rejects.toMatchObject({ status: 0 });
+    session.stop();
+    expect(session.current()).toEqual({ status: 'signed-in', user });
+  });
+
   it('drops a logged-in user back to the login form when any call answers 401', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => reply(401, { error: 'Log in to continue.' })));
-    const session = track({ status: 'signed-in', user });
+    const session = harness({ status: 'signed-in', user });
     await expect(api('PUT', '/rounds/open/my-scores', { scores: {} })).rejects.toMatchObject({ status: 401 });
     session.stop();
     expect(session.current()).toEqual({ status: 'signed-out', notice: EXPIRED });
   });
 
-  it('does not call a wrong password an expired session', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => reply(401, { error: 'Wrong login or password.' })));
-    const session = track({ status: 'signed-out', notice: '' });
-    await expect(api('POST', '/auth/login', { login: 'ann', password: 'not-it' })).rejects.toMatchObject({
-      status: 401,
-      message: 'Wrong login or password.',
-    });
+  it('ignores a 401 for a request sent before the latest login', async () => {
+    vi.useFakeTimers();
+    let answerStale: (response: Response) => void = () => {};
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url: string) =>
+        url === '/api/auth/login'
+          ? Promise.resolve(reply(200, user))
+          : new Promise<Response>((resolve) => (answerStale = resolve)),
+      ),
+    );
+    const session = harness({ status: 'signed-out', notice: EXPIRED });
+    const stale = api('GET', '/rounds/open/my-scores').catch((error: unknown) => error);
+    await vi.advanceTimersByTimeAsync(10);
+    await session.actions.login('ann', 'the-right-one');
+    answerStale(reply(401, { error: 'Log in to continue.' }));
+    await stale;
     session.stop();
-    expect(session.current()).toEqual({ status: 'signed-out', notice: '' });
+    expect(session.current()).toEqual({ status: 'signed-in', user });
   });
 
   it('stays logged in when the current password is wrong, which the server answers with 400', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => reply(400, { error: 'Your current password is wrong.' })));
-    const session = track({ status: 'signed-in', user });
+    const session = harness({ status: 'signed-in', user });
     await expect(api('PUT', '/me/password', { current: 'x', next: 'y' })).rejects.toMatchObject({
       status: 400,
       message: 'Your current password is wrong.',
     });
     session.stop();
+    expect(session.current()).toEqual({ status: 'signed-in', user });
+  });
+});
+
+describe('runLogout', () => {
+  it('shows progress, then hands over to the signed-out page', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => reply(204)));
+    const session = harness({ status: 'signed-in', user });
+    const states: LogoutState[] = [];
+    await runLogout(session.actions.logout, (state) => states.push(state));
+    session.stop();
+    expect(states).toEqual([{ kind: 'leaving' }, { kind: 'idle' }]);
+    expect(session.current()).toEqual({ status: 'signed-out', notice: '' });
+  });
+
+  it('shows the failure and that the user is still logged in', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => reply(503, { error: WAKING })));
+    const session = harness({ status: 'signed-in', user });
+    const states: LogoutState[] = [];
+    await runLogout(session.actions.logout, (state) => states.push(state));
+    session.stop();
+    expect(states).toEqual([{ kind: 'leaving' }, { kind: 'failed', message: `${WAKING} You are still logged in.` }]);
     expect(session.current()).toEqual({ status: 'signed-in', user });
   });
 });

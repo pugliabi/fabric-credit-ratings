@@ -71,7 +71,9 @@
   color: var(--fabric-green-deep);
 }
 
-.primary:disabled {
+.primary:disabled,
+.primary[aria-disabled='true'],
+.secondary:disabled {
   opacity: 0.45;
   cursor: not-allowed;
 }
@@ -110,6 +112,10 @@
   cursor: pointer;
 }
 
+.link[aria-disabled='true'] {
+  cursor: progress;
+}
+
 .dialog {
   width: min(420px, calc(100vw - 32px));
   padding: 0;
@@ -142,4 +148,10 @@
   color: var(--white);
   font-size: 13.5px;
   transform: translateX(-50%);
+}
+
+.wake:empty {
+  padding: 0;
+  background: none;
+  box-shadow: none;
 }

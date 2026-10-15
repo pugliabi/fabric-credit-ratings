@@ -1,17 +1,20 @@
 import { useState } from 'react';
 import type { SessionUser } from '../domain/api-types';
 import { ChangePasswordDialog } from './ChangePasswordDialog';
+import { runLogout, type LogoutState } from './logout';
 import styles from './Account.module.css';
 
 interface AccountBarProps {
   user: SessionUser;
-  onLogout: () => void;
+  onLogout: () => Promise<void>;
   /** Adds a link to /admin for admins. */
   adminLink?: boolean;
 }
 
 export function AccountBar({ user, onLogout, adminLink = false }: AccountBarProps) {
   const [changing, setChanging] = useState(false);
+  const [logout, setLogout] = useState<LogoutState>({ kind: 'idle' });
+  const leaving = logout.kind === 'leaving';
 
   return (
     <div className={styles.bar}>
@@ -26,10 +29,22 @@ export function AccountBar({ user, onLogout, adminLink = false }: AccountBarProp
       <button type="button" className={styles.link} onClick={() => setChanging(true)}>
         Change password
       </button>
-      <button type="button" className={styles.link} onClick={onLogout}>
-        Log out
+      <button
+        type="button"
+        className={styles.link}
+        aria-disabled={leaving}
+        onClick={() => {
+          if (!leaving) void runLogout(onLogout, setLogout);
+        }}
+      >
+        {leaving ? 'Logging out…' : 'Log out'}
       </button>
-      {changing && <ChangePasswordDialog onClose={() => setChanging(false)} />}
+      {logout.kind === 'failed' && (
+        <span className={styles.error} role="alert">
+          {logout.message}
+        </span>
+      )}
+      {changing && <ChangePasswordDialog login={user.login} onClose={() => setChanging(false)} />}
     </div>
   );
 }

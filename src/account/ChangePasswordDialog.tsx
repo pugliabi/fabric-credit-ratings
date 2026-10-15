@@ -1,16 +1,25 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
 import { api, errorMessage } from '../lib/api';
-import { MAX_PASSWORD_LENGTH, MIN_PASSWORD_LENGTH, newPasswordProblem } from './password-rules';
+import { MIN_PASSWORD_LENGTH, newPasswordProblem } from './password-rules';
 import styles from './Account.module.css';
 
 type State = { kind: 'idle' | 'saving' | 'done' } | { kind: 'error'; message: string };
 
-export function ChangePasswordDialog({ onClose }: { onClose: () => void }) {
+interface ChangePasswordDialogProps {
+  /** For password managers, which file a new password under the account's username. */
+  login: string;
+  onClose: () => void;
+}
+
+export function ChangePasswordDialog({ login, onClose }: ChangePasswordDialogProps) {
   const ref = useRef<HTMLDialogElement>(null);
+  const titleId = useId();
   const [current, setCurrent] = useState('');
   const [next, setNext] = useState('');
   const [repeat, setRepeat] = useState('');
   const [state, setState] = useState<State>({ kind: 'idle' });
+  const [attempt, setAttempt] = useState(0);
+  const saving = state.kind === 'saving';
 
   useEffect(() => {
     const dialog = ref.current;
@@ -21,6 +30,8 @@ export function ChangePasswordDialog({ onClose }: { onClose: () => void }) {
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
+    if (saving) return;
+    setAttempt((count) => count + 1);
     const problem = newPasswordProblem(next, repeat);
     if (problem) {
       setState({ kind: 'error', message: problem });
@@ -35,21 +46,36 @@ export function ChangePasswordDialog({ onClose }: { onClose: () => void }) {
     }
   };
 
+  // Length limits come from newPasswordProblem, in the server's words, not from minLength/maxLength: maxLength
+  // silently truncates a pasted password, and the browser's own wording differs from the server's.
   return (
-    <dialog ref={ref} className={styles.dialog} onClose={onClose}>
+    <dialog
+      ref={ref}
+      className={styles.dialog}
+      aria-labelledby={titleId}
+      onCancel={(event) => {
+        if (saving) event.preventDefault();
+      }}
+      onClose={onClose}
+    >
       {state.kind === 'done' ? (
         <div className={styles.dialogBody}>
-          <h2 className={styles.title}>Password changed</h2>
+          <h2 id={titleId} className={styles.title}>
+            Password changed
+          </h2>
           <p className={styles.muted}>You are still logged in here. Any other devices were logged out.</p>
           <div className={styles.actions}>
-            <button type="button" className={styles.primary} onClick={close}>
+            <button type="button" className={styles.primary} onClick={close} autoFocus>
               Done
             </button>
           </div>
         </div>
       ) : (
         <form className={styles.dialogBody} onSubmit={submit}>
-          <h2 className={styles.title}>Change password</h2>
+          <h2 id={titleId} className={styles.title}>
+            Change password
+          </h2>
+          <input type="text" autoComplete="username" value={login} readOnly hidden />
           <label className={styles.field}>
             <span>Current password</span>
             <input
@@ -67,9 +93,6 @@ export function ChangePasswordDialog({ onClose }: { onClose: () => void }) {
               value={next}
               onChange={(event) => setNext(event.target.value)}
               autoComplete="new-password"
-              minLength={MIN_PASSWORD_LENGTH}
-              maxLength={MAX_PASSWORD_LENGTH}
-              required
             />
           </label>
           <label className={styles.field}>
@@ -79,20 +102,19 @@ export function ChangePasswordDialog({ onClose }: { onClose: () => void }) {
               value={repeat}
               onChange={(event) => setRepeat(event.target.value)}
               autoComplete="new-password"
-              required
             />
           </label>
           {state.kind === 'error' && (
-            <p className={styles.error} role="alert">
+            <p key={attempt} className={styles.error} role="alert">
               {state.message}
             </p>
           )}
           <div className={styles.actions}>
-            <button type="button" className={styles.secondary} onClick={close}>
+            <button type="button" className={styles.secondary} onClick={close} disabled={saving}>
               Cancel
             </button>
-            <button type="submit" className={styles.primary} disabled={state.kind === 'saving'}>
-              {state.kind === 'saving' ? 'Saving…' : 'Change password'}
+            <button type="submit" className={styles.primary} aria-disabled={saving}>
+              {saving ? 'Saving…' : 'Change password'}
             </button>
           </div>
         </form>

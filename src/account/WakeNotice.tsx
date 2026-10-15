@@ -8,10 +8,10 @@ export function WakeNotice() {
 
   useEffect(() => onSlow(setSlow), []);
 
-  if (!slow) return null;
+  // The live region stays mounted: screen readers skip a status region that appears together with its text.
   return (
     <p className={styles.wake} role="status">
-      Waking the ratings database. The first request after a quiet spell can take up to a minute.
+      {slow && 'Waking the ratings database. The first request after a quiet spell can take up to a minute.'}
     </p>
   );
 }

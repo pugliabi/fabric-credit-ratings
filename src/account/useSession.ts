@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { SessionUser } from '../domain/api-types';
 import { api, ApiError, errorMessage, onSignedOut } from '../lib/api';
 
@@ -7,6 +7,8 @@ export type Session =
   | { status: 'signed-out'; notice: string }
   | { status: 'signed-in'; user: SessionUser }
   | { status: 'unavailable'; message: string };
+
+type SetSession = (next: Session | ((current: Session) => Session)) => void;
 
 export const EXPIRED = 'Your session ended. Log in again; unsaved scores are still in this browser.';
 
@@ -17,39 +19,49 @@ export function sessionAfterError(reason: unknown): Session {
     : { status: 'unavailable', message: errorMessage(reason) };
 }
 
-/** A wrong password on the login form is also a 401, so only a live session counts as ended. */
 export function sessionAfterSignedOut(current: Session): Session {
   return current.status === 'signed-in' ? { status: 'signed-out', notice: EXPIRED } : current;
+}
+
+/** The hook's logic, kept apart from React so it can be tested without a DOM. */
+export function createSessionActions(setSession: SetSession) {
+  let loggedInAt = 0;
+  return {
+    check: async () => {
+      setSession({ status: 'loading' });
+      try {
+        setSession({ status: 'signed-in', user: await api<SessionUser>('GET', '/me') });
+      } catch (reason) {
+        setSession(sessionAfterError(reason));
+      }
+    },
+    login: async (loginName: string, password: string) => {
+      const user = await api<SessionUser>('POST', '/auth/login', { login: loginName, password });
+      loggedInAt = performance.now();
+      setSession({ status: 'signed-in', user });
+    },
+    /** Rejects when the server could not end the session: its cookie would still log this browser in. */
+    logout: async () => {
+      await api('POST', '/auth/logout');
+      setSession({ status: 'signed-out', notice: '' });
+    },
+    /** A 401 for a request sent before the latest login says nothing about the new session. */
+    signedOut: (startedAt: number) => {
+      if (startedAt >= loggedInAt) setSession(sessionAfterSignedOut);
+    },
+  };
 }
 
 /** Who is logged in. Any 401 from any API call drops back to the login form. */
 export function useSession() {
   const [session, setSession] = useState<Session>({ status: 'loading' });
-
-  const check = useCallback(async () => {
-    setSession({ status: 'loading' });
-    try {
-      setSession({ status: 'signed-in', user: await api<SessionUser>('GET', '/me') });
-    } catch (reason) {
-      setSession(sessionAfterError(reason));
-    }
-  }, []);
+  const [actions] = useState(() => createSessionActions(setSession));
 
   useEffect(() => {
-    void check();
-  }, [check]);
+    void actions.check();
+  }, [actions]);
 
-  useEffect(() => onSignedOut(() => setSession(sessionAfterSignedOut)), []);
+  useEffect(() => onSignedOut(actions.signedOut), [actions]);
 
-  const login = useCallback(async (loginName: string, password: string) => {
-    const user = await api<SessionUser>('POST', '/auth/login', { login: loginName, password });
-    setSession({ status: 'signed-in', user });
-  }, []);
-
-  const logout = useCallback(async () => {
-    await api('POST', '/auth/logout').catch(() => undefined);
-    setSession({ status: 'signed-out', notice: '' });
-  }, []);
-
-  return { session, login, logout, retry: check };
+  return { session, login: actions.login, logout: actions.logout, retry: actions.check };
 }
