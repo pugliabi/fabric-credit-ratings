@@ -1,15 +1,8 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { SessionUser } from '../domain/api-types';
-import { ApiError, api, onSignedOut } from '../lib/api';
+import { ApiError, api, onSignedOut, onSlow, SLOW_MS } from '../lib/api';
 import { runLogout, type LogoutState } from './logout';
-import {
-  createSessionActions,
-  EXPIRED,
-  LEFTOVER_SESSION,
-  sessionAfterError,
-  sessionAfterSignedOut,
-  type Session,
-} from './useSession';
+import { createSessionActions, EXPIRED, sessionAfterError, sessionAfterSignedOut, type Session } from './useSession';
 
 const user: SessionUser = { id: 1, login: 'ann', displayName: 'Ann', role: 'rater' };
 const WAKING = 'The ratings database is not responding. Try again in a minute.';
@@ -28,8 +21,14 @@ function harness(initial: Session) {
   return { actions, current: () => session, stop };
 }
 
+beforeEach(() => {
+  vi.stubEnv('VITE_API_URL', '');
+});
+
 afterEach(() => {
   vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
+  vi.restoreAllMocks();
   vi.useRealTimers();
 });
 
@@ -96,7 +95,7 @@ describe('session actions', () => {
     expect(session.current()).toEqual({ status: 'signed-out', notice: '' });
   });
 
-  it('logs out, with a note, when the server answered an error but had already cleared the cookie', async () => {
+  it('logs out when the server answered an error but had already cleared the cookie', async () => {
     const answers = [reply(503, { error: WAKING }), reply(204)];
     const fetchMock = vi.fn(async (_url: string, _init: RequestInit) => answers.shift());
     vi.stubGlobal('fetch', fetchMock);
@@ -106,8 +105,7 @@ describe('session actions', () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(fetchMock.mock.calls[1]?.[0]).toBe('/api/auth/logout');
     expect(fetchMock.mock.calls[1]?.[1]).toMatchObject({ method: 'POST', signal: expect.any(AbortSignal) });
-    expect(session.current()).toEqual({ status: 'signed-out', notice: LEFTOVER_SESSION });
-    expect(LEFTOVER_SESSION).toBe('You are logged out. The ratings server will remove the old session on its own.');
+    expect(session.current()).toEqual({ status: 'signed-out', notice: '' });
   });
 
   it('logs out without a note when only the second try got an answer', async () => {
@@ -130,9 +128,9 @@ describe('session actions', () => {
     };
     const answers: (() => Response)[] = [
       () => reply(503, { error: WAKING }),
+      offline,
+      offline,
       () => reply(503, { error: WAKING }),
-      offline,
-      offline,
     ];
     vi.stubGlobal('fetch', vi.fn(async () => answers.shift()?.()));
     const session = harness({ status: 'signed-in', user });
@@ -140,6 +138,27 @@ describe('session actions', () => {
     await expect(session.actions.logout()).rejects.toMatchObject({ status: 0 });
     session.stop();
     expect(session.current()).toEqual({ status: 'signed-in', user });
+  });
+
+  it('does not show the wake notice again for the second try', async () => {
+    vi.useFakeTimers();
+    let answerRetry: (response: Response) => void = () => {};
+    const answers = [
+      () => Promise.resolve(reply(503, { error: WAKING })),
+      () => new Promise<Response>((resolve) => (answerRetry = resolve)),
+    ];
+    vi.stubGlobal('fetch', vi.fn(() => answers.shift()?.()));
+    const slow: boolean[] = [];
+    const stopSlow = onSlow((state) => slow.push(state));
+    const session = harness({ status: 'signed-in', user });
+    const pending = session.actions.logout();
+    await vi.advanceTimersByTimeAsync(SLOW_MS + 1);
+    answerRetry(reply(204));
+    await pending;
+    stopSlow();
+    session.stop();
+    expect(slow).toEqual([false]);
+    expect(session.current()).toMatchObject({ status: 'signed-out' });
   });
 
   it('still ends a session logged in from this tab when a later request answers 401', async () => {
@@ -211,6 +230,24 @@ describe('runLogout', () => {
     await runLogout(session.actions.logout, (state) => states.push(state));
     session.stop();
     expect(states).toEqual([{ kind: 'leaving' }, { kind: 'failed', message: `${WAKING} You are still logged in.` }]);
+    expect(session.current()).toEqual({ status: 'signed-in', user });
+  });
+
+  it('shows the first reason, not the timeout, when the second try runs out of time', async () => {
+    const timedOut = AbortSignal.abort(new DOMException('signal timed out', 'TimeoutError'));
+    const timeout = vi.spyOn(AbortSignal, 'timeout').mockReturnValue(timedOut);
+    const fetchMock = vi.fn(async (_url: string, init: RequestInit) => {
+      if (init.signal?.aborted) throw init.signal.reason;
+      return reply(503, { error: WAKING });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const session = harness({ status: 'signed-in', user });
+    const states: LogoutState[] = [];
+    await runLogout(session.actions.logout, (state) => states.push(state));
+    session.stop();
+    expect(timeout).toHaveBeenCalledWith(5000);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(states.at(-1)).toEqual({ kind: 'failed', message: `${WAKING} You are still logged in.` });
     expect(session.current()).toEqual({ status: 'signed-in', user });
   });
 

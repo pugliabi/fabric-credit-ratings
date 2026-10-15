@@ -11,7 +11,6 @@ export type Session =
 type SetSession = (next: Session | ((current: Session) => Session)) => void;
 
 export const EXPIRED = 'Your session ended. Log in again; unsaved scores are still in this browser.';
-export const LEFTOVER_SESSION = 'You are logged out. The ratings server will remove the old session on its own.';
 
 /** The second logout needs no database once the cookie is gone, so it answers fast or not at all. */
 const LOGOUT_RETRY_MS = 5000;
@@ -50,15 +49,13 @@ export function createSessionActions(setSession: SetSession) {
      * gateway error or a lost answer leaves it. A second logout tells them apart: without a cookie it answers 204.
      */
     logout: async () => {
-      let notice = '';
       try {
         await api('POST', '/auth/logout');
       } catch (reason) {
         const retry = { wakeNotice: false, signal: AbortSignal.timeout(LOGOUT_RETRY_MS) };
         await api('POST', '/auth/logout', undefined, retry).catch(() => Promise.reject(reason));
-        if (reason instanceof ApiError && reason.status > 0) notice = LEFTOVER_SESSION;
       }
-      setSession({ status: 'signed-out', notice });
+      setSession({ status: 'signed-out', notice: '' });
     },
     /** A 401 for a request sent before the latest login says nothing about the new session. */
     signedOut: (startedAt: number) => {

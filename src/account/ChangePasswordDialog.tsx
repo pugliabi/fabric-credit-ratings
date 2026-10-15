@@ -3,8 +3,9 @@ import { api, ApiError, errorMessage } from '../lib/api';
 import { MIN_PASSWORD_LENGTH, newPasswordProblem } from './password-rules';
 import styles from './Account.module.css';
 
-/** `field` is the input the error is about, for aria-describedby. */
-type State = { kind: 'idle' | 'saving' | 'done' } | { kind: 'error'; message: string; field?: 'current' | 'next' };
+/** The input the error is about, for aria-describedby and aria-invalid; a mismatch is about both new-password inputs. */
+type ErrorField = 'current' | 'next' | 'both-new';
+type State = { kind: 'idle' | 'saving' | 'done' } | { kind: 'error'; message: string; field?: ErrorField };
 
 interface ChangePasswordDialogProps {
   /** For password managers, which file a new password under the account's username. */
@@ -23,8 +24,10 @@ export function ChangePasswordDialog({ login, onClose }: ChangePasswordDialogPro
   const [state, setState] = useState<State>({ kind: 'idle' });
   const [attempt, setAttempt] = useState(0);
   const saving = state.kind === 'saving';
-  const describedBy = (field: 'current' | 'next') =>
-    state.kind === 'error' && state.field === field ? errorId : undefined;
+  const errorProps = (...fields: ErrorField[]) =>
+    state.kind === 'error' && state.field && fields.includes(state.field)
+      ? { 'aria-describedby': errorId, 'aria-invalid': true }
+      : {};
 
   useEffect(() => {
     const dialog = ref.current;
@@ -49,7 +52,7 @@ export function ChangePasswordDialog({ login, onClose }: ChangePasswordDialogPro
     setAttempt((count) => count + 1);
     const problem = newPasswordProblem(next, repeat);
     if (problem) {
-      setState({ kind: 'error', message: problem, field: 'next' });
+      setState({ kind: 'error', message: problem, field: next === repeat ? 'next' : 'both-new' });
       return;
     }
     setState({ kind: 'saving' });
@@ -105,7 +108,7 @@ export function ChangePasswordDialog({ login, onClose }: ChangePasswordDialogPro
               value={current}
               onChange={(event) => setCurrent(event.target.value)}
               autoComplete="current-password"
-              aria-describedby={describedBy('current')}
+              {...errorProps('current')}
               required
             />
           </label>
@@ -116,7 +119,7 @@ export function ChangePasswordDialog({ login, onClose }: ChangePasswordDialogPro
               value={next}
               onChange={(event) => setNext(event.target.value)}
               autoComplete="new-password"
-              aria-describedby={describedBy('next')}
+              {...errorProps('next', 'both-new')}
             />
           </label>
           <label className={styles.field}>
@@ -126,6 +129,7 @@ export function ChangePasswordDialog({ login, onClose }: ChangePasswordDialogPro
               value={repeat}
               onChange={(event) => setRepeat(event.target.value)}
               autoComplete="new-password"
+              {...errorProps('both-new')}
             />
           </label>
           {state.kind === 'error' && (
