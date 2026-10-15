@@ -12,10 +12,13 @@ try {
     try {
       await db.query(batch);
     } catch (error) {
-      const [firstLine] = batch.split(/\r?\n/, 1);
+      const statement = batch
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .find((line) => line && !line.startsWith('--'));
       const detail = error instanceof Error ? error.message : String(error);
       throw new Error(
-        `Schema batch ${index + 1} of ${batches.length} (${firstLine}) failed: ${detail} ` +
+        `Schema batch ${index + 1} of ${batches.length} (${statement ?? batch}) failed: ${detail} ` +
           'Fix the cause and run npm run db:apply again; every batch is safe to re-run.',
         { cause: error },
       );

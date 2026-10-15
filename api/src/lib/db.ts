@@ -1,5 +1,6 @@
 import { DefaultAzureCredential } from '@azure/identity';
 import sql from 'mssql';
+import { TimeoutError as PoolTimeoutError } from 'tarn';
 
 export type Param = string | number | boolean | Date | null;
 export type Params = Readonly<Record<string, Param>>;
@@ -19,8 +20,8 @@ export class DatabaseUnavailableError extends Error {
 const SCOPE = 'https://database.windows.net/.default';
 const RETRY_DELAYS_MS = [2_000, 5_000, 10_000];
 const CONNECT_TIMEOUT_MS = 30_000;
-// Longer than CONNECT_TIMEOUT_MS so a stalled login fails as mssql's ConnectionError (ETIMEOUT), not as tarn's
-// acquire timeout, whose error has no name or code that withWakeRetry or isConnectionError could recognize.
+// Longer than CONNECT_TIMEOUT_MS so a stalled login fails as mssql's ConnectionError (ETIMEOUT), which keeps the real
+// cause, rather than as tarn's acquire timeout, which carries none.
 const ACQUIRE_TIMEOUT_MS = CONNECT_TIMEOUT_MS + 5_000;
 // Keeps a request well inside the 230 s Functions HTTP timeout when a cold open() has already used its own retries.
 const WAKE_RETRY_BUDGET_MS = 150_000;
@@ -111,6 +112,15 @@ async function getPool(): Promise<sql.ConnectionPool> {
 }
 
 /**
+ * No connection was acquired, so the statement never reached the server: mssql's ConnectionError, or tarn timing out
+ * the acquire (more callers than pool slots while the database stalls). tarn's error has no name or code.
+ */
+function acquireFailed(error: unknown): boolean {
+  if (error instanceof PoolTimeoutError) return true;
+  return typeof error === 'object' && error !== null && (error as { name?: unknown }).name === 'ConnectionError';
+}
+
+/**
  * Retries `run` while no connection could be acquired, which is how a paused database looks to a warm process. Stops
  * once another attempt could end past WAKE_RETRY_BUDGET_MS, so a call whose cold open() already waited is not doubled.
  */
@@ -121,9 +131,7 @@ async function withWakeRetry<T>(run: () => Promise<T>): Promise<T> {
       return await run();
     } catch (error) {
       const delay = RETRY_DELAYS_MS[attempt];
-      const name = typeof error === 'object' && error !== null ? (error as { name?: unknown }).name : undefined;
-      // ConnectionError means no connection was acquired, so the statement never reached the server.
-      if (delay === undefined || name !== 'ConnectionError') throw error;
+      if (delay === undefined || !acquireFailed(error)) throw error;
       if (Date.now() - started + delay + ACQUIRE_TIMEOUT_MS > WAKE_RETRY_BUDGET_MS) throw error;
       await sleep(delay);
     }
@@ -149,7 +157,10 @@ export const db: Db = {
   },
 };
 
-/** Runs `work` in one transaction. Its queries run one at a time, in the order they are called. */
+/**
+ * Runs `work` in one transaction. Its queries run one at a time, in the order they are called. Await every query: a
+ * failure nobody awaits is not reported, and the transaction still commits.
+ */
 export async function transaction<T>(work: (tx: Db) => Promise<T>): Promise<T> {
   const tx = await withWakeRetry(async () => {
     const begun = new sql.Transaction(await getPool());
@@ -157,8 +168,10 @@ export async function transaction<T>(work: (tx: Db) => Promise<T>): Promise<T> {
     return begun;
   });
   let queue: Promise<unknown> = Promise.resolve();
+  let ended = false;
   const scoped: Db = {
     query<R>(text: string, params: Params = {}): Promise<R[]> {
+      if (ended) return Promise.reject(new Error('The transaction has already ended.'));
       const next = queue.then(async () => {
         const result = await bind(new sql.Request(tx), params).query<R>(text);
         return result.recordset ?? [];
@@ -168,21 +181,28 @@ export async function transaction<T>(work: (tx: Db) => Promise<T>): Promise<T> {
     },
   };
   // mssql refuses to commit or roll back while a request is in flight; a failed rollback leaks the connection and
-  // its locks, so both wait for the queue.
+  // its locks. So both wait until the queue stops growing (a settling query can chain another), then refuse more.
+  const finish = async () => {
+    for (let tail: Promise<unknown> | undefined; tail !== queue; ) {
+      tail = queue;
+      await tail;
+    }
+    ended = true;
+  };
   try {
     const value = await work(scoped);
-    await queue;
+    await finish();
     await tx.commit();
     return value;
   } catch (error) {
-    await queue;
+    await finish();
     await tx.rollback().catch(() => undefined);
     throw error;
   }
 }
 
 export function isConnectionError(error: unknown): boolean {
-  if (error instanceof DatabaseUnavailableError) return true;
+  if (error instanceof DatabaseUnavailableError || error instanceof PoolTimeoutError) return true;
   if (typeof error !== 'object' || error === null) return false;
   const { name, code } = error as { name?: unknown; code?: unknown };
   return name === 'ConnectionError' || (typeof code === 'string' && CONNECTION_CODES.has(code));

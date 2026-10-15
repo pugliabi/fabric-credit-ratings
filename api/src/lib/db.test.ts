@@ -1,6 +1,7 @@
 import sql from 'mssql';
+import { TimeoutError as PoolTimeoutError } from 'tarn';
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
-import { DatabaseUnavailableError, closeDb, db, isConnectionError, transaction } from './db.ts';
+import { DatabaseUnavailableError, closeDb, db, isConnectionError, transaction, type Db } from './db.ts';
 
 vi.mock('@azure/identity', () => ({
   DefaultAzureCredential: class {
@@ -69,6 +70,20 @@ describe('db.query', () => {
     expect(Date.now() - started).toBe(2_000);
   });
 
+  it('retries when the pool timed out waiting for a connection', async () => {
+    await db.query('SELECT 1');
+    query.mockClear();
+    query.mockRejectedValueOnce(new PoolTimeoutError('operation timed out for an unknown reason'));
+    const outcome = db.query('SELECT 1').catch((failure: unknown) => failure);
+    await vi.runAllTimersAsync();
+    expect(await outcome).toEqual([]);
+    expect(query).toHaveBeenCalledTimes(2);
+  });
+
+  it('reports a pool acquire timeout as a connection error', () => {
+    expect(isConnectionError(new PoolTimeoutError())).toBe(true);
+  });
+
   it('does not retry a statement the server rejected', async () => {
     const error = new sql.RequestError("Invalid object name 'dbo.nope'.", 'EREQUEST');
     query.mockRejectedValue(error);
@@ -126,6 +141,19 @@ describe('db.query', () => {
     expect(listeners).toBe(1);
   });
 
+  it('gives a stalled login time to fail as ETIMEOUT before the pool times out the acquire', async () => {
+    let config: sql.config | undefined;
+    connect.mockImplementation(function (this: sql.ConnectionPool) {
+      config = (this as unknown as { config: sql.config }).config;
+      return Promise.resolve(this);
+    });
+    await db.query('SELECT 1');
+    // 15 s is mssql's default connectionTimeout.
+    const connectTimeout = config?.connectionTimeout ?? 15_000;
+    expect(config?.pool?.acquireTimeoutMillis).toBeGreaterThan(connectTimeout);
+    expect(config?.pool?.createTimeoutMillis).toBeGreaterThan(connectTimeout);
+  });
+
   it('binds dates as datetime2 and leaves other types to mssql', async () => {
     const at = new Date('2026-10-15T12:00:00.123Z');
     await db.query('SELECT @at, @label', { at, label: 'Round 1' });
@@ -171,5 +199,107 @@ describe('transaction', () => {
     expect(await outcome).toEqual([]);
     expect(begin).toHaveBeenCalledTimes(2);
     expect(commit).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not retry a begin the server may have started', async () => {
+    const error = new sql.TransactionError('Failed to begin the transaction.', 'EREQUEST');
+    begin.mockRejectedValue(error);
+    const work = vi.fn((tx: Db) => tx.query('SELECT 1'));
+    const outcome = transaction(work).catch((failure: unknown) => failure);
+    await vi.runAllTimersAsync();
+    expect(await outcome).toBe(error);
+    expect(begin).toHaveBeenCalledTimes(1);
+    expect(work).not.toHaveBeenCalled();
+  });
+
+  it('does not run the work again when one of its queries loses the connection', async () => {
+    const error = new sql.ConnectionError('Connection is closed.', 'ECONNCLOSED');
+    query.mockRejectedValueOnce(error);
+    const work = vi.fn((tx: Db) => tx.query('SELECT 1'));
+    const outcome = transaction(work).catch((failure: unknown) => failure);
+    await vi.runAllTimersAsync();
+    expect(await outcome).toBe(error);
+    expect(work).toHaveBeenCalledTimes(1);
+    expect(begin).toHaveBeenCalledTimes(1);
+    expect(query).toHaveBeenCalledTimes(1);
+    expect(rollback).toHaveBeenCalledTimes(1);
+    expect(commit).not.toHaveBeenCalled();
+  });
+
+  it('commits only after a query the work did not await settles', async () => {
+    let active = 0;
+    let activeAtCommit = -1;
+    query.mockImplementation(async () => {
+      active += 1;
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      active -= 1;
+      return { recordset: [] };
+    });
+    commit.mockImplementation(() => {
+      activeAtCommit = active;
+      return Promise.resolve();
+    });
+    const outcome = transaction((tx) => {
+      void tx.query('SELECT 1');
+      return Promise.resolve('done');
+    });
+    await vi.runAllTimersAsync();
+    expect(await outcome).toBe('done');
+    expect(query).toHaveBeenCalledTimes(1);
+    expect(activeAtCommit).toBe(0);
+  });
+
+  describe('a query chained from another while the transaction drains', () => {
+    let log: string[];
+    const scopes: Db[] = [];
+
+    beforeEach(() => {
+      log = [];
+      scopes.length = 0;
+      query.mockImplementation(async (text) => {
+        log.push(`start ${text}`);
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        log.push(`end ${text}`);
+        if (text === 'FAIL') throw new sql.RequestError('The statement failed.', 'EREQUEST');
+        return { recordset: [] };
+      });
+      commit.mockImplementation(() => {
+        log.push('commit');
+        return Promise.resolve();
+      });
+      rollback.mockImplementation(() => {
+        log.push('rollback');
+        return Promise.resolve();
+      });
+    });
+
+    async function expectEnded(): Promise<void> {
+      const [tx] = scopes;
+      await expect(tx?.query('LATE')).rejects.toThrow('The transaction has already ended.');
+      expect(log).not.toContain('start LATE');
+    }
+
+    it('runs before the rollback', async () => {
+      const outcome = transaction((tx) => {
+        scopes.push(tx);
+        return Promise.all([tx.query('FAIL'), tx.query('B').then(() => tx.query('C'))]);
+      }).catch((failure: unknown) => failure);
+      await vi.runAllTimersAsync();
+      expect(await outcome).toMatchObject({ message: 'The statement failed.' });
+      expect(log).toEqual(['start FAIL', 'end FAIL', 'start B', 'end B', 'start C', 'end C', 'rollback']);
+      await expectEnded();
+    });
+
+    it('runs before the commit', async () => {
+      const outcome = transaction((tx) => {
+        scopes.push(tx);
+        void tx.query('B').then(() => tx.query('C'));
+        return Promise.resolve('done');
+      });
+      await vi.runAllTimersAsync();
+      expect(await outcome).toBe('done');
+      expect(log).toEqual(['start B', 'end B', 'start C', 'end C', 'commit']);
+      await expectEnded();
+    });
   });
 });
