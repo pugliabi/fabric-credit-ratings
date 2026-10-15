@@ -85,6 +85,7 @@ beforeEach(() => {
   vi.mocked(verifyPassword).mockResolvedValue(true);
   vi.mocked(dummyHash).mockResolvedValue('dummy');
   vi.mocked(releaseAttempt).mockResolvedValue(undefined);
+  vi.mocked(createSession).mockResolvedValue(true);
 });
 
 describe('login', () => {
@@ -168,7 +169,7 @@ describe('login', () => {
     expect(await result).toEqual({ id: 7, login: 'ann', displayName: 'Ann', role: 'rater' });
     expect(clearAttempt).toHaveBeenCalledWith(expect.anything(), LOGIN_KEY);
     expect(releaseAttempt).toHaveBeenCalledWith(expect.anything(), IP_KEY, ipRow);
-    expect(createSession).toHaveBeenCalledWith(expect.anything(), expect.any(String), 7, expect.any(Date));
+    expect(createSession).toHaveBeenCalledWith(expect.anything(), expect.any(String), 7, expect.any(Date), 'stored');
     expect(order(vi.mocked(verifyPassword))).toBeLessThan(order(vi.mocked(clearAttempt)));
     expect(order(vi.mocked(clearAttempt))).toBeLessThan(order(vi.mocked(releaseAttempt)));
     expect(order(vi.mocked(releaseAttempt))).toBeLessThan(order(vi.mocked(createSession)));
@@ -185,6 +186,16 @@ describe('login', () => {
     expect(warn).toHaveBeenCalledWith('Releasing the IP attempt failed', expect.any(Error));
     expect(createSession).toHaveBeenCalled();
     expect(cookies).toHaveLength(1);
+  });
+
+  it('answers 401 with no cookie when the password was reset or the user disabled after the check', async () => {
+    vi.mocked(createSession).mockResolvedValue(false);
+
+    const { result, cookies } = login({ login: 'ann', password: PASSWORD });
+
+    await expect(result).rejects.toMatchObject({ status: 401, message: 'Wrong login or password.' });
+    expect(createSession).toHaveBeenCalledWith(expect.anything(), expect.any(String), 7, expect.any(Date), 'stored');
+    expect(cookies).toEqual([]);
   });
 });
 
