@@ -1,6 +1,6 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
-import { Desk } from './Desk';
+import { AdminPage } from './AdminPage';
 import '../styles/tokens.css';
 import '../styles/global.css';
 
@@ -9,6 +9,6 @@ if (!root) throw new Error('Missing #root element');
 
 createRoot(root).render(
   <StrictMode>
-    <Desk />
+    <AdminPage />
   </StrictMode>,
 );
