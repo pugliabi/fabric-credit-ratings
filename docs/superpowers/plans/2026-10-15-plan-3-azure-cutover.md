@@ -613,7 +613,17 @@ Run: `gh variable set API_URL -R $repo --body "https://$apiHost"`
 
 From now on, `deploy.yml` fetches the snapshot from the API, and the health check in `api-deploy.yml` runs after every API deploy. Both workflows first run with it in Task 10.
 
-- [ ] **Step 5: Check that lockout sees the real client address.** The per-address lockout keys on the last `X-Forwarded-For` entry, the one Azure's front end should append (`clientIp` in `api/src/lib/http.ts`). Anything that isn't a bare IP address of at most 45 characters becomes `ip:unknown`. These checks confirm that on the deployed app the last entry is the caller's real address and a client can't set it. The login `ip-check` doesn't exist, so the tries can't lock the admin; all the checks together add 6 failures to `login:ip-check`, under the lock at 10.
+- [ ] **Step 5: Check that lockout sees the real client address.** The per-address lockout keys on the last `X-Forwarded-For` entry, the one Azure's front end should append (`clientIp` in `api/src/lib/http.ts`). Anything that isn't a bare IP address of at most 45 characters becomes `ip:unknown`. These checks confirm that on the deployed app the last entry is the caller's real address and a client can't set it. The login `ip-check` doesn't exist, so the tries can't lock the admin's login; all the checks together add 6 failures to `login:ip-check`, under the lock at 10. They do count against your own address: each pass of checks 1 and 2 adds 4 failures to your `ip:` row, so run check 5's cleanup before you repeat a check, or a third pass locks your address, admin login included, for 15 minutes.
+
+Clean up first, so the counts start from zero (earlier logins, such as Task 7 Step 4's, leave rows behind). In the `fcr` SQL query editor:
+
+```sql
+DELETE FROM login_attempts;
+```
+
+Run checks 1 to 4 within 15 minutes of check 1. After that, a key's count restarts at 1 on its next failure, so judge by which keys appear, not by the counts.
+
+Setup, in PowerShell 7 (run it again in any new terminal):
 
 ```powershell
 . ./infra/names.ps1
@@ -626,7 +636,7 @@ function Send-WrongLogin([string]$forwardedFor) {
 }
 ```
 
-Each `Send-WrongLogin` prints `Wrong login or password.` After each check, run this in the `fcr` SQL query editor:
+Each `Send-WrongLogin` prints an `error` of `Wrong login or password.` After each check, run this in the `fcr` SQL query editor:
 
 ```sql
 SELECT attempt_key, failures FROM login_attempts ORDER BY attempt_key;
@@ -639,7 +649,7 @@ Send-WrongLogin
 Invoke-RestMethod https://api.ipify.org; Invoke-RestMethod https://api64.ipify.org
 ```
 
-Expected: `login:ip-check` and one `ip:` row, each with 1 failure. The `ip:` address is exactly one of the two printed addresses, with no port. Anything else fails, including `ip:unknown` and private or Azure addresses (`10.*`, `172.16.*` to `172.31.*`, `100.64.*`, `169.254.*`).
+Expected: `login:ip-check` and one `ip:` row, each with 1 failure, and no others. The `ip:` address is exactly one of the two printed addresses, with no port. Anything else fails, including `ip:unknown` and private or Azure addresses (`10.*`, `172.16.*` to `172.31.*`, `100.64.*` to `100.127.*`, `169.254.*`, `fc*`, `fd*`, `fe80:*`).
 
 **Check 2: spoofed headers.**
 
@@ -651,9 +661,9 @@ Send-WrongLogin 'not-an-ip'
 
 Expected: the same two rows, each now with 4 failures, and no others: no `ip:198.51.100.*` and no `ip:unknown`.
 
-**Check 3: a second network.** Move this computer to another network, such as a phone hotspot, and run check 1's commands again.
+**Check 3: a second network.** Move this computer to another network, such as a phone hotspot. If you opened a new terminal, run the setup block first. Run check 1's ipify line first: it must print a different address than in check 1. If it doesn't (a VPN, or a shared NAT), this check proves nothing, because both networks reach the API from the same address; use another network. Then run `Send-WrongLogin`.
 
-Expected: a new `ip:` row with 1 failure for the address ipify now prints, and `login:ip-check` at 5. If the key is the same as in check 1, every caller shares one front-end address, which the `isIP` check can't catch.
+Expected: a new `ip:` row with 1 failure for the address ipify now prints, and `login:ip-check` at 5. If the key is the same as in check 1 while ipify's addresses differ, every caller shares one front-end address, which the `isIP` check can't catch.
 
 **Check 4: IPv6**, when both this network and the API have it.
 
@@ -663,7 +673,7 @@ $wrong | curl.exe -6 -sS -o NUL -w '%{http_code}\n' "https://$apiHost/api/auth/l
 curl.exe -6 -sS https://api64.ipify.org
 ```
 
-Expected: `401`, then an IPv6 address, and a new row `ip:<that address>` in lowercase with no port and 1 failure; `login:ip-check` at 6. If curl can't resolve or connect, one side has no IPv6: skip this check. A row of `ip:unknown`, or an address with a port glued on (such as `…:1:443`), means the platform sends IPv6 without brackets, and `clientIp` needs to handle that form. An uppercase address means `clientIp` should lowercase it.
+Expected: `401`, then an IPv6 address, and a row `ip:<that address>` in lowercase with no port: new with 1 failure, or check 3's row now at 2 if check 3 already went over IPv6; `login:ip-check` at 6. If curl can't resolve or connect, one side has no IPv6: skip this check. A row of `ip:unknown`, or an address with a port glued on (such as `…:1:443`), means the platform sends IPv6 without brackets, and `clientIp` needs to handle that form. An uppercase address means `clientIp` should lowercase it.
 
 **Check 5: clean up**, whatever the results:
 
@@ -671,11 +681,11 @@ Expected: `401`, then an IPv6 address, and a new row `ip:<that address>` in lowe
 DELETE FROM login_attempts;
 ```
 
-If check 2 shows `ip:198.51.100.*` or `ip:unknown`, the platform passes the client's `X-Forwarded-For` through without appending the real address, so the client picks the per-address key. `clientIp` already reads the last entry, so reading a different entry won't help. Either:
+If check 2 shows `ip:198.51.100.*` or `ip:unknown`, the platform passes the client's `X-Forwarded-For` through without appending the real address, so the client picks the per-address key. If check 3 shows one key for both networks, every caller shares it. If check 1 shows `ip:unknown`, there is no usable header. `clientIp` already reads the last entry, so reading a different entry won't help. Either:
 - switch to a header the platform sets and the client can't override, once this same check shows a client-sent copy is replaced; or
-- (a spec change, ask first) skip the per-address key when it's `unknown` and rely on the per-login limit.
+- (a spec change, ask first) drop the per-address key and rely on the per-login limit. Skipping it only when it's `unknown` isn't enough: a passed-through or shared address is a valid IP.
 
-The same options apply if check 1 shows `ip:unknown` (no usable header) or check 3 shows one key for both networks (a shared front-end address). Whatever the fix, keep `clientIp`'s `isIP` check and 45-character cap: they stop a client-chosen value from becoming an over-long key, which fails the `login_attempts` write, or a non-ASCII one, which aliases other keys. After a header switch, commit it with its tests and push, which redeploys the API, then repeat this step.
+Whatever the fix, keep `clientIp`'s `isIP` check and 45-character cap: they stop a client-chosen value from becoming an over-long key, which fails the `login_attempts` write, or a non-ASCII one, which aliases other keys. After either change, commit it with its tests and push, which redeploys the API, then repeat this step. After dropping the key, checks 1 to 4 should show only `login:ip-check`.
 
 ---
 
