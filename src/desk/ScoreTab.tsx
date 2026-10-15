@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { ARTIFACTS } from '../data/artifacts';
+import { WORKLOADS } from '../data/workloads';
 import type { RoundData } from '../domain/types';
 import { draftFromScores, draftFromValues, sameDraft, summarize } from '../rating-ui/draft';
 import { ScoreMatrix } from '../rating-ui/ScoreMatrix';
@@ -23,7 +24,7 @@ export function ScoreTab({ data, rounds, rater, onSaved }: ScoreTabProps) {
   const lastOwn = useMemo(() => lastOwnScores(rounds, rater), [rounds, rater]);
   const [status, setStatus] = useState<{ kind: 'idle' | 'saving' | 'saved' | 'error'; message?: string }>({ kind: 'idle' });
 
-  const summary = summarize(draft);
+  const summary = summarize(draft, ARTIFACTS);
   const dirty = !sameDraft(draft, saved);
   const hasReference = Object.keys(current).length > 0;
 
@@ -95,7 +96,7 @@ export function ScoreTab({ data, rounds, rater, onSaved }: ScoreTabProps) {
         it this round.
       </p>
 
-      <ScoreMatrix draft={draft} onChange={setTriple} reference={current} />
+      <ScoreMatrix workloads={WORKLOADS} artifacts={ARTIFACTS} draft={draft} onChange={setTriple} reference={current} />
     </div>
   );
 }

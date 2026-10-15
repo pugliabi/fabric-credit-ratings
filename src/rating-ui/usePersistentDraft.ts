@@ -1,28 +1,35 @@
 import { useCallback, useEffect, useState } from 'react';
-import { sameDraft, type Draft, type DraftTriple } from './draft';
+import { parseStoredDraft, restorable, type Draft, type DraftTriple, type StoredDraft } from './draft';
 
-function read(key: string): Draft | undefined {
+export function readDraft(key: string): StoredDraft | undefined {
   try {
-    const raw = localStorage.getItem(key);
-    return raw ? (JSON.parse(raw) as Draft) : undefined;
+    return parseStoredDraft(localStorage.getItem(key));
   } catch {
     return undefined;
   }
 }
 
+export function writeDraft(key: string, stored: StoredDraft): void {
+  try {
+    localStorage.setItem(key, JSON.stringify(stored));
+  } catch {
+    // Storage is full or blocked; the draft lives only in this tab.
+  }
+}
+
 /**
- * Slider state that survives reloads. `initial` is only used when nothing is
- * stored under `key`; `restored` is true when the stored draft differs from it.
- * Remount (change the React key) when `key` changes.
+ * Slider state that survives reloads. `initial` is the saved card; keep it referentially stable (useMemo).
+ * Only the rows a stored draft actually changed come back, re-applied on top of `initial`, so a save made
+ * elsewhere is not hidden by an old draft. Remount (change the React key) when `key` changes.
  */
 export function usePersistentDraft(key: string, initial: Draft) {
-  const [stored] = useState(() => read(key));
-  const [draft, setDraft] = useState<Draft>(stored ?? initial);
-  const [restored, setRestored] = useState(stored !== undefined && !sameDraft(stored, initial));
+  const [kept] = useState(() => restorable(readDraft(key), initial));
+  const [draft, setDraft] = useState<Draft>(kept ?? initial);
+  const [restored, setRestored] = useState(kept !== undefined);
 
   useEffect(() => {
-    localStorage.setItem(key, JSON.stringify(draft));
-  }, [key, draft]);
+    writeDraft(key, { base: initial, draft });
+  }, [key, initial, draft]);
 
   const setTriple = useCallback((artifactId: string, triple: DraftTriple) => {
     setDraft((current) => ({ ...current, [artifactId]: triple }));

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { getRatings, openRound } from '../data';
 import { ARTIFACTS } from '../data/artifacts';
+import { WORKLOADS } from '../data/workloads';
 import { REPO } from '../data/site';
 import { encodeIssue } from '../domain/payload';
 import type { Round } from '../domain/types';
@@ -51,7 +52,7 @@ function Closed() {
 function RateForm({ round }: { round: Round }) {
   const { draft, setTriple, replace, restored } = usePersistentDraft(`fcr-rate:${round.id}`, EMPTY);
   const [submitted, setSubmitted] = useState<{ title: string; body: string; linked: boolean }>();
-  const summary = summarize(draft);
+  const summary = summarize(draft, ARTIFACTS);
   const hasCurrent = Object.keys(CURRENT).length > 0;
 
   const issue = encodeIssue(round, summary.scores);
@@ -160,7 +161,7 @@ function RateForm({ round }: { round: Round }) {
         </div>
       </div>
 
-      <ScoreMatrix draft={draft} onChange={setTriple} reference={CURRENT} />
+      <ScoreMatrix workloads={WORKLOADS} artifacts={ARTIFACTS} draft={draft} onChange={setTriple} reference={CURRENT} />
     </>
   );
 }

@@ -1,11 +1,9 @@
-import { memo, useState, type CSSProperties, type KeyboardEvent, type SyntheticEvent } from 'react';
+import { memo, useId, useState, type CSSProperties, type KeyboardEvent, type SyntheticEvent } from 'react';
 import { Chevron } from '../components/Chevron';
 import { scoreColor } from '../components/FactorBars';
-import { ARTIFACTS } from '../data/artifacts';
 import { FACTORS } from '../data/factors';
-import { WORKLOADS } from '../data/workloads';
 import { MAX_SCORE, MIN_SCORE } from '../domain/grades';
-import type { Artifact, FactorValues, Score, WorkloadId } from '../domain/types';
+import type { Artifact, FactorValues, Score, Workload, WorkloadId } from '../domain/types';
 import { formatScore } from '../lib/format';
 import { EMPTY_TRIPLE, isBlank, isComplete, toScore, type Draft, type DraftScore, type DraftTriple } from './draft';
 import styles from './ScoreMatrix.module.css';
@@ -14,6 +12,9 @@ const STATUS_LABEL = { preview: 'Preview', retired: 'Retired' } as const;
 const UNSET_POSITION = 4;
 
 interface ScoreMatrixProps {
+  workloads: readonly Workload[];
+  /** Every artifact's workload must be in `workloads`, or its row is not shown. */
+  artifacts: readonly Artifact[];
   draft: Draft;
   onChange: (artifactId: string, triple: DraftTriple) => void;
   /** Published values per artifact, shown under the name as a reminder. */
@@ -21,7 +22,15 @@ interface ScoreMatrixProps {
   referenceLabel?: string;
 }
 
-export function ScoreMatrix({ draft, onChange, reference, referenceLabel = 'Current' }: ScoreMatrixProps) {
+export function ScoreMatrix({
+  workloads,
+  artifacts,
+  draft,
+  onChange,
+  reference,
+  referenceLabel = 'Current',
+}: ScoreMatrixProps) {
+  const idPrefix = useId();
   const [collapsed, setCollapsed] = useState<ReadonlySet<WorkloadId>>(new Set());
 
   const toggle = (id: WorkloadId) =>
@@ -34,14 +43,15 @@ export function ScoreMatrix({ draft, onChange, reference, referenceLabel = 'Curr
 
   return (
     <div className={styles.matrix}>
-      {WORKLOADS.map((workload) => {
-        const items = ARTIFACTS.filter((artifact) => artifact.workload === workload.id);
+      {workloads.map((workload) => {
+        const items = artifacts.filter((artifact) => artifact.workload === workload.id);
+        if (items.length === 0) return null;
         const rated = items.filter((artifact) => {
           const triple = draft[artifact.id];
           return triple !== undefined && isComplete(triple);
         }).length;
         const open = !collapsed.has(workload.id);
-        const panelId = `matrix-${workload.id}`;
+        const panelId = `${idPrefix}-${workload.id}`;
 
         return (
           <section key={workload.id} className={styles.group}>
@@ -61,29 +71,27 @@ export function ScoreMatrix({ draft, onChange, reference, referenceLabel = 'Curr
               </button>
             </h2>
 
-            {open && (
-              <div id={panelId} className={styles.panel}>
-                <div className={styles.columns} aria-hidden="true">
-                  <span>Item</span>
-                  {FACTORS.map((factor) => (
-                    <span key={factor.id}>{factor.label}</span>
-                  ))}
-                  <span />
-                </div>
-                <ul className={styles.rows}>
-                  {items.map((artifact) => (
-                    <MatrixRow
-                      key={artifact.id}
-                      artifact={artifact}
-                      triple={draft[artifact.id] ?? EMPTY_TRIPLE}
-                      reference={reference?.[artifact.id]}
-                      referenceLabel={referenceLabel}
-                      onChange={onChange}
-                    />
-                  ))}
-                </ul>
+            <div id={panelId} className={styles.panel} hidden={!open}>
+              <div className={styles.columns} aria-hidden="true">
+                <span>Item</span>
+                {FACTORS.map((factor) => (
+                  <span key={factor.id}>{factor.label}</span>
+                ))}
+                <span />
               </div>
-            )}
+              <ul className={styles.rows}>
+                {items.map((artifact) => (
+                  <MatrixRow
+                    key={artifact.id}
+                    artifact={artifact}
+                    triple={draft[artifact.id] ?? EMPTY_TRIPLE}
+                    reference={reference?.[artifact.id]}
+                    referenceLabel={referenceLabel}
+                    onChange={onChange}
+                  />
+                ))}
+              </ul>
+            </div>
           </section>
         );
       })}
