@@ -8,8 +8,11 @@
     "desk": "vite --open /desk.html",
     "build": "npm run typecheck && vite build",
     "preview": "vite preview",
-    "typecheck": "tsc && tsc -p scripts",
-    "test": "vitest run"
+    "typecheck": "tsc && tsc -p scripts && tsc -p api",
+    "test": "vitest run",
+    "api": "npm --prefix api start",
+    "db:apply": "node db/apply.ts",
+    "db:seed": "node db/seed.ts"
   },
   "dependencies": {
     "react": "^19.3.0",

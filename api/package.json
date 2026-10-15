@@ -1,0 +1,23 @@
+{
+  "name": "fcr-api",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "esbuild src/index.ts --bundle --platform=node --format=esm --target=node24 --packages=external --sourcemap --outfile=dist/index.js",
+    "start": "npm run build && func start"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.134.0",
+    "@azure/functions": "^4.16.5",
+    "@azure/identity": "^4.14.0",
+    "mssql": "^12.7.9"
+  },
+  "devDependencies": {
+    "@types/mssql": "^12.3.0",
+    "@types/node": "^26.6.5",
+    "azure-functions-core-tools": "^4.16.0",
+    "esbuild": "^0.28.2"
+  }
+}
