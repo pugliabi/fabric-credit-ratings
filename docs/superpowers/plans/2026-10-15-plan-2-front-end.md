@@ -1980,7 +1980,8 @@ export default defineConfig({
   base: '/',
   plugins: [react()],
   server: {
-    proxy: { '/api': 'http://localhost:7071' },
+    // FCR_API_TARGET points /api at a Functions host on another port.
+    proxy: { '/api': process.env.FCR_API_TARGET ?? 'http://localhost:7071' },
   },
   build: {
     rolldownOptions: {
@@ -1993,6 +1994,11 @@ export default defineConfig({
   },
 });
 ```
+
+The desk is gone, so the proxy takes all of `/api`. Running a second checkout alongside this one:
+- The proxy keeps the browser's `Origin` (`changeOrigin` rewrites only `Host`). A Vite on any port other than 5173 needs that origin in its host's `ALLOWED_ORIGINS`, or every write, login included, gets 403.
+- Vite moves to 5174 on its own when 5173 is taken, with only a console line. Either put `"ALLOWED_ORIGINS": "http://localhost:5173,http://localhost:5174,http://localhost:5175"` in each checkout's `api/local.settings.json`, or start Vite with `--port <n> --strictPort`.
+- A second host starts with `cd api; npm run build; npx func start --port 7072`, and its Vite with `$env:FCR_API_TARGET = 'http://localhost:7072'; npm run dev`.
 
 - [ ] **Step 10: Remove the desk script.** In `package.json`, delete the `"desk": "vite --open /desk.html",` line.
 
@@ -2564,7 +2570,7 @@ export function PublishTab({ rounds, catalogSize, onRounds }: PublishTabProps) {
             {site.lastSnapshotAt
               ? `The live site shows the database as of ${formatTimestamp(site.lastSnapshotAt)}.`
               : 'No deploy has confirmed a build from the database yet.'}
-            {site.behind && ' Published ratings, notes, or the catalog changed since then.'}
+            {site.lastSnapshotAt && site.behind && ' Published ratings, notes, or the catalog changed since then.'}
           </p>
           <div className={styles.fields}>
             {site.deployConfigured ? (
@@ -3901,6 +3907,7 @@ The script also tells the deploy which snapshot it fetched. Its timeout is 200 s
 - After a successful fetch, whether it wrote the file or found it unchanged, append `generatedAt=<value>` to `$GITHUB_OUTPUT` when that variable is set.
 - The value is the response's `generatedAt` string, byte for byte. It's not the committed file's, which is older when the write was skipped, so the admin page would stay behind. It's not a new `Date` either, which would mark changes made during the build as live.
 - On any failure, write nothing to `$GITHUB_OUTPUT`.
+- A 503 gets one retry. The database may still be waking, or the GET's clock read waited past mssql's 30 s request timeout behind a write transaction that stalled after stamping `changed_at`.
 - With `--confirm` (local runs), after a successful fetch, POST `{ generatedAt }` to `/api/build/snapshot/deployed` with the token and `Content-Type: application/json`. Expect 204. Vite serves the written file at once, so locally the fetch is the deploy. A failed confirm is a warning, like a failed fetch.
 
 Fetching the snapshot never marks the public site up to date. Only `POST /api/build/snapshot/deployed` moves `last_snapshot_at`: the deploy workflow's confirm step (Task 11), or `npm run snapshot -- --confirm` locally.
@@ -3943,10 +3950,17 @@ function sameContent(a: SnapshotShape, b: SnapshotShape): boolean {
 }
 
 async function refresh(base: string, token: string): Promise<{ message: string; generatedAt: string }> {
-  const response = await fetch(`${base}/api/build/snapshot`, {
-    headers: { Authorization: `Bearer ${token}` },
-    signal: AbortSignal.timeout(TIMEOUT_MS),
-  });
+  const get = () =>
+    fetch(`${base}/api/build/snapshot`, {
+      headers: { Authorization: `Bearer ${token}` },
+      signal: AbortSignal.timeout(TIMEOUT_MS),
+    });
+  let response = await get();
+  if (response.status === 503) {
+    // A database still waking, or a clock read that timed out behind a stalled write, answers 503.
+    await response.body?.cancel();
+    response = await get();
+  }
   if (!response.ok) throw new Error(`${base} answered HTTP ${response.status}.`);
   const snapshot: unknown = await response.json();
   if (!isSnapshot(snapshot)) throw new Error('The response is not a snapshot.');
@@ -4167,7 +4181,7 @@ Expected: `#publish` → Check again shows "behind". Run `npm run snapshot -- --
 Expected: the private window (after a reload) shows "Q1 2027 · 0 of N rated" and a "Start from my Q4 2026 scores" button that fills the matrix with Rater A's Q4 card.
 
 - [ ] **Step 8: Session end.** On `#users`, disable Rater A. In the private window, change a slider and click Save scores.
-Expected: the login form appears with "Your session ended…". Logging in as `rater-a` fails with "Wrong login or password." Enable Rater A again.
+Expected: the login form appears with "Your session ended…". Logging in as `rater-a` fails with "Wrong login or password." Enable Rater A again. That failed login leaves `login:rater-a` at `failures=1`. The integration test doesn't clean it, by design, so `fcr-dev` won't show 0 `login_attempts` after this task; that isn't a test leak.
 
 - [ ] **Step 9: Clean up.** Throw away the dev snapshot so production never ships test data:
 
@@ -4178,8 +4192,8 @@ git status --short
 
 Expected: a clean tree. `fcr-dev` keeps Q4 2026 (published) and Q1 2027 (open).
 
-- [ ] **Step 10: Re-run the API integration test** (Plan 1 Task 17 Step 4).
-Expected: 9 tests pass against the new open round, `2027-Q1`.
+- [ ] **Step 10: Re-run the API integration test** (Plan 1 Task 17 Step 4). First log out of or close the admin window and the private window, and don't log in through any local site while it runs. Run one copy of the suite per database at a time, because each copy's `beforeAll` deletes every `itest-` row. Never run `db:seed --force` during it. From a second checkout, set `FCR_API_URL` to that checkout's host port, and check that its `api/local.settings.json` points at `fcr-dev`: the suite's own cleanup connects with the settings file of the checkout it runs from.
+Expected: `Tests  9 passed (9)` against the new open round, `2027-Q1`. "9 skipped" means `FCR_API_URL` wasn't set. After Steps 5 and 6, `site_state.changed_at` and `last_snapshot_at` are both set, and the suite must leave both unchanged, because it writes only to the open round; it asserts `last_snapshot_at`. If a stamp moves, an open-round write stamped the site or something else wrote public data. Treat that as an API bug, and don't loosen the test.
 
 ---
 

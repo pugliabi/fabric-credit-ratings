@@ -147,7 +147,7 @@ Shared types stay in `src/domain/types.ts` (`Rating`, `RatingPoint`, `FactorValu
 
 ## API
 
-All responses are JSON. Errors look like `{ "error": "<message>" }`, with status 400 (invalid input), 401 (not logged in), 403 (wrong role), 404, 409 (state conflict, such as a round not open), or 503 (database unavailable).
+All responses are JSON. Errors look like `{ "error": "<message>" }`, with status 400 (invalid input), 401 (not logged in), 403 (wrong role), 404, 409 (state conflict, such as a round not open), 415 (a write that isn't JSON), 502 (the AI draft or GitHub refused), or 503 (database unavailable).
 
 ### Auth (anyone)
 
@@ -178,19 +178,19 @@ The rater page's "Start from current ratings" uses the bundled `snapshot.json` (
 | `PUT /api/admin/rounds/:id` | `{ status: 'published', publishedOn }` or `{ status: 'open' }` | publish, or reopen the latest published round when no round is open. Returns `{ rounds, deploy }` |
 | `GET /api/admin/rounds/:id/review` | none | the raters, and per item: averaged scores, grade, change from the previous published round, per-rater scores. Plus the notes and whether AI drafting is configured |
 | `PUT /api/admin/rounds/:id/scores/:userId` | `{ scores }` | replaces any user's card in any round, published included. Returns the review |
-| `PUT /api/admin/rounds/:id/notes/:artifactId` | `{ body }` | 204. Saves the why text. An empty body deletes it |
+| `PUT /api/admin/rounds/:id/notes/:artifactId` | `{ body }` | 204. Saves the why text. An empty body deletes it. A body that isn't text gets 400 |
 | `POST /api/admin/rounds/:id/draft/:artifactId` | none | `{ text }`, an AI-drafted why (existing `draft-why` logic) |
 | `GET /api/admin/catalog` | none | workloads and items with sort orders, and whether each item is referenced |
-| `POST /api/admin/workloads`, `PUT /api/admin/workloads/:id` | `{ id?, name, shortName, blurb, sortOrder? }` | create or edit. Returns the admin catalog |
-| `POST /api/admin/artifacts`, `PUT /api/admin/artifacts/:id`, `DELETE /api/admin/artifacts/:id` | `{ id?, name, workload, status, sortOrder? }` | create, edit, or delete (delete only when unreferenced, else 409). Returns the admin catalog |
+| `POST /api/admin/workloads`, `PUT /api/admin/workloads/:id` | `{ id?, name, shortName, blurb, sortOrder? }` | create or edit. Create ignores `sortOrder` and appends to the end; an edit without it keeps the current order. Returns the admin catalog |
+| `POST /api/admin/artifacts`, `PUT /api/admin/artifacts/:id`, `DELETE /api/admin/artifacts/:id` | `{ id?, name, workload, status, sortOrder? }` | create, edit, or delete (delete only when unreferenced, else 409). Create ignores `sortOrder` and appends to the end of the item's workload. Returns the admin catalog |
 | `GET /api/admin/users`, `POST /api/admin/users` | `{ login, displayName, role, password }` | list or create. Returns every user |
-| `PUT /api/admin/users/:id` | any of `{ displayName, role, active, password }` | edit. Disabling or a new password ends the user's sessions. Returns every user |
+| `PUT /api/admin/users/:id` | any of `{ displayName, role, active, password }` | edit. Disabling or a new password ends the user's sessions; setting your own password keeps your current session. Returns every user |
 | `GET /api/admin/site` | none | `{ lastSnapshotAt, behind, deployConfigured }` |
 | `POST /api/admin/site/update` | none | starts the deploy workflow. 502 if GitHub refuses or dispatch isn't configured |
 
-`behind` is true when `site_state.changed_at` is later than `last_snapshot_at`. Every handler that changes public data stamps `changed_at`: publish, reopen, edits to published scores or notes, and catalog edits. A computed "newest `updated_at`" query would miss a reopened round.
+`behind` is true when `site_state.changed_at` is at or later than `last_snapshot_at`, or when no deploy has confirmed a snapshot yet. Every handler that changes public data stamps `changed_at`: publish, reopen, edits to published scores or notes, and catalog edits. A computed "newest `updated_at`" query would miss a reopened round.
 
-Publishing a round also starts the deploy workflow. An admin can't demote themselves or disable the last active admin.
+Publishing a round also starts the deploy workflow. An admin can't demote or disable themselves, and a change that would leave no active admin is refused. The check runs under a lock, so two admins changing each other at once can't both succeed.
 
 ### Build
 
@@ -201,7 +201,7 @@ Publishing a round also starts the deploy workflow. An admin can't demote themse
 
 ## Auth and security
 
-- **Password hashing.** scrypt from `node:crypto` (N=32768, r=8, p=1, 16-byte salt, 64-byte key), stored as `scrypt$32768$8$1$<salt b64>$<hash b64>` and compared with `timingSafeEqual`. Minimum length is 10 characters. Logins are case-insensitive (stored lowercase).
+- **Password hashing.** scrypt from `node:crypto` (N=32768, r=8, p=3, 16-byte salt, 64-byte key, password NFKC-normalized), stored as `scrypt$32768$8$3$<salt b64>$<hash b64>` and compared with `timingSafeEqual`. Length is 10 to 200 characters. Logins are case-insensitive (stored lowercase).
 - **Session token.** 32 random bytes, base64url. Only its sha256 is stored. Lifetime is 30 days. When a request arrives and less than 29 days remain, `expires_at` is reset to 30 days from now, so the session row is written at most once a day.
 - **Cookie.** In production it's `__Host-fcr_session` with HttpOnly, Secure, SameSite=Lax, Path=/. In local dev it's `fcr_session` without Secure (controlled by `COOKIE_SECURE=false`).
 - **CORS.** `Access-Control-Allow-Origin` is echoed only for origins in `ALLOWED_ORIGINS` (production: `https://fabriccreditratings.com` and `https://www.fabriccreditratings.com`), with `Allow-Credentials: true`.
@@ -245,7 +245,7 @@ Publishing a round also starts the deploy workflow. An admin can't demote themse
 Triggers: push to `main`, `workflow_dispatch`. Permissions: `contents: write`, `pages: write`, `id-token: write`.
 
 1. Checkout, setup-node, `npm ci`.
-2. When the `API_URL` variable is set, `npm run snapshot` (`scripts/snapshot.ts`) fetches `${API_URL}/api/build/snapshot` with `secrets.SNAPSHOT_TOKEN`, with a timeout of about 200 seconds so a paused database can wake (under the 230-second Functions limit). On HTTP 200 with a valid snapshot it writes `src/data/snapshot.json`, and it skips the write when only `generatedAt` differs. Either way it outputs the fetched `generatedAt` for step 5. On any failure it keeps the committed file, logs a warning, and outputs nothing. Locally the same script reads the token from `api/local.settings.json`.
+2. When the `API_URL` variable is set, `npm run snapshot` (`scripts/snapshot.ts`) fetches `${API_URL}/api/build/snapshot` with `secrets.SNAPSHOT_TOKEN`, with a timeout of about 200 seconds so a paused database can wake (under the 230-second Functions limit), and one retry on a 503. On HTTP 200 with a valid snapshot it writes `src/data/snapshot.json`, and it skips the write when only `generatedAt` differs. Either way it outputs the fetched `generatedAt` for step 5. On any failure it keeps the committed file, logs a warning, and outputs nothing. Locally the same script reads the token from `api/local.settings.json`.
 3. If the snapshot changed, commit it as `github-actions[bot]` ("Snapshot <asOf>") and push with a pull-rebase retry. `GITHUB_TOKEN` commits don't retrigger the workflow.
 4. Build, upload `dist`, deploy to Pages.
 5. After `actions/deploy-pages` succeeds, if step 2 output a `generatedAt`, POST it as `{ generatedAt }` to `${API_URL}/api/build/snapshot/deployed` with the same token. That includes the run where step 2 skipped the write because only `generatedAt` differed, since the deployed data is the same. If the fetch failed, the run doesn't POST, because the site still shows the committed file. So a failed fetch, or a deploy that fails or is cancelled after it, leaves `last_snapshot_at` where it was, and the admin page still shows the site as behind.

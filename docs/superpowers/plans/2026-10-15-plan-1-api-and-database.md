@@ -40,7 +40,7 @@
 api/
   package.json                 fcr-api: build (esbuild), start (func start)
   tsconfig.json                NodeNext, noEmit; includes ../db
-  host.json                    route prefix "api"
+  host.json                    routePrefix "" (route() adds api/; the host rejects route templates that start with "admin")
   local.settings.example.json  local app settings template (real file is gitignored)
   src/
     index.ts                   imports every functions/* module
@@ -482,7 +482,7 @@ Expected: `api/package-lock.json` created. The Core Tools install downloads the 
 }
 ```
 
-- [ ] **Step 4: Create `api/host.json`.**
+- [ ] **Step 4: Create `api/host.json`.** Routes are registered under `api/` by `route()`, because the Functions host refuses any route template that starts with `admin`.
 
 ```json
 {
@@ -493,7 +493,7 @@ Expected: `api/package-lock.json` created. The Core Tools install downloads the 
     }
   },
   "extensions": {
-    "http": { "routePrefix": "api" }
+    "http": { "routePrefix": "" }
   }
 }
 ```
@@ -1733,8 +1733,14 @@ export async function updateUser(db: Db, id: number, changes: UserChanges): Prom
   await db.query(`UPDATE users SET ${sets.join(', ')} WHERE id = @id`, params);
 }
 
-export async function countActiveAdmins(db: Db): Promise<number> {
-  const [row] = await db.query<{ n: number }>(`SELECT COUNT(*) AS n FROM users WHERE role = 'admin' AND active = 1`);
+/**
+ * Holds the users it reads until commit, so two admins demoting or deactivating each other take turns instead of both
+ * seeing the other still active. Use inside a transaction, before reading the user being changed.
+ */
+export async function countActiveAdminsLocked(tx: Db): Promise<number> {
+  const [row] = await tx.query<{ n: number }>(
+    `SELECT COUNT(*) AS n FROM users WITH (UPDLOCK, HOLDLOCK) WHERE role = 'admin' AND active = 1`,
+  );
   return row?.n ?? 0;
 }
 ```
@@ -2661,7 +2667,8 @@ export function route(name: string, method: Method, path: string, access: Access
   app.http(name, {
     methods,
     authLevel: 'anonymous',
-    route: path,
+    // host.json's routePrefix is empty because the host refuses any route template that starts with "admin".
+    route: `api/${path}`,
     handler: (request, log) => handle(request, log, method, access, handler),
   });
 }
@@ -3445,7 +3452,7 @@ export type Drafter = NonNullable<ReturnType<typeof createDrafter>>;
 Run: `npx vitest run api/src/lib/draft-why.test.ts`
 Expected: 3 tests pass.
 
-- [ ] **Step 3: Create `api/src/functions/admin-rounds.ts`.**
+- [ ] **Step 3: Create `api/src/functions/admin-rounds.ts`.** As built (`f8bdb00`, `817d1d6`, `8090e47`), the writes differ from the block below, and `api/src/functions/admin-rounds.ts` wins. Publish, reopen, `adminScoresPut`, and `adminNotePut` each run in one `transaction`: `lockRound(tx, round.id)` first (from the Task 9 fix), then the status checks on the locked row, then the write, then `markChanged(tx)` as the last statement. Scores and notes stamp only when the locked round is published. Publish starts the deploy after the commit. Reopen accepts only the latest published round. A note body that isn't a string gets 400.
 
 ```ts
 import type { DeployResult, PublishResult, RoundReview } from '../../../src/domain/api-types.ts';
@@ -3623,11 +3630,11 @@ git commit -m "API: admin rounds, review, score and note editing, AI drafting"
 - Create: `api/src/functions/admin-catalog.ts`, `api/src/functions/admin-users.ts`, `api/src/functions/admin-site.ts`
 - Modify: `api/src/index.ts`
 
-- [ ] **Step 1: Create `api/src/functions/admin-catalog.ts`.**
+- [ ] **Step 1: Create `api/src/functions/admin-catalog.ts`.** Every write and its `markChanged(tx)` share one transaction, with the stamp last. As built (`1ed2260`), `saveCatalog` also takes a `refused` mapping, so a create that loses a race on its id (2601/2627) or a delete that loses a race with a new score or note (547) answers the route's 409 instead of a 500.
 
 ```ts
 import type { AdminCatalog } from '../../../src/domain/api-types.ts';
-import { db } from '../lib/db.ts';
+import { db, transaction, type Db } from '../lib/db.ts';
 import { HttpError } from '../lib/errors.ts';
 import { route } from '../lib/http.ts';
 import { SLUG, oneOf, optionalInt, text } from '../lib/validate.ts';
@@ -3669,6 +3676,18 @@ function artifactFields(body: Record<string, unknown>, catalog: AdminCatalog) {
   };
 }
 
+/**
+ * Runs a catalog write and its site-changed mark in one transaction, so a committed change always shows the site as
+ * behind. These transactions lock no round, so taking site_state last keeps admin-rounds.ts's lock order.
+ */
+async function saveCatalog(write: (tx: Db) => Promise<void>): Promise<AdminCatalog> {
+  await transaction(async (tx) => {
+    await write(tx);
+    await markChanged(tx);
+  });
+  return adminCatalog(db);
+}
+
 route('adminCatalog', 'GET', 'admin/catalog', 'admin', async () => adminCatalog(db));
 
 route('adminWorkloadCreate', 'POST', 'admin/workloads', 'admin', async (ctx) => {
@@ -3677,27 +3696,23 @@ route('adminWorkloadCreate', 'POST', 'admin/workloads', 'admin', async (ctx) => 
   if ((await adminCatalog(db)).workloads.some((item) => item.id === id)) {
     throw new HttpError(409, `A workload with id ${id} already exists.`);
   }
-  await createWorkload(db, { id, ...fields });
-  await markChanged(db);
-  return adminCatalog(db);
+  return saveCatalog((tx) => createWorkload(tx, { id, ...fields }));
 });
 
 route('adminWorkloadUpdate', 'PUT', 'admin/workloads/{id}', 'admin', async (ctx) => {
   const current = (await adminCatalog(db)).workloads.find((item) => item.id === ctx.params.id);
   if (!current) throw new HttpError(404, 'That workload does not exist.');
   const sortOrder = optionalInt(ctx.body, 'sortOrder', 'Order') ?? current.sortOrder;
-  await updateWorkload(db, current.id, { ...workloadFields(ctx.body), sortOrder });
-  await markChanged(db);
-  return adminCatalog(db);
+  const fields = workloadFields(ctx.body);
+  return saveCatalog((tx) => updateWorkload(tx, current.id, { ...fields, sortOrder }));
 });
 
 route('adminArtifactCreate', 'POST', 'admin/artifacts', 'admin', async (ctx) => {
   const catalog = await adminCatalog(db);
   const id = slug(ctx.body, 'Item id');
   if (catalog.artifacts.some((item) => item.id === id)) throw new HttpError(409, `An item with id ${id} already exists.`);
-  await createArtifact(db, { id, ...artifactFields(ctx.body, catalog) });
-  await markChanged(db);
-  return adminCatalog(db);
+  const fields = artifactFields(ctx.body, catalog);
+  return saveCatalog((tx) => createArtifact(tx, { id, ...fields }));
 });
 
 route('adminArtifactUpdate', 'PUT', 'admin/artifacts/{id}', 'admin', async (ctx) => {
@@ -3705,9 +3720,8 @@ route('adminArtifactUpdate', 'PUT', 'admin/artifacts/{id}', 'admin', async (ctx)
   const current = catalog.artifacts.find((item) => item.id === ctx.params.id);
   if (!current) throw new HttpError(404, 'That item does not exist.');
   const sortOrder = optionalInt(ctx.body, 'sortOrder', 'Order') ?? current.sortOrder;
-  await updateArtifact(db, current.id, { ...artifactFields(ctx.body, catalog), sortOrder });
-  await markChanged(db);
-  return adminCatalog(db);
+  const fields = artifactFields(ctx.body, catalog);
+  return saveCatalog((tx) => updateArtifact(tx, current.id, { ...fields, sortOrder }));
 });
 
 route('adminArtifactDelete', 'DELETE', 'admin/artifacts/{id}', 'admin', async (ctx) => {
@@ -3716,17 +3730,15 @@ route('adminArtifactDelete', 'DELETE', 'admin/artifacts/{id}', 'admin', async (c
   if (current.referenced) {
     throw new HttpError(409, `${current.name} has scores or notes. Mark it retired instead of deleting it.`);
   }
-  await deleteArtifact(db, current.id);
-  await markChanged(db);
-  return adminCatalog(db);
+  return saveCatalog((tx) => deleteArtifact(tx, current.id));
 });
 ```
 
-- [ ] **Step 2: Create `api/src/functions/admin-users.ts`.**
+- [ ] **Step 2: Create `api/src/functions/admin-users.ts`.** `adminUserUpdate` hashes a new password first, then runs one transaction: the locked admin count, the target re-read on `tx`, the last-admin check, the update, and the session delete. As built (`1ed2260`), `adminUserCreate` also turns a duplicate-login race (2601/2627) into the same 409.
 
 ```ts
 import { sessionToken } from '../lib/current-user.ts';
-import { db } from '../lib/db.ts';
+import { db, transaction } from '../lib/db.ts';
 import { HttpError } from '../lib/errors.ts';
 import { route } from '../lib/http.ts';
 import { hashPassword, passwordProblem } from '../lib/password.ts';
@@ -3734,9 +3746,18 @@ import { userChangeProblem } from '../lib/permissions.ts';
 import { hashToken } from '../lib/session.ts';
 import { LOGIN, oneOf, optionalBool, optionalOneOf, optionalText, rawString, text } from '../lib/validate.ts';
 import { deleteUserSessions } from '../repo/sessions.ts';
-import { countActiveAdmins, createUser, findUserById, findUserByLogin, listUsers, updateUser } from '../repo/users.ts';
+import {
+  countActiveAdminsLocked,
+  createUser,
+  findUserById,
+  findUserByLogin,
+  listUsers,
+  updateUser,
+} from '../repo/users.ts';
 
 const ROLES = ['admin', 'rater'] as const;
+
+const noSuchUser = () => new HttpError(404, 'That user does not exist.');
 
 route('adminUsers', 'GET', 'admin/users', 'admin', async () => listUsers(db));
 
@@ -3757,28 +3778,27 @@ route('adminUserCreate', 'POST', 'admin/users', 'admin', async (ctx) => {
 
 route('adminUserUpdate', 'PUT', 'admin/users/{id}', 'admin', async (ctx) => {
   const id = Number(ctx.params.id);
-  const target = Number.isInteger(id) ? await findUserById(db, id) : undefined;
-  if (!target) throw new HttpError(404, 'That user does not exist.');
+  if (!Number.isInteger(id) || !(await findUserById(db, id))) throw noSuchUser();
   const displayName = optionalText(ctx.body, 'displayName', 'Name', 80);
   const role = optionalOneOf(ctx.body, 'role', 'Role', ROLES);
   const active = optionalBool(ctx.body, 'active', 'Active');
   const password = ctx.body.password === undefined ? undefined : rawString(ctx.body, 'password');
-  const problem = userChangeProblem(ctx.user, target, { role, active }, await countActiveAdmins(db));
-  if (problem) throw new HttpError(409, problem);
-  if (password !== undefined) {
-    const weak = passwordProblem(password);
-    if (weak) throw new HttpError(400, weak);
-  }
-  await updateUser(db, target.id, {
-    displayName,
-    role,
-    active,
-    passwordHash: password === undefined ? undefined : await hashPassword(password),
+  const weak = password === undefined ? undefined : passwordProblem(password);
+  if (weak) throw new HttpError(400, weak);
+  // Before the transaction, so slow scrypt work never holds the admin-count lock.
+  const passwordHash = password === undefined ? undefined : await hashPassword(password);
+  const own = id === ctx.user.id ? sessionToken(ctx.request.headers.get('cookie'), ctx.config) : undefined;
+  await transaction(async (tx) => {
+    const admins = await countActiveAdminsLocked(tx);
+    const target = await findUserById(tx, id);
+    if (!target) throw noSuchUser();
+    const problem = userChangeProblem(ctx.user, target, { role, active }, admins);
+    if (problem) throw new HttpError(409, problem);
+    await updateUser(tx, target.id, { displayName, role, active, passwordHash });
+    if (active === false || passwordHash !== undefined) {
+      await deleteUserSessions(tx, target.id, own ? hashToken(own) : '');
+    }
   });
-  if (active === false || password !== undefined) {
-    const own = target.id === ctx.user.id ? sessionToken(ctx.request.headers.get('cookie'), ctx.config) : undefined;
-    await deleteUserSessions(db, target.id, own ? hashToken(own) : '');
-  }
   return listUsers(db);
 });
 ```
@@ -3848,19 +3868,20 @@ git commit -m "API: admin catalog, user management, and public-site status"
 ### Task 17: Dev proxy and the integration test
 
 **Files:**
-- Create: `api/src/integration.test.ts`
+- Create: `api/src/integration.test.ts`, `api/src/functions/auth.test.ts` (the login-order unit tests from the Task 17 brief)
 - Modify: `vite.config.ts`
 
 - [ ] **Step 1: Proxy `/api` from Vite to the Functions host.** In `vite.config.ts`, add a `server` block above `build`:
 
 ```ts
   server: {
-    // /api/desk stays with the local desk plugin until Plan 2 removes it.
-    proxy: { '^/api/(?!desk)': 'http://localhost:7071' },
+    // /api/desk stays with the local desk plugin until Plan 2 removes it. FCR_API_TARGET points the rest at a
+    // Functions host on another port.
+    proxy: { '^/api/(?!desk)': process.env.FCR_API_TARGET ?? 'http://localhost:7071' },
   },
 ```
 
-- [ ] **Step 2: Write the integration test.** It runs only when `FCR_API_URL` is set and cleans up after itself.
+- [ ] **Step 2: Write the integration test.** It runs only when `FCR_API_URL` is set and cleans up after itself. As built (`5f8be72`, from the Task 17 brief), the file differs from the block below, and `api/src/integration.test.ts` wins. It has a ninth test: deploy confirmations need the build token and no particular `Origin`, sent with a `generatedAt` the API refuses so `fcr-dev` isn't stamped. `clearTestRows` also deletes the suite's notes. `afterAll` logs the admin out and checks that `site_state.last_snapshot_at` didn't move. `api/src/functions/auth.test.ts` pins the login order (look, reserve, verify, clear) with mocked repos, and since `dbcbb18` logout's cookie handling too.
 
 `api/src/integration.test.ts`:
 
@@ -4014,35 +4035,40 @@ describe.skipIf(!BASE)('API against the dev database', () => {
 - [ ] **Step 3: Confirm the default run skips it.**
 
 Run: `npm test`
-Expected: all unit tests pass; the 8 integration tests show as skipped.
+Expected: all unit tests pass; the 9 integration tests show as skipped.
 
-- [ ] **Step 4: Run it against `fcr-dev`.**
+- [ ] **Step 4: Run it against `fcr-dev`.** Close every local site and host using `fcr-dev`, in this checkout and in worktrees, and run one copy of the suite at a time.
 
 Terminal 1: `npm run api`
 
-Terminal 2:
+Terminal 2 (works in Windows PowerShell 5.1 and 7, prints nothing secret, and leaves no variables behind):
 
 ```powershell
 $env:FCR_API_URL = 'http://localhost:7071'
 $env:FCR_ADMIN_LOGIN = 'pugliabi'
-$env:FCR_ADMIN_PASSWORD = Read-Host 'Admin password' -MaskInput
-$env:FCR_SNAPSHOT_TOKEN = 'dev-snapshot-token'
-npx vitest run api/src/integration.test.ts
+$env:FCR_ADMIN_PASSWORD = [Net.NetworkCredential]::new('', (Read-Host 'Admin password' -AsSecureString)).Password
+$env:FCR_SNAPSHOT_TOKEN = (Get-Content api/local.settings.json -Raw | ConvertFrom-Json).Values.SNAPSHOT_TOKEN
+try {
+  npx vitest run --reporter=verbose api/src/integration.test.ts
+} finally {
+  Remove-Item Env:FCR_API_URL, Env:FCR_ADMIN_LOGIN, Env:FCR_ADMIN_PASSWORD, Env:FCR_SNAPSHOT_TOKEN -ErrorAction SilentlyContinue
+}
 ```
 
-Expected: 8 tests pass. Afterward no `itest-` users remain:
+Expected: 9 tests pass (`Tests  9 passed (9)`; "skipped" means `FCR_API_URL` wasn't set). `afterAll` logs the admin out, deletes the `itest-` rows, and checks that the logout succeeded and `site_state.last_snapshot_at` is unchanged. Afterward, in the `fcr-dev` SQL query editor:
 
-```powershell
-(Invoke-RestMethod http://localhost:7071/api/admin/users -WebSession $web) | Where-Object login -like 'itest-*'
+```sql
+SELECT (SELECT COUNT(*) FROM users WHERE login LIKE 'itest-%') AS users,
+       (SELECT COUNT(*) FROM login_attempts WHERE attempt_key LIKE 'login:itest-%') AS attempts;
 ```
 
-Expected: no output.
+Expected: `0` and `0`.
 
 - [ ] **Step 5: Commit.**
 
 ```powershell
 npm run typecheck
-git add vite.config.ts api/src/integration.test.ts
+git add vite.config.ts api/src/integration.test.ts api/src/functions/auth.test.ts
 git commit -m "Dev proxy to the Functions host; API integration test against fcr-dev"
 ```
 
