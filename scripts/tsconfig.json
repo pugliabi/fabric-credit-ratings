@@ -16,5 +16,5 @@
     "noUnusedParameters": true,
     "types": ["node"]
   },
-  "include": ["*.ts", "../vite.config.ts"]
+  "include": ["*.ts", "../vite.config.ts", "../vitest.config.ts"]
 }
