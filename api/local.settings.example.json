@@ -5,7 +5,7 @@
     "AzureWebJobsStorage": "",
     "SQL_SERVER": "<id>.database.fabric.microsoft.com",
     "SQL_DATABASE": "fcr-dev-<guid>",
-    "ALLOWED_ORIGINS": "http://localhost:5173",
+    "ALLOWED_ORIGINS": "http://localhost:5173,http://localhost:5174,http://localhost:5175",
     "COOKIE_SECURE": "false",
     "SNAPSHOT_TOKEN": "dev-snapshot-token",
     "ANTHROPIC_API_KEY": "",
