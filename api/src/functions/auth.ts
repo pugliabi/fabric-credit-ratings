@@ -1,5 +1,5 @@
 import { sessionToken } from '../lib/current-user.ts';
-import { db } from '../lib/db.ts';
+import { db, transaction } from '../lib/db.ts';
 import { HttpError } from '../lib/errors.ts';
 import { route } from '../lib/http.ts';
 import { isLocked } from '../lib/lockout.ts';
@@ -66,8 +66,11 @@ route('changePassword', 'PUT', 'me/password', 'user', async (ctx) => {
   }
   const problem = passwordProblem(next);
   if (problem) throw new HttpError(400, problem);
-  await updateUser(db, record.id, { passwordHash: await hashPassword(next) });
+  const passwordHash = await hashPassword(next);
   const token = sessionToken(ctx.request.headers.get('cookie'), ctx.config);
-  await deleteUserSessions(db, record.id, token ? hashToken(token) : '');
+  await transaction(async (tx) => {
+    await updateUser(tx, record.id, { passwordHash });
+    await deleteUserSessions(tx, record.id, token ? hashToken(token) : '');
+  });
   return undefined;
 });

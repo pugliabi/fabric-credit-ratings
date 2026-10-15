@@ -1,14 +1,14 @@
 import type { Cookie } from '@azure/functions';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Config } from '../lib/config.ts';
-import { DatabaseUnavailableError } from '../lib/db.ts';
+import { DatabaseUnavailableError, transaction, type Db } from '../lib/db.ts';
 import type { UserCtx } from '../lib/http.ts';
 import { LOCK_MS, MAX_FAILURES, type AttemptRow } from '../lib/lockout.ts';
-import { dummyHash, verifyPassword } from '../lib/password.ts';
+import { dummyHash, hashPassword, verifyPassword } from '../lib/password.ts';
 import { clearedCookie, hashToken } from '../lib/session.ts';
 import { clearAttempt, getAttempts, releaseAttempt, reserveAttempt } from '../repo/attempts.ts';
-import { createSession, deleteSession, pruneExpiredSessions } from '../repo/sessions.ts';
-import { findUserByLogin, type UserRecord } from '../repo/users.ts';
+import { createSession, deleteSession, deleteUserSessions, pruneExpiredSessions } from '../repo/sessions.ts';
+import { findUserById, findUserByLogin, toSessionUser, updateUser, type UserRecord } from '../repo/users.ts';
 import './auth.ts';
 
 type Handler = (ctx: UserCtx) => Promise<unknown>;
@@ -20,9 +20,11 @@ vi.mock(import('../lib/http.ts'), () => ({
     handlers.set(name, handler);
   },
 }));
+vi.mock(import('../lib/db.ts'), async (importOriginal) => ({ ...(await importOriginal()), transaction: vi.fn() }));
 vi.mock(import('../lib/password.ts'), async (importOriginal) => ({
   ...(await importOriginal()),
   dummyHash: vi.fn(),
+  hashPassword: vi.fn(),
   verifyPassword: vi.fn(),
 }));
 vi.mock(import('../repo/attempts.ts'), () => ({
@@ -35,11 +37,14 @@ vi.mock(import('../repo/sessions.ts'), async (importOriginal) => ({
   ...(await importOriginal()),
   createSession: vi.fn(),
   deleteSession: vi.fn(),
+  deleteUserSessions: vi.fn(),
   pruneExpiredSessions: vi.fn(),
 }));
 vi.mock(import('../repo/users.ts'), async (importOriginal) => ({
   ...(await importOriginal()),
+  findUserById: vi.fn(),
   findUserByLogin: vi.fn(),
+  updateUser: vi.fn(),
 }));
 
 const IP = '10.0.0.1';
@@ -49,6 +54,8 @@ const PASSWORD = 'a-long-enough-password';
 const user: UserRecord = { id: 7, login: 'ann', displayName: 'Ann', role: 'rater', active: true, passwordHash: 'stored' };
 const config = { cookieSecure: false } as Config;
 const warn = vi.fn();
+const tx: Db = { query: () => Promise.reject(new Error('The repo functions are mocked.')) };
+const committed = vi.fn();
 
 const reserved = (failures: number): AttemptRow => ({ failures, windowStart: new Date(), lockedUntil: null });
 const ipRow = reserved(3);
@@ -86,6 +93,11 @@ beforeEach(() => {
   vi.mocked(dummyHash).mockResolvedValue('dummy');
   vi.mocked(releaseAttempt).mockResolvedValue(undefined);
   vi.mocked(createSession).mockResolvedValue(true);
+  vi.mocked(transaction).mockImplementation(async (work) => {
+    const value = await work(tx);
+    committed();
+    return value;
+  });
 });
 
 describe('login', () => {
@@ -233,5 +245,55 @@ describe('logout', () => {
     expect(await result).toBeUndefined();
     expect(deleteSession).not.toHaveBeenCalled();
     expect(cookies).toEqual([clearedCookie(false)]);
+  });
+});
+
+describe('changePassword', () => {
+  const NEXT = 'another-long-password';
+
+  function change(body: Record<string, unknown>, cookie?: string): Promise<unknown> {
+    const handler = handlers.get('changePassword');
+    if (!handler) throw new Error('changePassword was not registered.');
+    const request = { headers: new Headers(cookie ? { cookie } : {}) };
+    return handler({ body, user: toSessionUser(user), request, config } as unknown as UserCtx);
+  }
+
+  beforeEach(() => {
+    vi.mocked(findUserById).mockResolvedValue(user);
+    vi.mocked(hashPassword).mockResolvedValue('new-hash');
+  });
+
+  it('hashes first, then changes the hash and ends the other sessions in one transaction', async () => {
+    expect(await change({ current: PASSWORD, next: NEXT }, 'fcr_session=own-token')).toBeUndefined();
+
+    expect(verifyPassword).toHaveBeenCalledWith(PASSWORD, 'stored');
+    expect(hashPassword).toHaveBeenCalledWith(NEXT);
+    expect(transaction).toHaveBeenCalledTimes(1);
+    expect(updateUser).toHaveBeenCalledWith(tx, 7, { passwordHash: 'new-hash' });
+    expect(deleteUserSessions).toHaveBeenCalledWith(tx, 7, hashToken('own-token'));
+    const steps = [hashPassword, transaction, updateUser, deleteUserSessions, committed].map((fn) =>
+      order(vi.mocked(fn)),
+    );
+    expect(steps).toEqual([...steps].sort((a, b) => a - b));
+  });
+
+  it('refuses a wrong current password with 400, hashing and writing nothing', async () => {
+    vi.mocked(verifyPassword).mockResolvedValue(false);
+
+    await expect(change({ current: 'wrong-password', next: NEXT })).rejects.toMatchObject({
+      status: 400,
+      message: 'Your current password is wrong.',
+    });
+    expect(hashPassword).not.toHaveBeenCalled();
+    expect(transaction).not.toHaveBeenCalled();
+  });
+
+  it('refuses a weak new password with 400 before hashing or opening a transaction', async () => {
+    await expect(change({ current: PASSWORD, next: 'short' })).rejects.toMatchObject({
+      status: 400,
+      message: 'Use at least 10 characters.',
+    });
+    expect(hashPassword).not.toHaveBeenCalled();
+    expect(transaction).not.toHaveBeenCalled();
   });
 });
