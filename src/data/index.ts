@@ -1,5 +1,15 @@
 import { asOfDate as roundsAsOf, buildRatings, findUnrated } from '../domain/aggregate';
-import type { Artifact, Rating, Round, RoundData, RoundNotes, Scorecard, Workload, WorkloadId } from '../domain/types';
+import type {
+  Artifact,
+  FactorValues,
+  Rating,
+  Round,
+  RoundData,
+  RoundNotes,
+  Scorecard,
+  Workload,
+  WorkloadId,
+} from '../domain/types';
 import { ARTIFACTS } from './artifacts';
 import { WORKLOADS } from './workloads';
 
@@ -49,4 +59,9 @@ export function groupByWorkload<T>(items: readonly T[], workloadOf: (item: T) =>
 /** Publication date of the newest published round. */
 export function asOfDate(): string {
   return roundsAsOf(ROUNDS);
+}
+
+/** Published averages per item id, used to prefill score sliders. */
+export function currentValues(): Record<string, FactorValues> {
+  return Object.fromEntries(getRatings().map((rating) => [rating.artifact.id, rating.current.scores]));
 }
