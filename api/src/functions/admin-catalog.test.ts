@@ -188,4 +188,31 @@ describe('catalog writes', () => {
     expect(markChanged).not.toHaveBeenCalled();
     expect(committed).not.toHaveBeenCalled();
   });
+
+  it('refuses a bad id or an unknown workload with 400 before opening a transaction', async () => {
+    await expect(call('adminWorkloadCreate', {}, { ...newWorkload, id: 'Real Time' })).rejects.toMatchObject({
+      status: 400,
+      message: 'Workload id must be lowercase words joined by dashes, like copy-job.',
+    });
+    await expect(call('adminArtifactCreate', {}, { ...newArtifact, workload: 'nope' })).rejects.toMatchObject({
+      status: 400,
+      message: 'Workload nope does not exist.',
+    });
+    await expect(
+      call('adminArtifactUpdate', { id: notebook.id }, { name: 'Notebook', workload: 'nope', status: 'ga' }),
+    ).rejects.toMatchObject({ status: 400, message: 'Workload nope does not exist.' });
+    expect(transaction).not.toHaveBeenCalled();
+  });
+
+  it('passes constraint errors from the update routes through unmapped', async () => {
+    const duplicate = sqlError(2627);
+    vi.mocked(updateWorkload).mockRejectedValue(duplicate);
+    const body = { name: 'Data Engineering', shortName: 'DE', blurb: 'Spark.' };
+    await expect(call('adminWorkloadUpdate', { id: workload.id }, body)).rejects.toBe(duplicate);
+
+    const refused = sqlError(547);
+    vi.mocked(updateArtifact).mockRejectedValue(refused);
+    const item = { name: 'Notebook', workload: workload.id, status: 'ga' };
+    await expect(call('adminArtifactUpdate', { id: notebook.id }, item)).rejects.toBe(refused);
+  });
 });

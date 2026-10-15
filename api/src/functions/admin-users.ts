@@ -5,7 +5,16 @@ import { DUPLICATE_KEY, hasSqlNumber, route } from '../lib/http.ts';
 import { hashPassword, passwordProblem } from '../lib/password.ts';
 import { userChangeProblem } from '../lib/permissions.ts';
 import { hashToken } from '../lib/session.ts';
-import { LOGIN, oneOf, optionalBool, optionalOneOf, optionalText, rawString, text } from '../lib/validate.ts';
+import {
+  LOGIN,
+  USER_ID,
+  oneOf,
+  optionalBool,
+  optionalOneOf,
+  optionalText,
+  rawString,
+  text,
+} from '../lib/validate.ts';
 import { deleteUserSessions } from '../repo/sessions.ts';
 import {
   countActiveAdminsLocked,
@@ -45,8 +54,8 @@ route('adminUserCreate', 'POST', 'admin/users', 'admin', async (ctx) => {
 });
 
 route('adminUserUpdate', 'PUT', 'admin/users/{id}', 'admin', async (ctx) => {
-  const id = Number(ctx.params.id);
-  if (!Number.isInteger(id) || !(await findUserById(db, id))) throw noSuchUser();
+  const id = USER_ID.test(ctx.params.id ?? '') ? Number(ctx.params.id) : NaN;
+  if (Number.isNaN(id) || !(await findUserById(db, id))) throw noSuchUser();
   const displayName = optionalText(ctx.body, 'displayName', 'Name', 80);
   const role = optionalOneOf(ctx.body, 'role', 'Role', ROLES);
   const active = optionalBool(ctx.body, 'active', 'Active');
@@ -58,6 +67,9 @@ route('adminUserUpdate', 'PUT', 'admin/users/{id}', 'admin', async (ctx) => {
   const own = id === ctx.user.id ? sessionToken(ctx.request.headers.get('cookie'), ctx.config) : undefined;
   await transaction(async (tx) => {
     const admins = await countActiveAdminsLocked(tx);
+    // The session was checked before the lock, and a change that committed while this request waited can demote it.
+    const actor = await findUserById(tx, ctx.user.id);
+    if (!actor?.active || actor.role !== 'admin') throw new HttpError(403, 'Only admins can do that.');
     const target = await findUserById(tx, id);
     if (!target) throw noSuchUser();
     const problem = userChangeProblem(ctx.user, target, { role, active }, admins);

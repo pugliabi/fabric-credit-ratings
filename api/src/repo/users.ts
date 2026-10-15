@@ -84,8 +84,9 @@ export async function updateUser(db: Db, id: number, changes: UserChanges): Prom
 }
 
 /**
- * Holds the users it reads until commit, so two admins demoting or deactivating each other take turns instead of both
- * seeing the other still active. Use inside a transaction, before reading the user being changed.
+ * Locks every users row and blocks inserts until commit, so two admins demoting or deactivating each other take turns
+ * instead of both seeing the other still active. Use inside a transaction, before reading the user being changed, and
+ * keep the rest of it short: no hashing or network calls.
  */
 export async function countActiveAdminsLocked(tx: Db): Promise<number> {
   const [row] = await tx.query<{ n: number }>(

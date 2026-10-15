@@ -3,13 +3,13 @@ import { pointFor, previousPoint } from '../../../src/domain/aggregate.ts';
 import type { Round } from '../../../src/domain/types.ts';
 import { buildReview } from '../domain/review.ts';
 import type { Config } from '../lib/config.ts';
-import { db, transaction } from '../lib/db.ts';
+import { db, transaction, type Db } from '../lib/db.ts';
 import { createDrafter } from '../lib/draft-why.ts';
 import { HttpError } from '../lib/errors.ts';
 import { startDeploy } from '../lib/github.ts';
-import { route } from '../lib/http.ts';
+import { CONSTRAINT_CONFLICT, hasSqlNumber, route } from '../lib/http.ts';
 import { cardWriteProblem } from '../lib/permissions.ts';
-import { ROUND_ID, isIsoDate, oneOf, text, today, validateScores } from '../lib/validate.ts';
+import { ROUND_ID, USER_ID, isIsoDate, oneOf, text, today, validateScores } from '../lib/validate.ts';
 import { listArtifacts } from '../repo/catalog.ts';
 import { loadDataset } from '../repo/dataset.ts';
 import { saveNote } from '../repo/notes.ts';
@@ -49,6 +49,16 @@ async function reviewFor(roundId: string, config: Config): Promise<RoundReview> 
 
 async function knownArtifactIds(): Promise<Set<string>> {
   return new Set((await listArtifacts(db)).map((artifact) => artifact.id));
+}
+
+/** Runs a card or note save; a foreign key refusing it means the item was deleted after the route checked it. */
+async function saveForItems(deleted: string, work: (tx: Db) => Promise<void>): Promise<void> {
+  try {
+    await transaction(work);
+  } catch (error) {
+    if (hasSqlNumber(error, CONSTRAINT_CONFLICT)) throw new HttpError(409, deleted);
+    throw error;
+  }
 }
 
 route('adminRounds', 'GET', 'admin/rounds', 'admin', async () => listRoundsWithCounts(db));
@@ -108,11 +118,11 @@ route('adminReview', 'GET', 'admin/rounds/{id}/review', 'admin', async (ctx) =>
 route('adminScoresPut', 'PUT', 'admin/rounds/{id}/scores/{userId}', 'admin', async (ctx) => {
   const round = await requireRound(ctx.params.id);
   const userId = ctx.params.userId ?? '';
-  const owner = /^\d{1,9}$/.test(userId) ? await findUserById(db, Number(userId)) : undefined;
+  const owner = USER_ID.test(userId) ? await findUserById(db, Number(userId)) : undefined;
   if (!owner) throw new HttpError(404, 'That user does not exist.');
   const { scores, errors } = validateScores(ctx.body.scores, await knownArtifactIds());
   if (errors.length > 0) throw new HttpError(400, errors.join(' '));
-  await transaction(async (tx) => {
+  await saveForItems('An item on this card was just deleted. Reload the page to get the current list.', async (tx) => {
     const current = await lockRound(tx, round.id);
     if (!current) throw noSuchRound(round.id);
     const problem = cardWriteProblem(ctx.user, current, owner.id);
@@ -130,7 +140,7 @@ route('adminNotePut', 'PUT', 'admin/rounds/{id}/notes/{artifactId}', 'admin', as
   if (typeof ctx.body.body !== 'string') throw new HttpError(400, 'Send the write-up as text.');
   const body = ctx.body.body.trim();
   if (body.length > NOTE_MAX) throw new HttpError(400, 'Keep the write-up to 2,000 characters or fewer.');
-  await transaction(async (tx) => {
+  await saveForItems('That item was just deleted. Reload the page to get the current list.', async (tx) => {
     const current = await lockRound(tx, round.id);
     if (!current) throw noSuchRound(round.id);
     await saveNote(tx, round.id, artifactId, body, ctx.user.id);

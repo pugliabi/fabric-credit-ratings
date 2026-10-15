@@ -1,7 +1,7 @@
 import type { AdminCatalog } from '../../../src/domain/api-types.ts';
 import { db, transaction, type Db } from '../lib/db.ts';
 import { HttpError } from '../lib/errors.ts';
-import { DUPLICATE_KEY, hasSqlNumber, route } from '../lib/http.ts';
+import { CONSTRAINT_CONFLICT, DUPLICATE_KEY, hasSqlNumber, route } from '../lib/http.ts';
 import { SLUG, oneOf, optionalInt, text } from '../lib/validate.ts';
 import {
   adminCatalog,
@@ -14,8 +14,6 @@ import {
 import { markChanged } from '../repo/site.ts';
 
 const RELEASE_STATUSES = ['ga', 'preview', 'retired'] as const;
-/** SQL Server's error number for a statement a constraint refused; on a delete, a foreign key still pointing at it. */
-const CONSTRAINT_CONFLICT = [547];
 
 function slug(body: Record<string, unknown>, label: string): string {
   const id = text(body, 'id', label, 64);

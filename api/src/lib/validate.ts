@@ -6,6 +6,8 @@ export const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 /** Lowercase letters, digits, dot, dash, underscore; 2 to 40 characters. */
 export const LOGIN = /^[a-z0-9][a-z0-9._-]{1,39}$/;
 export const SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+/** Digits only, so 1e1 or 0x7 can't name a user; at most 9, so the bound value always fits SQL int. */
+export const USER_ID = /^\d{1,9}$/;
 
 type Body = Record<string, unknown>;
 

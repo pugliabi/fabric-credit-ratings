@@ -2,7 +2,7 @@ import sql from 'mssql';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AdminUser, SessionUser } from '../../../src/domain/api-types.ts';
 import type { Config } from '../lib/config.ts';
-import { transaction, type Db } from '../lib/db.ts';
+import { db, transaction, type Db } from '../lib/db.ts';
 import type { UserCtx } from '../lib/http.ts';
 import { hashPassword } from '../lib/password.ts';
 import { hashToken } from '../lib/session.ts';
@@ -79,6 +79,13 @@ function expectAscending(order: number[]): void {
 
 const firstCall = (fn: { mock: { invocationCallOrder: number[] } }) => fn.mock.invocationCallOrder[0] ?? 0;
 
+/** Answers findUserById from `rows` by id; `inTx` overrides what the transaction's reads see. */
+function usersById(rows: UserRecord[], inTx: Record<number, UserRecord | undefined> = {}): void {
+  vi.mocked(findUserById).mockImplementation(async (from, id) =>
+    from === tx && id in inTx ? inTx[id] : rows.find((row) => row.id === id),
+  );
+}
+
 beforeEach(() => {
   vi.resetAllMocks();
   vi.mocked(transaction).mockImplementation(async (work) => {
@@ -88,18 +95,23 @@ beforeEach(() => {
   });
   vi.mocked(hashPassword).mockResolvedValue('hashed');
   vi.mocked(countActiveAdminsLocked).mockResolvedValue(2);
-  vi.mocked(findUserById).mockResolvedValue(otherAdmin);
+  usersById([adminRecord, otherAdmin, rater]);
   vi.mocked(listUsers).mockResolvedValue(users);
 });
 
 describe('adminUserUpdate', () => {
-  it('hashes first, then locks the admin count, re-reads the user, updates, and ends sessions in one transaction', async () => {
+  it('hashes, then in one transaction locks the count, re-reads caller and user, updates, ends sessions', async () => {
     const result = await call('adminUserUpdate', { id: '2' }, { role: 'rater', password: NEW_PASSWORD });
 
     expect(hashPassword).toHaveBeenCalledWith(NEW_PASSWORD);
     expect(transaction).toHaveBeenCalledTimes(1);
     expect(countActiveAdminsLocked).toHaveBeenCalledWith(tx);
-    expect(findUserById).toHaveBeenLastCalledWith(tx, 2);
+    expect(vi.mocked(findUserById).mock.calls).toEqual([
+      [expect.anything(), 2],
+      [tx, admin.id],
+      [tx, 2],
+    ]);
+    expect(vi.mocked(findUserById).mock.calls[0]?.[0]).toBe(db);
     expect(updateUser).toHaveBeenCalledWith(tx, 2, {
       displayName: undefined,
       role: 'rater',
@@ -107,18 +119,47 @@ describe('adminUserUpdate', () => {
       passwordHash: 'hashed',
     });
     expect(deleteUserSessions).toHaveBeenCalledWith(tx, 2, '');
-    const reread = vi.mocked(findUserById).mock.invocationCallOrder.at(-1) ?? 0;
+    const [preRead = 0, actorRead = 0, targetRead = 0] = vi.mocked(findUserById).mock.invocationCallOrder;
     expectAscending([
+      preRead,
       firstCall(vi.mocked(hashPassword)),
       firstCall(vi.mocked(transaction)),
       firstCall(vi.mocked(countActiveAdminsLocked)),
-      reread,
+      actorRead,
+      targetRead,
       firstCall(vi.mocked(updateUser)),
       firstCall(vi.mocked(deleteUserSessions)),
       firstCall(committed),
       firstCall(vi.mocked(listUsers)),
     ]);
     expect(result).toEqual(users);
+  });
+
+  it('refuses with 403, writing nothing, when the caller lost admin rights while waiting for the lock', async () => {
+    for (const actor of [{ ...adminRecord, role: 'rater' as const }, { ...adminRecord, active: false }, undefined]) {
+      usersById([adminRecord, otherAdmin, rater], { [admin.id]: actor });
+
+      await expect(call('adminUserUpdate', { id: '7' }, { password: NEW_PASSWORD })).rejects.toMatchObject({
+        status: 403,
+        message: 'Only admins can do that.',
+      });
+    }
+    expect(updateUser).not.toHaveBeenCalled();
+    expect(deleteUserSessions).not.toHaveBeenCalled();
+    expect(committed).not.toHaveBeenCalled();
+  });
+
+  it('disables another admin while a second admin stays active, ending their sessions', async () => {
+    await call('adminUserUpdate', { id: '2' }, { active: false }, 'fcr_session=own-token');
+
+    expect(updateUser).toHaveBeenCalledWith(tx, 2, {
+      displayName: undefined,
+      role: undefined,
+      active: false,
+      passwordHash: undefined,
+    });
+    expect(deleteUserSessions).toHaveBeenCalledWith(tx, 2, '');
+    expect(committed).toHaveBeenCalledTimes(1);
   });
 
   it('decides on the locked count: refuses with 409, writing nothing, to demote the last active admin', async () => {
@@ -135,8 +176,6 @@ describe('adminUserUpdate', () => {
   });
 
   it('refuses with 409, writing nothing, when the caller removes their own admin access', async () => {
-    vi.mocked(findUserById).mockResolvedValue(adminRecord);
-
     await expect(call('adminUserUpdate', { id: '1' }, { active: false })).rejects.toMatchObject({
       status: 409,
       message: 'You cannot remove your own admin access. Ask another admin to make this change.',
@@ -146,7 +185,7 @@ describe('adminUserUpdate', () => {
   });
 
   it('answers 404, writing nothing, when the user is gone by the time the transaction reads it', async () => {
-    vi.mocked(findUserById).mockResolvedValueOnce(rater).mockResolvedValueOnce(undefined);
+    usersById([adminRecord, rater], { [rater.id]: undefined });
 
     await expect(call('adminUserUpdate', { id: '7' }, { active: false })).rejects.toMatchObject({
       status: 404,
@@ -164,12 +203,21 @@ describe('adminUserUpdate', () => {
     });
     expect(findUserById).not.toHaveBeenCalled();
 
-    vi.mocked(findUserById).mockResolvedValue(undefined);
     await expect(call('adminUserUpdate', { id: '99' }, { password: NEW_PASSWORD })).rejects.toMatchObject({
       status: 404,
     });
     expect(hashPassword).not.toHaveBeenCalled();
     expect(transaction).not.toHaveBeenCalled();
+  });
+
+  it('answers 404 for an id that only parses as a number, without looking it up', async () => {
+    for (const id of ['1e1', '0x7', '7.0', '-7', ' 7', '7 ', '', '1234567890']) {
+      await expect(call('adminUserUpdate', { id }, { displayName: 'Renamed' })).rejects.toMatchObject({
+        status: 404,
+        message: 'That user does not exist.',
+      });
+    }
+    expect(findUserById).not.toHaveBeenCalled();
   });
 
   it('refuses a weak password with 400 before hashing or opening a transaction', async () => {
@@ -182,8 +230,6 @@ describe('adminUserUpdate', () => {
   });
 
   it("keeps the caller's own session when they reset their own password", async () => {
-    vi.mocked(findUserById).mockResolvedValue(adminRecord);
-
     await call('adminUserUpdate', { id: '1' }, { password: NEW_PASSWORD }, 'fcr_session=own-token');
 
     expect(updateUser).toHaveBeenCalledWith(tx, 1, expect.objectContaining({ passwordHash: 'hashed' }));
@@ -191,8 +237,6 @@ describe('adminUserUpdate', () => {
   });
 
   it('ends every session of a user who is deactivated, hashing nothing', async () => {
-    vi.mocked(findUserById).mockResolvedValue(rater);
-
     await call('adminUserUpdate', { id: '7' }, { active: false }, 'fcr_session=own-token');
 
     expect(updateUser).toHaveBeenCalledWith(tx, 7, {
@@ -206,8 +250,6 @@ describe('adminUserUpdate', () => {
   });
 
   it('leaves sessions alone for a rename', async () => {
-    vi.mocked(findUserById).mockResolvedValue(rater);
-
     await call('adminUserUpdate', { id: '7' }, { displayName: '  Renamed  ' });
 
     expect(updateUser).toHaveBeenCalledWith(tx, 7, expect.objectContaining({ displayName: 'Renamed' }));

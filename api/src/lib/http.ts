@@ -87,8 +87,13 @@ async function readBody(request: HttpRequest): Promise<Record<string, unknown>> 
 }
 
 /** SQL Server's error numbers for a duplicate key in a unique index or a primary key, and for a deadlock victim. */
-export const DUPLICATE_KEY = [2601, 2627];
-const DEADLOCK_VICTIM = [1205];
+export const DUPLICATE_KEY: readonly number[] = [2601, 2627];
+const DEADLOCK_VICTIM: readonly number[] = [1205];
+/**
+ * SQL Server's error number for a statement a constraint refused. Every CHECK is validated before the write, so at run
+ * time it means a foreign key: a row still points at what a delete removes, or a write points at a deleted row.
+ */
+export const CONSTRAINT_CONFLICT: readonly number[] = [547];
 const UNAVAILABLE = 'The ratings database is not responding. Try again in a minute.';
 
 export function hasSqlNumber(error: unknown, numbers: readonly number[]): boolean {

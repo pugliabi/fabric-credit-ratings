@@ -1,3 +1,4 @@
+import sql from 'mssql';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AdminRound, DeployResult, SessionUser } from '../../../src/domain/api-types.ts';
 import type { Artifact, Round } from '../../../src/domain/types.ts';
@@ -30,7 +31,8 @@ type Handler = (ctx: UserCtx) => Promise<unknown>;
 
 const handlers = vi.hoisted(() => new Map<string, Handler>());
 
-vi.mock(import('../lib/http.ts'), () => ({
+vi.mock(import('../lib/http.ts'), async (importOriginal) => ({
+  ...(await importOriginal()),
   route: (name: string, _method: string, _path: string, _access: string, handler: Handler) => {
     handlers.set(name, handler);
   },
@@ -97,6 +99,11 @@ function callOrder(...mocks: { mock: { invocationCallOrder: number[] } }[]): num
 
 function expectAscending(order: number[]): void {
   expect(order).toEqual([...order].sort((a, b) => a - b));
+}
+
+/** What mssql rejects with when the server refuses a statement. */
+function sqlError(number: number): sql.RequestError {
+  return new sql.RequestError(Object.assign(new Error(`SQL Server error ${number}`), { info: { number } }));
 }
 
 beforeEach(() => {
@@ -368,6 +375,20 @@ describe('adminScoresPut', () => {
     ).rejects.toMatchObject({ status: 400, message: '"notebook" needs three whole scores from 1 to 7.' });
     expect(transaction).not.toHaveBeenCalled();
   });
+
+  it('answers 409 when an item on the card was deleted after the check, and passes other errors through', async () => {
+    vi.mocked(replaceScorecard).mockRejectedValueOnce(sqlError(547));
+    await expect(call('adminScoresPut', { id: open.id, userId: '7' }, body)).rejects.toMatchObject({
+      status: 409,
+      message: 'An item on this card was just deleted. Reload the page to get the current list.',
+    });
+
+    const error = sqlError(2627);
+    vi.mocked(replaceScorecard).mockRejectedValueOnce(error);
+    await expect(call('adminScoresPut', { id: open.id, userId: '7' }, body)).rejects.toBe(error);
+    expect(markChanged).not.toHaveBeenCalled();
+    expect(committed).not.toHaveBeenCalled();
+  });
 });
 
 describe('adminNotePut', () => {
@@ -425,6 +446,21 @@ describe('adminNotePut', () => {
       message: 'That item does not exist.',
     });
     expect(transaction).not.toHaveBeenCalled();
+  });
+
+  it('answers 409 when the item was deleted after the check, and passes other errors through', async () => {
+    vi.mocked(saveNote).mockRejectedValueOnce(sqlError(547));
+    await expect(
+      call('adminNotePut', { id: open.id, artifactId: 'notebook' }, { body: 'Solid.' }),
+    ).rejects.toMatchObject({
+      status: 409,
+      message: 'That item was just deleted. Reload the page to get the current list.',
+    });
+
+    const error = sqlError(2627);
+    vi.mocked(saveNote).mockRejectedValueOnce(error);
+    await expect(call('adminNotePut', { id: open.id, artifactId: 'notebook' }, { body: 'Solid.' })).rejects.toBe(error);
+    expect(committed).not.toHaveBeenCalled();
   });
 });
 

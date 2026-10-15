@@ -1,3 +1,4 @@
+import sql from 'mssql';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Artifact, Round } from '../../../src/domain/types.ts';
 import type { ScoreRow } from '../domain/dataset.ts';
@@ -13,7 +14,8 @@ type Handler = (ctx: UserCtx) => Promise<unknown>;
 
 const handlers = vi.hoisted(() => new Map<string, Handler>());
 
-vi.mock(import('../lib/http.ts'), () => ({
+vi.mock(import('../lib/http.ts'), async (importOriginal) => ({
+  ...(await importOriginal()),
   route: (name: string, _method: string, _path: string, _access: string, handler: Handler) => {
     handlers.set(name, handler);
   },
@@ -37,6 +39,11 @@ function save(body: Record<string, unknown>): Promise<unknown> {
   if (!handler) throw new Error('myScoresPut was not registered.');
   const user = { id: 7, login: 'rater', displayName: 'Rater', role: 'rater' as const };
   return handler({ body, user } as unknown as UserCtx);
+}
+
+/** What mssql rejects with when the server refuses a statement. */
+function sqlError(number: number): sql.RequestError {
+  return new sql.RequestError(Object.assign(new Error(`SQL Server error ${number}`), { info: { number } }));
 }
 
 beforeEach(() => {
@@ -97,5 +104,23 @@ describe('myScoresPut', () => {
   it('refuses with 409, before any transaction, a card for a round that is no longer the open one', async () => {
     await expect(save({ round: '2026-Q3', scores: {} })).rejects.toMatchObject({ status: 409 });
     expect(transaction).not.toHaveBeenCalled();
+  });
+
+  it('answers 409 when an item on the card was deleted after the check', async () => {
+    vi.mocked(lockRound).mockResolvedValue(round);
+    vi.mocked(replaceScorecard).mockRejectedValue(sqlError(547));
+
+    await expect(save({ round: round.id, scores: { notebook: [6, 5, 4] } })).rejects.toMatchObject({
+      status: 409,
+      message: 'An item on this card was just deleted. Reload the page to get the current list.',
+    });
+  });
+
+  it('passes other database errors through', async () => {
+    vi.mocked(lockRound).mockResolvedValue(round);
+    const error = sqlError(2627);
+    vi.mocked(replaceScorecard).mockRejectedValue(error);
+
+    await expect(save({ round: round.id, scores: { notebook: [6, 5, 4] } })).rejects.toBe(error);
   });
 });
