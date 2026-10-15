@@ -106,6 +106,17 @@ describe('createDrafter', () => {
     expect(create).toHaveBeenCalledTimes(2);
   });
 
+  it('gives up when the rewrite leaks the math too', async () => {
+    const draft = createDrafter(settings);
+    const create = stubbedCreate().mockResolvedValue(reply('Rated AA+.'));
+
+    await expect(draft?.(input)).rejects.toThrow('The model kept mentioning scores or grades. Write this one by hand.');
+    expect(create).toHaveBeenCalledTimes(2);
+    const retry = JSON.stringify(create.mock.calls[1]?.[0]);
+    expect(retry).toContain('Rewrite it without any of those.');
+    expect(retry).toContain('Rated AA+.');
+  });
+
   describe("the caller's deadline", () => {
     const timedOut = () => new DOMException('The operation was aborted due to timeout', 'TimeoutError');
 

@@ -1,5 +1,6 @@
-import { describe, expect, it } from 'vitest';
-import type { Db, Params } from '../lib/db.ts';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { useTarget } from '../../../db/target.ts';
+import { closeDb, db, transaction, type Db, type Params } from '../lib/db.ts';
 import { isBehind, markChanged, markSnapshotTaken } from './site.ts';
 
 function recording(): { calls: { text: string; params: Params }[]; fake: Db } {
@@ -60,5 +61,37 @@ describe('markSnapshotTaken', () => {
         'WHERE id = 1 AND (last_snapshot_at IS NULL OR last_snapshot_at < @takenAt)',
     );
     expect(calls[0]?.params).toEqual({ takenAt });
+  });
+});
+
+describe.skipIf(!process.env.FCR_DB_TESTS)('the site-changed stamp against the dev database', () => {
+  beforeAll(() => {
+    useTarget([]);
+  });
+
+  afterAll(async () => {
+    await closeDb();
+  });
+
+  // Rolled back, so site_state is unchanged. It holds the row for 1 s, so a deploy's snapshot read then waits 1 s.
+  it('holds back a locking clock read until the stamping transaction ends', { timeout: 120_000 }, async () => {
+    const rollBack = new Error('Rolled back on purpose.');
+    let read: Promise<unknown[]> | undefined;
+    let settled = false;
+    await transaction(async (tx) => {
+      await markChanged(tx);
+      read = db
+        .query('SELECT SYSUTCDATETIME() AS now FROM site_state WITH (READCOMMITTEDLOCK) WHERE id = 1')
+        .finally(() => {
+          settled = true;
+        });
+      await new Promise((resolve) => setTimeout(resolve, 1_000));
+      expect(settled).toBe(false);
+      throw rollBack;
+    }).catch((error: unknown) => {
+      if (error !== rollBack) throw error;
+    });
+    expect(await read).toHaveLength(1);
+    expect(settled).toBe(true);
   });
 });
