@@ -87,6 +87,11 @@ route('adminRoundUpdate', 'PUT', 'admin/rounds/{id}', 'admin', async (ctx): Prom
       if ((await countScorecards(tx, current.id)) === 0) {
         throw new HttpError(400, `Nobody has scored ${current.label} yet.`);
       }
+      // Unlocked is enough: only an open round can be published, only one round can be open, and this one holds it.
+      const latest = await findLatestPublishedRound(tx);
+      if (latest?.publishedOn && publishedOn < latest.publishedOn) {
+        throw new HttpError(400, `Publish dates can't be earlier than ${latest.label}'s (${latest.publishedOn}).`);
+      }
       await publishRound(tx, current.id, publishedOn);
       await markChanged(tx);
     });

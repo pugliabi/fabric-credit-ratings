@@ -133,6 +133,7 @@ describe('adminRoundUpdate: publish', () => {
     expect(transaction).toHaveBeenCalledTimes(1);
     expect(lockRound).toHaveBeenCalledWith(tx, open.id);
     expect(countScorecards).toHaveBeenCalledWith(tx, open.id);
+    expect(findLatestPublishedRound).toHaveBeenCalledWith(tx);
     expect(publishRound).toHaveBeenCalledWith(tx, open.id, '2026-10-15');
     expect(markChanged).toHaveBeenCalledWith(tx);
     expect(startDeploy).toHaveBeenCalledWith(config);
@@ -140,6 +141,7 @@ describe('adminRoundUpdate: publish', () => {
       callOrder(
         vi.mocked(lockRound),
         vi.mocked(countScorecards),
+        vi.mocked(findLatestPublishedRound),
         vi.mocked(publishRound),
         vi.mocked(markChanged),
         committed,
@@ -183,6 +185,31 @@ describe('adminRoundUpdate: publish', () => {
     expect(publishRound).not.toHaveBeenCalled();
     expect(markChanged).not.toHaveBeenCalled();
     expect(startDeploy).not.toHaveBeenCalled();
+  });
+
+  it("refuses with 400, changing nothing, a date earlier than the latest published round's", async () => {
+    const q3: Round = { id: '2026-Q3', label: 'Q3 2026', status: 'published', publishedOn: '2026-07-15' };
+    vi.mocked(countScorecards).mockResolvedValue(2);
+    vi.mocked(findLatestPublishedRound).mockResolvedValue(q3);
+
+    await expect(
+      call('adminRoundUpdate', { id: open.id }, { status: 'published', publishedOn: '2026-07-14' }),
+    ).rejects.toMatchObject({ status: 400, message: "Publish dates can't be earlier than Q3 2026's (2026-07-15)." });
+    expect(findLatestPublishedRound).toHaveBeenCalledWith(tx);
+    expect(publishRound).not.toHaveBeenCalled();
+    expect(markChanged).not.toHaveBeenCalled();
+    expect(startDeploy).not.toHaveBeenCalled();
+  });
+
+  it("accepts the latest published round's own date and future dates", async () => {
+    const q3: Round = { id: '2026-Q3', label: 'Q3 2026', status: 'published', publishedOn: '2026-07-15' };
+    vi.mocked(countScorecards).mockResolvedValue(2);
+    vi.mocked(findLatestPublishedRound).mockResolvedValue(q3);
+
+    for (const publishedOn of ['2026-07-15', '2099-01-01']) {
+      await call('adminRoundUpdate', { id: open.id }, { status: 'published', publishedOn });
+      expect(publishRound).toHaveBeenLastCalledWith(tx, open.id, publishedOn);
+    }
   });
 
   it('refuses an impossible publish date before opening a transaction', async () => {
