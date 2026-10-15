@@ -1,8 +1,6 @@
 import { ARTIFACTS } from '../data/artifacts';
 import { buildRatings, publishedRounds } from '../domain/aggregate';
-import { notchDelta } from '../domain/grades';
-import type { FactorValues, RatingPoint, RoundData, ScoreTriple } from '../domain/types';
-import { pluralize } from '../lib/format';
+import type { FactorValues, RoundData, ScoreTriple } from '../domain/types';
 
 /** Current published values per artifact id. */
 export function currentValues(rounds: readonly RoundData[]): Record<string, FactorValues> {
@@ -34,13 +32,4 @@ export function nextRound(rounds: readonly RoundData[], today: string): { id: st
     }
   }
   return { id: `${year}-Q${quarter}`, label: `Q${quarter} ${year}` };
-}
-
-export function changeLabel(point: RatingPoint, previous: RatingPoint | undefined): { kind: string; text: string } {
-  if (!previous) return { kind: 'new', text: 'First rating' };
-  const delta = notchDelta(previous.grade, point.grade);
-  const from = `from ${previous.grade} (${previous.roundLabel})`;
-  if (delta > 0) return { kind: 'up', text: `Up ${pluralize(delta, 'notch', 'notches')} ${from}` };
-  if (delta < 0) return { kind: 'down', text: `Down ${pluralize(-delta, 'notch', 'notches')} ${from}` };
-  return { kind: 'same', text: `Unchanged ${from}` };
 }

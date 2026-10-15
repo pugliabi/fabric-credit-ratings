@@ -22,6 +22,7 @@ export async function markChanged(db: Db): Promise<void> {
   await db.query('UPDATE site_state SET changed_at = SYSUTCDATETIME() WHERE id = 1');
 }
 
-export async function markSnapshotTaken(db: Db): Promise<void> {
-  await db.query('UPDATE site_state SET last_snapshot_at = SYSUTCDATETIME() WHERE id = 1');
+/** Pass the time read before loading the dataset, so a change made during the build still shows as behind. */
+export async function markSnapshotTaken(db: Db, takenAt: Date): Promise<void> {
+  await db.query('UPDATE site_state SET last_snapshot_at = @takenAt WHERE id = 1', { takenAt });
 }

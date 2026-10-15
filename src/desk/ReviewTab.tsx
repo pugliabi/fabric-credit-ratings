@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { changeLabel } from '../../api/src/domain/review';
 import { GradeBadge } from '../components/GradeBadge';
 import { ARTIFACTS } from '../data/artifacts';
 import { WORKLOADS } from '../data/workloads';
@@ -6,7 +7,6 @@ import { pointFor, previousPoint } from '../domain/aggregate';
 import type { RoundData, RoundNotes } from '../domain/types';
 import { formatScore } from '../lib/format';
 import { api } from './api';
-import { changeLabel } from './selectors';
 import styles from './Desk.module.css';
 
 const SAVE_DELAY = 700;
