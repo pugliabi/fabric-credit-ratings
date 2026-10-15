@@ -117,6 +117,12 @@ describe.skipIf(!BASE)('API against the dev database', () => {
     expect(reply.status, reply.body?.error).toBe(200);
     expect(reply.body.role).toBe('admin');
     adminId = reply.body.id;
+    // The host just wrote this session, so finding it proves the host and the suite share a database before any test
+    // writes through the API.
+    const [found] = await db.query<{ n: number }>('SELECT COUNT(*) AS n FROM sessions WHERE token_hash = @hash', {
+      hash: varchar(sessionHash(admin)),
+    });
+    if (found?.n !== 1) throw new Error('FCR_API_URL and api/local.settings.json must use the same database.');
   });
 
   afterAll(async () => {
