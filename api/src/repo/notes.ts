@@ -1,5 +1,5 @@
 import type { NoteRow } from '../domain/dataset.ts';
-import type { Db } from '../lib/db.ts';
+import { varchar, type Db } from '../lib/db.ts';
 
 export async function allNotes(db: Db): Promise<NoteRow[]> {
   return db.query<NoteRow>('SELECT round_id AS roundId, artifact_id AS artifactId, body FROM notes');
@@ -15,8 +15,8 @@ export async function saveNote(
 ): Promise<void> {
   if (!body) {
     await db.query('DELETE FROM notes WHERE round_id = @roundId AND artifact_id = @artifactId', {
-      roundId,
-      artifactId,
+      roundId: varchar(roundId),
+      artifactId: varchar(artifactId),
     });
     return;
   }
@@ -27,6 +27,6 @@ export async function saveNote(
      WHEN MATCHED THEN UPDATE SET body = @body, updated_at = SYSUTCDATETIME(), updated_by = @userId
      WHEN NOT MATCHED THEN INSERT (round_id, artifact_id, body, updated_by)
        VALUES (@roundId, @artifactId, @body, @userId);`,
-    { roundId, artifactId, body, userId },
+    { roundId: varchar(roundId), artifactId: varchar(artifactId), body, userId },
   );
 }

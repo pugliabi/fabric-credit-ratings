@@ -1,6 +1,6 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { useTarget } from '../../../db/target.ts';
-import { closeDb, db, transaction, type Db, type Params } from '../lib/db.ts';
+import { closeDb, db, transaction, varchar, type Db, type Param, type Params } from '../lib/db.ts';
 import { LOCK_MS, MAX_FAILURES, afterFailure, type AttemptRow } from '../lib/lockout.ts';
 import { clearAttempt, getAttempts, recordFailures } from './attempts.ts';
 
@@ -20,6 +20,10 @@ interface Call {
 
 const verb = (call: Call) => call.text.trim().split(/\s/, 1)[0];
 
+/** The string inside a varchar() parameter. */
+const unwrap = (param: Param | undefined) =>
+  param !== null && typeof param === 'object' && !(param instanceof Date) ? param.value : param;
+
 /** A Db that records statements; SELECTs return what `answer` gives for their parameters. */
 function recorder(answer: (params: Params) => object[] = () => []): { calls: Call[]; fake: Db } {
   const calls: Call[] = [];
@@ -32,12 +36,12 @@ function recorder(answer: (params: Params) => object[] = () => []): { calls: Cal
   return { calls, fake };
 }
 
-/** mssql sends strings as nvarchar, which makes SQL Server convert the varchar key column and scan the table. */
+/** A plain string binds as nvarchar, which makes SQL Server convert the varchar key column and scan the table. */
 function expectVarcharKeys(calls: readonly Call[]): void {
-  for (const { text } of calls) {
+  for (const { text, params } of calls) {
     const keys = text.match(/@k\d+|@key/g) ?? [];
     expect(keys.length).toBeGreaterThan(0);
-    expect(text.match(/CAST\((@k\d+|@key) AS varchar\(100\)\)/g)).toHaveLength(keys.length);
+    for (const key of keys) expect(params[key.slice(1)]).toStrictEqual(varchar(expect.any(String)));
   }
 }
 
@@ -46,7 +50,7 @@ describe('recordFailures', () => {
   const stored: AttemptRow = { failures: 3, windowStart: new Date(now.getTime() - 60_000), lockedUntil: null };
 
   it('locks one key at a time, in key order, and writes it in the same transaction', async () => {
-    const { calls, fake } = recorder((params) => (params.key === 'login:ann' ? [stored] : []));
+    const { calls, fake } = recorder((params) => (unwrap(params.key) === 'login:ann' ? [stored] : []));
     vi.mocked(transaction).mockImplementationOnce((work) => work(fake));
     const outside = vi.spyOn(db, 'query').mockRejectedValue(new Error('Queried outside the transaction.'));
 
@@ -54,7 +58,7 @@ describe('recordFailures', () => {
 
     expect(transaction).toHaveBeenCalledTimes(1);
     expect(outside).not.toHaveBeenCalled();
-    expect(calls.map((call) => [verb(call), call.params.key])).toEqual([
+    expect(calls.map((call) => [verb(call), unwrap(call.params.key)])).toEqual([
       ['SELECT', 'ip:10.0.0.1'],
       ['MERGE', 'ip:10.0.0.1'],
       ['SELECT', 'login:ann'],
@@ -64,8 +68,8 @@ describe('recordFailures', () => {
       expect(read.text).toMatch(/FROM login_attempts WITH \(UPDLOCK, HOLDLOCK\)/);
     }
     expect(calls.filter((call) => verb(call) === 'MERGE').map((call) => call.params)).toEqual([
-      { key: 'ip:10.0.0.1', failures: 1, windowStart: now, lockedUntil: null },
-      { key: 'login:ann', failures: 4, windowStart: stored.windowStart, lockedUntil: null },
+      { key: varchar('ip:10.0.0.1'), failures: 1, windowStart: now, lockedUntil: null },
+      { key: varchar('login:ann'), failures: 4, windowStart: stored.windowStart, lockedUntil: null },
     ]);
     expect(rows).toEqual(
       new Map([

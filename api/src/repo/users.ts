@@ -1,5 +1,5 @@
 import type { AdminUser, Role, SessionUser } from '../../../src/domain/api-types.ts';
-import type { Db, Param } from '../lib/db.ts';
+import { varchar, type Db, type Param } from '../lib/db.ts';
 
 export interface UserRecord extends SessionUser {
   active: boolean;
@@ -9,7 +9,9 @@ export interface UserRecord extends SessionUser {
 const COLUMNS = 'id, login, display_name AS displayName, role, active, password_hash AS passwordHash';
 
 export async function findUserByLogin(db: Db, login: string): Promise<UserRecord | undefined> {
-  const [row] = await db.query<UserRecord>(`SELECT ${COLUMNS} FROM users WHERE login = @login`, { login });
+  const [row] = await db.query<UserRecord>(`SELECT ${COLUMNS} FROM users WHERE login = @login`, {
+    login: varchar(login),
+  });
   return row;
 }
 
@@ -40,7 +42,12 @@ export async function createUser(
     `INSERT INTO users (login, display_name, role, password_hash)
      OUTPUT inserted.id
      VALUES (@login, @displayName, @role, @passwordHash)`,
-    { ...user },
+    {
+      login: varchar(user.login),
+      displayName: user.displayName,
+      role: varchar(user.role),
+      passwordHash: varchar(user.passwordHash),
+    },
   );
   if (!row) throw new Error('Creating the user returned no id.');
   return row.id;
@@ -62,7 +69,7 @@ export async function updateUser(db: Db, id: number, changes: UserChanges): Prom
   }
   if (changes.role !== undefined) {
     sets.push('role = @role');
-    params.role = changes.role;
+    params.role = varchar(changes.role);
   }
   if (changes.active !== undefined) {
     sets.push('active = @active');
@@ -70,7 +77,7 @@ export async function updateUser(db: Db, id: number, changes: UserChanges): Prom
   }
   if (changes.passwordHash !== undefined) {
     sets.push('password_hash = @passwordHash', 'password_changed_at = SYSUTCDATETIME()');
-    params.passwordHash = changes.passwordHash;
+    params.passwordHash = varchar(changes.passwordHash);
   }
   if (sets.length === 0) return;
   await db.query(`UPDATE users SET ${sets.join(', ')} WHERE id = @id`, params);

@@ -1,7 +1,7 @@
 import sql from 'mssql';
 import { TimeoutError as PoolTimeoutError } from 'tarn';
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
-import { DatabaseUnavailableError, closeDb, db, isConnectionError, transaction, type Db } from './db.ts';
+import { DatabaseUnavailableError, closeDb, db, isConnectionError, transaction, varchar, type Db } from './db.ts';
 
 vi.mock('@azure/identity', () => ({
   DefaultAzureCredential: class {
@@ -154,13 +154,34 @@ describe('db.query', () => {
     expect(config?.pool?.createTimeoutMillis).toBeGreaterThan(connectTimeout);
   });
 
-  it('binds dates as datetime2 and leaves other types to mssql', async () => {
+  it('binds dates as datetime2, text as fixed-length nvarchar, and varchar() values as varchar', async () => {
     const at = new Date('2026-10-15T12:00:00.123Z');
-    await db.query('SELECT @at, @label', { at, label: 'Round 1' });
-    const request = query.mock.contexts[0] as sql.Request;
-    expect(request.parameters.at?.type).toBe(sql.DateTime2);
-    expect(request.parameters.at?.value).toBe(at);
-    expect(request.parameters.label?.type).toBe(sql.NVarChar);
+    const essay = 'x'.repeat(4_001);
+    const longKey = 'k'.repeat(8_001);
+    await db.query('SELECT 1', {
+      at,
+      label: 'Round 1',
+      essay,
+      key: varchar('2026-q3'),
+      longKey: varchar(longKey),
+      none: varchar(null),
+      count: 3,
+    });
+    const { parameters } = query.mock.contexts[0] as sql.Request;
+    expect(parameters.at).toMatchObject({ type: sql.DateTime2, value: at });
+    expect(parameters.label).toMatchObject({ type: sql.NVarChar, length: 4_000, value: 'Round 1' });
+    expect(parameters.essay).toMatchObject({ type: sql.NVarChar, length: sql.MAX, value: essay });
+    expect(parameters.key).toMatchObject({ type: sql.VarChar, length: 8_000, value: '2026-q3' });
+    expect(parameters.longKey).toMatchObject({ type: sql.VarChar, length: sql.MAX, value: longKey });
+    expect(parameters.none).toMatchObject({ type: sql.VarChar, length: 8_000, value: null });
+    expect(parameters.count?.type).toBe(sql.Int);
+  });
+
+  it('binds varchar() values as varchar inside a transaction too', async () => {
+    await transaction((tx) => tx.query('SELECT 1', { key: varchar('2026-q3'), label: 'Round 1' }));
+    const { parameters } = query.mock.contexts[0] as sql.Request;
+    expect(parameters.key).toMatchObject({ type: sql.VarChar, length: 8_000, value: '2026-q3' });
+    expect(parameters.label).toMatchObject({ type: sql.NVarChar, length: 4_000, value: 'Round 1' });
   });
 });
 

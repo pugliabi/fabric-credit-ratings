@@ -2,8 +2,27 @@ import { DefaultAzureCredential } from '@azure/identity';
 import sql from 'mssql';
 import { TimeoutError as PoolTimeoutError } from 'tarn';
 
-export type Param = string | number | boolean | Date | null;
+/** A string bound as varchar. Make one with varchar(). */
+class Varchar {
+  readonly value: string | null;
+  constructor(value: string | null) {
+    this.value = value;
+  }
+}
+export type { Varchar };
+
+export type Param = string | number | boolean | Date | null | Varchar;
 export type Params = Readonly<Record<string, Param>>;
+
+/**
+ * For parameters compared with or written to varchar and char columns. A plain string binds as nvarchar, and under
+ * this database's SQL collation comparing that with a varchar column converts the column: the lookup scans instead of
+ * seeking, and inside a transaction it locks every row it reads. Keep plain strings for nvarchar columns, since
+ * varchar can only hold code page 1252 characters.
+ */
+export function varchar(value: string | null): Varchar {
+  return new Varchar(value);
+}
 
 export interface Db {
   query<T>(text: string, params?: Params): Promise<T[]>;
@@ -138,10 +157,15 @@ async function withWakeRetry<T>(run: () => Promise<T>): Promise<T> {
   }
 }
 
+// tedious sizes a string parameter by its value, so every value length would compile and cache its own plan.
+const fixedLength = (value: string | null, limit: number) => (value !== null && value.length > limit ? sql.MAX : limit);
+
 function bind(request: sql.Request, params: Params): sql.Request {
   for (const [name, value] of Object.entries(params)) {
     // mssql binds a Date as legacy datetime by default, which rounds to 1/300 s.
     if (value instanceof Date) request.input(name, sql.DateTime2, value);
+    else if (value instanceof Varchar) request.input(name, sql.VarChar(fixedLength(value.value, 8_000)), value.value);
+    else if (typeof value === 'string') request.input(name, sql.NVarChar(fixedLength(value, 4_000)), value);
     else request.input(name, value);
   }
   return request;

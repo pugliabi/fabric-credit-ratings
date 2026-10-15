@@ -1,6 +1,6 @@
 import type { AdminArtifact, AdminCatalog, AdminWorkload } from '../../../src/domain/api-types.ts';
 import type { Artifact, ReleaseStatus, Workload } from '../../../src/domain/types.ts';
-import type { Db } from '../lib/db.ts';
+import { varchar, type Db } from '../lib/db.ts';
 
 export async function listWorkloads(db: Db): Promise<Workload[]> {
   return db.query<Workload>('SELECT id, name, short_name AS shortName, blurb FROM workloads ORDER BY sort_order, name');
@@ -42,7 +42,7 @@ export async function createWorkload(db: Db, workload: WorkloadFields & { id: st
   await db.query(
     `INSERT INTO workloads (id, name, short_name, blurb, sort_order)
      SELECT @id, @name, @shortName, @blurb, ISNULL(MAX(sort_order), 0) + 10 FROM workloads`,
-    { ...workload },
+    { ...workload, id: varchar(workload.id) },
   );
 }
 
@@ -55,7 +55,7 @@ export async function updateWorkload(
     `UPDATE workloads
      SET name = @name, short_name = @shortName, blurb = @blurb, sort_order = @sortOrder, updated_at = SYSUTCDATETIME()
      WHERE id = @id`,
-    { id, ...fields },
+    { id: varchar(id), ...fields },
   );
 }
 
@@ -69,7 +69,12 @@ export async function createArtifact(db: Db, artifact: ArtifactFields & { id: st
   await db.query(
     `INSERT INTO artifacts (id, name, workload_id, status, sort_order)
      SELECT @id, @name, @workload, @status, ISNULL(MAX(sort_order), 0) + 10 FROM artifacts WHERE workload_id = @workload`,
-    { ...artifact },
+    {
+      ...artifact,
+      id: varchar(artifact.id),
+      workload: varchar(artifact.workload),
+      status: varchar(artifact.status),
+    },
   );
 }
 
@@ -82,12 +87,12 @@ export async function updateArtifact(
     `UPDATE artifacts
      SET name = @name, workload_id = @workload, status = @status, sort_order = @sortOrder, updated_at = SYSUTCDATETIME()
      WHERE id = @id`,
-    { id, ...fields },
+    { ...fields, id: varchar(id), workload: varchar(fields.workload), status: varchar(fields.status) },
   );
 }
 
 export async function deleteArtifact(db: Db, id: string): Promise<void> {
-  await db.query('DELETE FROM artifacts WHERE id = @id', { id });
+  await db.query('DELETE FROM artifacts WHERE id = @id', { id: varchar(id) });
 }
 
 export async function upsertWorkload(db: Db, workload: Workload, sortOrder: number): Promise<void> {
@@ -97,7 +102,7 @@ export async function upsertWorkload(db: Db, workload: Workload, sortOrder: numb
        updated_at = SYSUTCDATETIME()
      WHEN NOT MATCHED THEN INSERT (id, name, short_name, blurb, sort_order)
        VALUES (@id, @name, @shortName, @blurb, @sortOrder);`,
-    { id: workload.id, name: workload.name, shortName: workload.shortName, blurb: workload.blurb, sortOrder },
+    { id: varchar(workload.id), name: workload.name, shortName: workload.shortName, blurb: workload.blurb, sortOrder },
   );
 }
 
@@ -108,6 +113,12 @@ export async function upsertArtifact(db: Db, artifact: Artifact, sortOrder: numb
        updated_at = SYSUTCDATETIME()
      WHEN NOT MATCHED THEN INSERT (id, name, workload_id, status, sort_order)
        VALUES (@id, @name, @workload, @status, @sortOrder);`,
-    { id: artifact.id, name: artifact.name, workload: artifact.workload, status: artifact.status, sortOrder },
+    {
+      id: varchar(artifact.id),
+      name: artifact.name,
+      workload: varchar(artifact.workload),
+      status: varchar(artifact.status),
+      sortOrder,
+    },
   );
 }

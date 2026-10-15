@@ -1,6 +1,6 @@
 import type { ScoreTriple } from '../../../src/domain/types.ts';
 import { triple, type ScoreRow } from '../domain/dataset.ts';
-import type { Db, Param } from '../lib/db.ts';
+import { varchar, type Db, type Param } from '../lib/db.ts';
 
 const COLUMNS = `s.round_id AS roundId, s.user_id AS userId, u.display_name AS name, s.artifact_id AS artifactId,
   s.capability, s.ux, s.cost, s.updated_at AS updatedAt`;
@@ -13,7 +13,7 @@ export async function scoresFor(db: Db, roundId: string, userId: number): Promis
   return db.query<ScoreRow>(
     `SELECT ${COLUMNS} FROM scores s JOIN users u ON u.id = s.user_id
      WHERE s.round_id = @roundId AND s.user_id = @userId`,
-    { roundId, userId },
+    { roundId: varchar(roundId), userId },
   );
 }
 
@@ -28,12 +28,15 @@ export async function replaceScorecard(
   userId: number,
   scores: Record<string, ScoreTriple>,
 ): Promise<void> {
-  await db.query('DELETE FROM scores WHERE round_id = @roundId AND user_id = @userId', { roundId, userId });
+  await db.query('DELETE FROM scores WHERE round_id = @roundId AND user_id = @userId', {
+    roundId: varchar(roundId),
+    userId,
+  });
   const entries = Object.entries(scores);
   if (entries.length === 0) return;
-  const params: Record<string, Param> = { roundId, userId };
+  const params: Record<string, Param> = { roundId: varchar(roundId), userId };
   const rows = entries.map(([artifactId, [capability, ux, cost]], i) => {
-    params[`a${i}`] = artifactId;
+    params[`a${i}`] = varchar(artifactId);
     params[`c${i}`] = capability;
     params[`u${i}`] = ux;
     params[`k${i}`] = cost;
