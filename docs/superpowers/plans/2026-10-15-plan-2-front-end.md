@@ -2562,8 +2562,8 @@ export function PublishTab({ rounds, catalogSize, onRounds }: PublishTabProps) {
           </h2>
           <p className={styles.muted}>
             {site.lastSnapshotAt
-              ? `Last built from the database ${formatTimestamp(site.lastSnapshotAt)}.`
-              : 'The public site has not been built from the database yet.'}
+              ? `The live site shows the database as of ${formatTimestamp(site.lastSnapshotAt)}.`
+              : 'No deploy has confirmed a build from the database yet.'}
             {site.behind && ' Published ratings, notes, or the catalog changed since then.'}
           </p>
           <div className={styles.fields}>
@@ -2704,7 +2704,7 @@ function OpenRound({ round, catalogSize, onPublish }: OpenRoundProps) {
 - [ ] **Step 3: Check it** (don't publish yet; Task 12 does that end to end). At `http://localhost:5173/admin.html#publish`:
 1. The checklist shows the scored count, both raters, and which items still need a why.
 2. Publish stays disabled while whys are missing, until you tick "Publish without them".
-3. The site panel reads "The public site is up to date" (Plan 1 took a snapshot), with the "Automatic site updates are not set up" warning, since `GITHUB_DISPATCH_TOKEN` is empty locally.
+3. The site panel reads "The public site is up to date", with the "Automatic site updates are not set up" warning, since `GITHUB_DISPATCH_TOKEN` is empty locally. On `fcr-dev`, the smoke test of Plan 1's Task 12–13 fix confirmed a deploy with `POST /api/build/snapshot/deployed`; fetching the snapshot sets nothing. If public data changed since that confirm (a publish, a reopen, an edit to a published round, or a catalog edit), the panel reads "behind" instead, which is also correct.
 
 - [ ] **Step 4: Commit.**
 
@@ -3897,11 +3897,22 @@ export function SiteFooter({ asOf }: SiteFooterProps) {
 
 - [ ] **Step 7: Create `scripts/snapshot.ts`.** Local runs read the token from `api/local.settings.json`; the deploy workflow passes `FCR_API_URL` and `SNAPSHOT_TOKEN`. A failure keeps the committed file, so a sleeping API never breaks a deploy.
 
+The script also tells the deploy which snapshot it fetched. Its timeout is 200 seconds: the GET waits up to about 150 s for a paused database, plus the load, and Functions cut a request off at 230 s.
+- After a successful fetch, whether it wrote the file or found it unchanged, append `generatedAt=<value>` to `$GITHUB_OUTPUT` when that variable is set.
+- The value is the response's `generatedAt` string, byte for byte. It's not the committed file's, which is older when the write was skipped, so the admin page would stay behind. It's not a new `Date` either, which would mark changes made during the build as live.
+- On any failure, write nothing to `$GITHUB_OUTPUT`.
+- With `--confirm` (local runs), after a successful fetch, POST `{ generatedAt }` to `/api/build/snapshot/deployed` with the token and `Content-Type: application/json`. Expect 204. Vite serves the written file at once, so locally the fetch is the deploy. A failed confirm is a warning, like a failed fetch.
+
+Fetching the snapshot never marks the public site up to date. Only `POST /api/build/snapshot/deployed` moves `last_snapshot_at`: the deploy workflow's confirm step (Task 11), or `npm run snapshot -- --confirm` locally.
+
 ```ts
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
 
 const OUT = new URL('../src/data/snapshot.json', import.meta.url);
 const SETTINGS = new URL('../api/local.settings.json', import.meta.url);
+
+/** The GET can wait about 150 s for a paused database; Functions cut a request off at 230 s. */
+const TIMEOUT_MS = 200_000;
 
 interface SnapshotShape {
   generatedAt: string;
@@ -3931,28 +3942,55 @@ function sameContent(a: SnapshotShape, b: SnapshotShape): boolean {
   return JSON.stringify({ ...a, generatedAt: '' }) === JSON.stringify({ ...b, generatedAt: '' });
 }
 
-async function refresh(): Promise<string> {
-  const base = (process.env.FCR_API_URL || 'http://localhost:7071').replace(/\/+$/, '');
-  const token = process.env.SNAPSHOT_TOKEN || localToken();
+async function refresh(base: string, token: string): Promise<{ message: string; generatedAt: string }> {
   const response = await fetch(`${base}/api/build/snapshot`, {
     headers: { Authorization: `Bearer ${token}` },
-    signal: AbortSignal.timeout(120_000),
+    signal: AbortSignal.timeout(TIMEOUT_MS),
   });
   if (!response.ok) throw new Error(`${base} answered HTTP ${response.status}.`);
   const snapshot: unknown = await response.json();
   if (!isSnapshot(snapshot)) throw new Error('The response is not a snapshot.');
+  const { generatedAt } = snapshot;
   const current: unknown = existsSync(OUT) ? JSON.parse(readFileSync(OUT, 'utf8')) : undefined;
-  if (isSnapshot(current) && sameContent(current, snapshot)) return 'Snapshot unchanged.';
+  if (isSnapshot(current) && sameContent(current, snapshot)) return { message: 'Snapshot unchanged.', generatedAt };
   writeFileSync(OUT, `${JSON.stringify(snapshot, null, 2)}\n`);
-  return `Wrote ${snapshot.ratings.length} ratings (as of ${snapshot.asOf || 'no published round'}) to src/data/snapshot.json.`;
+  const asOf = snapshot.asOf || 'no published round';
+  return {
+    message: `Wrote ${snapshot.ratings.length} ratings (as of ${asOf}) to src/data/snapshot.json.`,
+    generatedAt,
+  };
 }
 
+async function confirm(base: string, token: string, generatedAt: string): Promise<void> {
+  const response = await fetch(`${base}/api/build/snapshot/deployed`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ generatedAt }),
+    signal: AbortSignal.timeout(TIMEOUT_MS),
+  });
+  if (response.status !== 204) throw new Error(`${base} answered the confirmation with HTTP ${response.status}.`);
+}
+
+const warn = (message: string) => console.warn(process.env.GITHUB_ACTIONS ? `::warning::${message}` : message);
+const base = (process.env.FCR_API_URL || 'http://localhost:7071').replace(/\/+$/, '');
+const token = process.env.SNAPSHOT_TOKEN || localToken();
+
+let fetched: { message: string; generatedAt: string } | undefined;
 try {
-  console.log(await refresh());
+  fetched = await refresh(base, token);
+  console.log(fetched.message);
+  if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, `generatedAt=${fetched.generatedAt}\n`);
 } catch (error) {
   const reason = error instanceof Error ? error.message : String(error);
-  const message = `Snapshot not refreshed: ${reason} Keeping the committed src/data/snapshot.json.`;
-  console.warn(process.env.GITHUB_ACTIONS ? `::warning::${message}` : message);
+  warn(`Snapshot not refreshed: ${reason} Keeping the committed src/data/snapshot.json.`);
+}
+if (fetched && process.argv.includes('--confirm')) {
+  try {
+    await confirm(base, token, fetched.generatedAt);
+    console.log(`Confirmed the snapshot of ${fetched.generatedAt}.`);
+  } catch (error) {
+    warn(`Snapshot not confirmed: ${error instanceof Error ? error.message : String(error)}`);
+  }
 }
 ```
 
@@ -3971,7 +4009,7 @@ Run: `npm run build`
 Expected: typecheck and build succeed.
 
 With `npm run api` running, run `npm run snapshot`.
-Expected: `Snapshot unchanged.` (nothing is published in `fcr-dev` yet). Stop the API and run it again. Expected: `Snapshot not refreshed: fetch failed … Keeping the committed src/data/snapshot.json.`, with exit code 0.
+Expected: `Snapshot unchanged.` (nothing is published in `fcr-dev` yet). Run `npm run snapshot -- --confirm`. Expected: the same line, and it also prints `Confirmed the snapshot of <time>.` Stop the API and run `npm run snapshot` again. Expected: `Snapshot not refreshed: fetch failed … Keeping the committed src/data/snapshot.json.`, with exit code 0.
 
 Open `http://localhost:5173/`. Expected: the header shows "Items rated 0", the main area shows the "No ratings are published yet" empty state, the nav has only "How It Works", and the footer says "Raters: log in to score the open round."
 
@@ -3992,6 +4030,8 @@ git commit -m "Public site reads the published snapshot; unrated items no longer
 
 - [ ] **Step 1: Rewrite `.github/workflows/deploy.yml`.** Before Plan 3 sets the `API_URL` variable, the fetch step is skipped and the committed snapshot is used. A commit pushed with `GITHUB_TOKEN` doesn't start another run.
 
+One job, so re-running a failed deploy fetches the snapshot again instead of redeploying an older run's artifact. With two jobs, "Re-run failed jobs" on an older run would put its older data back on Pages, and the forward-only stamp would keep saying "up to date". After `deploy-pages` succeeds, the last step tells the API which snapshot is live. It warns rather than fails if the API doesn't answer, because the site is already live, and the admin page just shows it as behind until the next deploy. It's skipped when the fetch was skipped or failed, since the site then still shows the committed file. `--retry 2` covers the API's 503 while the database wakes. `jq` and `curl` come with `ubuntu-latest`.
+
 ```yaml
 name: Deploy to GitHub Pages
 
@@ -4010,8 +4050,11 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  build:
+  deploy:
     runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
 
@@ -4023,6 +4066,7 @@ jobs:
       - run: npm ci
 
       - name: Fetch the published ratings
+        id: snapshot
         if: ${{ vars.API_URL != '' }}
         env:
           FCR_API_URL: ${{ vars.API_URL }}
@@ -4050,15 +4094,22 @@ jobs:
         with:
           path: dist
 
-  deploy:
-    needs: build
-    runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
       - id: deployment
         uses: actions/deploy-pages@v4
+
+      - name: Tell the API which snapshot is live
+        if: ${{ steps.snapshot.outputs.generatedAt != '' }}
+        env:
+          FCR_API_URL: ${{ vars.API_URL }}
+          SNAPSHOT_TOKEN: ${{ secrets.SNAPSHOT_TOKEN }}
+          GENERATED_AT: ${{ steps.snapshot.outputs.generatedAt }}
+        run: |
+          body=$(jq -cn --arg at "$GENERATED_AT" '{generatedAt: $at}')
+          if ! curl -sS --fail-with-body --max-time 200 --retry 2 -X POST \
+              "${FCR_API_URL%/}/api/build/snapshot/deployed" \
+              -H "Authorization: Bearer $SNAPSHOT_TOKEN" -H 'Content-Type: application/json' --data "$body"; then
+            echo "::warning::The site is live, but the API wasn't told. The admin page shows it as behind until the next deploy."
+          fi
 ```
 
 - [ ] **Step 2: Check the commit step's shell logic locally** (Git Bash or WSL):
@@ -4097,8 +4148,8 @@ Expected:
 - The site panel says "The public site is behind".
 - In the private window, saving again shows the 409 message, and a reload shows "No review round is open right now".
 
-- [ ] **Step 5: Build the public site from the database.** Run `npm run snapshot`.
-Expected: `Wrote <n> ratings (as of <today>) …`, where `<n>` is the number of items scored in Step 2.
+- [ ] **Step 5: Build the public site from the database.** Run `npm run snapshot -- --confirm`.
+Expected: `Wrote <n> ratings (as of <today>) …`, where `<n>` is the number of items scored in Step 2, then `Confirmed the snapshot of <time>.`
 
 Open `http://localhost:5173/`.
 Expected:
@@ -4107,10 +4158,10 @@ Expected:
 - Each item's detail shows its why.
 - No "Not rated" rows.
 
-On `#publish`, Check again shows "The public site is up to date".
+On `#publish`, Check again shows "The public site is up to date". The confirm moved it, not the fetch: a plain `npm run snapshot` leaves the panel at "behind". If it still says "behind" after `--confirm`, read the `Snapshot not confirmed: …` warning; don't make the snapshot GET write the stamp.
 
 - [ ] **Step 6: Silent edit of a published round.** On `#review`, choose Q4 2026 (published) and change one why. Then edit Rater A's card and change one score.
-Expected: `#publish` → Check again shows "behind". Run `npm run snapshot`, reload `/`, and the new text and grade show. Check again shows "up to date".
+Expected: `#publish` → Check again shows "behind". Run `npm run snapshot -- --confirm`, reload `/`, and the new text and grade show. Check again shows "up to date".
 
 - [ ] **Step 7: Next round.** On the Score tab, open the suggested `2027-Q1`.
 Expected: the private window (after a reload) shows "Q1 2027 · 0 of N rated" and a "Start from my Q4 2026 scores" button that fills the matrix with Rater A's Q4 card.
@@ -4128,7 +4179,7 @@ git status --short
 Expected: a clean tree. `fcr-dev` keeps Q4 2026 (published) and Q1 2027 (open).
 
 - [ ] **Step 10: Re-run the API integration test** (Plan 1 Task 17 Step 4).
-Expected: 8 tests pass against the new open round, `2027-Q1`.
+Expected: 9 tests pass against the new open round, `2027-Q1`.
 
 ---
 
@@ -4139,5 +4190,5 @@ Expected: 8 tests pass against the new open round, `2027-Q1`.
   - raters log in at `/rate`, keep one card for the open round, and change their password;
   - the admin scores, reviews, writes whys, edits any card (published ones too), publishes, reopens, edits the catalog, and manages users at `/admin`.
 - The public site renders only from `src/data/snapshot.json`: items nobody rated never appear, and the committed snapshot is the empty one.
-- `deploy.yml` refreshes and commits the snapshot whenever the `API_URL` variable is set.
+- `deploy.yml` refreshes and commits the snapshot whenever the `API_URL` variable is set, and tells the API which snapshot went live.
 - `desk.html`, `src/desk/`, the desk scripts, the GitHub intake, `raters.json`, and `.env.example` are gone, and no front-end file imports `aggregate.ts` or `formula.ts`.
