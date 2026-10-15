@@ -68,7 +68,12 @@ function login(body: Record<string, unknown>): { result: Promise<unknown>; cooki
   return { result, cookies };
 }
 
-const order = (fn: { mock: { invocationCallOrder: number[] } }) => fn.mock.invocationCallOrder[0] ?? 0;
+/** When the mock was first called. Throws if it never was, so an order check can't pass vacuously. */
+const order = (fn: { mock: { invocationCallOrder: number[] } }) => {
+  const [first] = fn.mock.invocationCallOrder;
+  if (first === undefined) throw new Error('Expected the mock to have been called.');
+  return first;
+};
 
 function expectNoWritesAfterReserve(cookies: Cookie[]): void {
   expect(clearAttempt).not.toHaveBeenCalled();
@@ -114,15 +119,19 @@ describe('login', () => {
 
   it('answers 429 from the lock-free look at a locked key, reserving nothing and checking no password', async () => {
     const locked = { failures: MAX_FAILURES, windowStart: new Date(), lockedUntil: new Date(Date.now() + LOCK_MS) };
-    vi.mocked(getAttempts).mockResolvedValue(new Map([[IP_KEY, locked]]));
+    for (const key of [IP_KEY, LOGIN_KEY]) {
+      vi.mocked(getAttempts).mockResolvedValue(new Map([[key, locked]]));
 
-    const { result } = login({ login: 'Ann', password: PASSWORD });
+      const { result, cookies } = login({ login: 'Ann', password: PASSWORD });
 
-    await expect(result).rejects.toMatchObject({ status: 429 });
-    expect(getAttempts).toHaveBeenCalledWith(expect.anything(), [LOGIN_KEY, IP_KEY]);
-    expect(reserveAttempt).not.toHaveBeenCalled();
-    expect(findUserByLogin).not.toHaveBeenCalled();
-    expect(verifyPassword).not.toHaveBeenCalled();
+      await expect(result).rejects.toMatchObject({ status: 429 });
+      expect(getAttempts).toHaveBeenLastCalledWith(expect.anything(), [LOGIN_KEY, IP_KEY]);
+      expect(reserveAttempt).not.toHaveBeenCalled();
+      expect(findUserByLogin).not.toHaveBeenCalled();
+      expect(verifyPassword).not.toHaveBeenCalled();
+      expect(dummyHash).not.toHaveBeenCalled();
+      expectNoWritesAfterReserve(cookies);
+    }
   });
 
   it('answers 429, checking no password, when a key locked between the look and the reserve', async () => {
@@ -162,6 +171,8 @@ describe('login', () => {
     const { result, cookies } = login({ login: 'ann', password: PASSWORD });
 
     await expect(result).rejects.toMatchObject({ status: 401, message: 'Wrong login or password.' });
+    // Still pays for the scrypt check, so the response time doesn't show the account is disabled.
+    expect(verifyPassword).toHaveBeenCalledWith(PASSWORD, 'stored');
     expectNoWritesAfterReserve(cookies);
   });
 
@@ -179,7 +190,10 @@ describe('login', () => {
     const { result, cookies } = login({ login: 'ann', password: PASSWORD });
 
     expect(await result).toEqual({ id: 7, login: 'ann', displayName: 'Ann', role: 'rater' });
+    // Exactly once each: clearing the IP key too would let one good login wipe the address's failures.
+    expect(clearAttempt).toHaveBeenCalledTimes(1);
     expect(clearAttempt).toHaveBeenCalledWith(expect.anything(), LOGIN_KEY);
+    expect(releaseAttempt).toHaveBeenCalledTimes(1);
     expect(releaseAttempt).toHaveBeenCalledWith(expect.anything(), IP_KEY, ipRow);
     expect(createSession).toHaveBeenCalledWith(expect.anything(), expect.any(String), 7, expect.any(Date), 'stored');
     expect(order(vi.mocked(verifyPassword))).toBeLessThan(order(vi.mocked(clearAttempt)));

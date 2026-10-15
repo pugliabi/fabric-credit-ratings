@@ -77,7 +77,12 @@ function expectAscending(order: number[]): void {
   expect(order).toEqual([...order].sort((a, b) => a - b));
 }
 
-const firstCall = (fn: { mock: { invocationCallOrder: number[] } }) => fn.mock.invocationCallOrder[0] ?? 0;
+/** When the mock was first called. Throws if it never was, so an order check can't pass vacuously. */
+const firstCall = (fn: { mock: { invocationCallOrder: number[] } }) => {
+  const [first] = fn.mock.invocationCallOrder;
+  if (first === undefined) throw new Error('Expected the mock to have been called.');
+  return first;
+};
 
 /** Answers findUserById from `rows` by id; `inTx` overrides what the transaction's reads see. */
 function usersById(rows: UserRecord[], inTx: Record<number, UserRecord | undefined> = {}): void {

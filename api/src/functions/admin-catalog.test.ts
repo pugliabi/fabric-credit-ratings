@@ -66,9 +66,13 @@ function sqlError(number: number): sql.RequestError {
   return new sql.RequestError(Object.assign(new Error(`SQL Server error ${number}`), { info: { number } }));
 }
 
-/** When each mock was first called, for comparing with the order the calls should happen in. */
+/** When each mock was first called, for comparing with the order the calls should happen in. Each must be called. */
 function callOrder(...mocks: { mock: { invocationCallOrder: number[] } }[]): number[] {
-  return mocks.map((fn) => fn.mock.invocationCallOrder[0] ?? 0);
+  return mocks.map((fn) => {
+    const [first] = fn.mock.invocationCallOrder;
+    if (first === undefined) throw new Error('Expected every mock in the order check to have been called.');
+    return first;
+  });
 }
 
 function expectAscending(order: number[]): void {
