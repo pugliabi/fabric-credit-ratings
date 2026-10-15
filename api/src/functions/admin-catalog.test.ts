@@ -110,8 +110,19 @@ describe('adminArtifactDelete', () => {
     expect(committed).not.toHaveBeenCalled();
   });
 
+  it('answers 503, asking to try again, when it loses a deadlock to a save that adds the item', async () => {
+    vi.mocked(deleteArtifact).mockRejectedValue(sqlError(1205));
+
+    await expect(call('adminArtifactDelete', { id: 'notebook' })).rejects.toMatchObject({
+      status: 503,
+      message: 'Someone was saving a score or note for Notebook at the same moment. Try again.',
+    });
+    expect(markChanged).not.toHaveBeenCalled();
+    expect(committed).not.toHaveBeenCalled();
+  });
+
   it('passes other database errors through', async () => {
-    const error = sqlError(1205);
+    const error = sqlError(2627);
     vi.mocked(deleteArtifact).mockRejectedValue(error);
     await expect(call('adminArtifactDelete', { id: 'notebook' })).rejects.toBe(error);
   });
