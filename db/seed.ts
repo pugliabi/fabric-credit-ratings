@@ -2,37 +2,63 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { closeDb, db, transaction } from '../api/src/lib/db.ts';
 import { hashPassword, passwordProblem } from '../api/src/lib/password.ts';
 import { LOGIN, validateScores } from '../api/src/lib/validate.ts';
-import { listArtifacts, upsertArtifact, upsertWorkload } from '../api/src/repo/catalog.ts';
+import { listArtifacts, listWorkloads, upsertArtifact, upsertWorkload } from '../api/src/repo/catalog.ts';
 import { saveNote } from '../api/src/repo/notes.ts';
-import { upsertRound } from '../api/src/repo/rounds.ts';
+import { listRounds, upsertRound } from '../api/src/repo/rounds.ts';
 import { replaceScorecard } from '../api/src/repo/scores.ts';
+import { markChanged } from '../api/src/repo/site.ts';
 import { createUser, findUserByLogin } from '../api/src/repo/users.ts';
 import type { Round, RoundNotes, Scorecard } from '../src/domain/types.ts';
 import { useTarget } from './target.ts';
 
-const USAGE = 'Usage: npm run db:seed -- --admin <login> --name "<display name>" [--admin-only] [--database <name>]';
+const USAGE =
+  'Usage: npm run db:seed -- --admin <login> --name "<display name>" [--admin-only] [--force] ' +
+  '[--server <host>] [--database <name>]';
+const VALUE_FLAGS = ['--admin', '--name'];
+const SWITCHES = ['--admin-only', '--force'];
 
 const args = useTarget(process.argv.slice(2));
-const flag = (name: string) => {
-  const index = args.indexOf(`--${name}`);
-  return index === -1 ? undefined : args[index + 1];
-};
+const values: Record<string, string> = {};
+for (let i = 0; i < args.length; i += 1) {
+  const arg = args[i] ?? '';
+  if (VALUE_FLAGS.includes(arg)) {
+    const value = args[i + 1];
+    if (value === undefined || value.startsWith('--')) throw new Error(`${arg} needs a value. ${USAGE}`);
+    values[arg.slice(2)] = value;
+    i += 1;
+  } else if (!SWITCHES.includes(arg)) {
+    throw new Error(`Unknown argument "${arg}". Quote names that contain spaces. ${USAGE}`);
+  }
+}
 const adminOnly = args.includes('--admin-only');
-const adminLogin = flag('admin')?.toLowerCase() ?? '';
-const adminName = flag('name') ?? '';
-if (!adminLogin || !adminName) throw new Error(USAGE);
-if (!LOGIN.test(adminLogin)) throw new Error('Logins use 2 to 40 lowercase letters, digits, dots, dashes, or underscores.');
+const force = args.includes('--force');
+const adminLogin = values.admin?.toLowerCase() ?? '';
+const adminName = values.name?.trim() ?? '';
+if (!adminLogin || values.name === undefined) throw new Error(USAGE);
+if (!LOGIN.test(adminLogin)) {
+  throw new Error('Logins use 2 to 40 lowercase letters, digits, dots, dashes, or underscores.');
+}
+if (adminName.length < 1 || adminName.length > 80) throw new Error('Display names use 1 to 80 characters.');
 
 function readJson<T>(path: URL): T {
   return JSON.parse(readFileSync(path, 'utf8')) as T;
 }
 
 async function ensureAdmin(): Promise<string> {
-  if (await findUserByLogin(db, adminLogin)) return 'already exists, password unchanged';
+  const existing = await findUserByLogin(db, adminLogin);
+  if (existing) {
+    const state = `${existing.role}, ${existing.active ? 'active' : 'inactive'}`;
+    return `already exists (${state}), not changed. --name was not applied.`;
+  }
   const password = process.env.FCR_ADMIN_PASSWORD ?? '';
   const problem = passwordProblem(password);
   if (problem) throw new Error(`Set FCR_ADMIN_PASSWORD first. ${problem}`);
-  await createUser(db, { login: adminLogin, displayName: adminName, role: 'admin', passwordHash: await hashPassword(password) });
+  await createUser(db, {
+    login: adminLogin,
+    displayName: adminName,
+    role: 'admin',
+    passwordHash: await hashPassword(password),
+  });
   return 'created';
 }
 
@@ -88,10 +114,17 @@ async function seedRounds(): Promise<string> {
 }
 
 try {
+  if (!adminOnly && !force && ((await listWorkloads(db)).length > 0 || (await listRounds(db)).length > 0)) {
+    throw new Error(
+      'This database already has a catalog or rounds, and /admin owns them now. Use --admin-only to add an admin, ' +
+        'or --force to overwrite them with the repo files.',
+    );
+  }
   console.log(`Admin ${adminLogin}: ${await ensureAdmin()}`);
   if (!adminOnly) {
     console.log(`Catalog: ${await seedCatalog()}`);
     console.log(`Rounds: ${await seedRounds()}`);
+    await markChanged(db);
   }
 } finally {
   await closeDb();

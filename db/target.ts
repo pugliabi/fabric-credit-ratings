@@ -10,7 +10,10 @@ export function useTarget(argv: readonly string[]): string[] {
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i] ?? '';
     const value = argv[i + 1];
-    if ((arg === '--server' || arg === '--database') && value) {
+    if (arg === '--server' || arg === '--database') {
+      if (!value || value.startsWith('--')) {
+        throw new Error(`${arg} needs a value. Check that the variable you passed is set.`);
+      }
       flags[arg.slice(2)] = value;
       i += 1;
     } else {
