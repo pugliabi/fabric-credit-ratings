@@ -19,6 +19,14 @@ export async function findOpenRound(db: Db): Promise<Round | undefined> {
   return round;
 }
 
+/** The newest published round, by publish date and then id, the order the public history uses. */
+export async function findLatestPublishedRound(db: Db): Promise<Round | undefined> {
+  const [round] = await db.query<Round>(
+    `SELECT TOP 1 ${ROUND} FROM rounds r WHERE r.status = 'published' ORDER BY r.published_on DESC, r.id DESC`,
+  );
+  return round;
+}
+
 /**
  * Holds the round row until commit, so card writes and publish/reopen of that round take turns. Use inside a
  * transaction.

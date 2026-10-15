@@ -4,7 +4,7 @@ import type { Round, ScoreTriple } from '../../../src/domain/types.ts';
 import { closeDb, db, transaction, varchar, type Db, type Params } from '../lib/db.ts';
 import { ROUND_ID } from '../lib/validate.ts';
 import { listArtifacts } from './catalog.ts';
-import { lockRound } from './rounds.ts';
+import { findLatestPublishedRound, lockRound } from './rounds.ts';
 import { replaceScorecard, scoresFor, toTriples } from './scores.ts';
 import { createUser } from './users.ts';
 
@@ -33,6 +33,17 @@ describe('lockRound', () => {
   it('returns undefined for a round that does not exist', async () => {
     const { fake } = answering([]);
     expect(await lockRound(fake, '2099-NO')).toBeUndefined();
+  });
+});
+
+describe('findLatestPublishedRound', () => {
+  it('takes the newest published round by publish date, then id, as the public history orders them', async () => {
+    const round: Round = { id: '2026-Q3', label: 'Q3 2026', status: 'published', publishedOn: '2026-07-15' };
+    const { calls, fake } = answering([round]);
+    expect(await findLatestPublishedRound(fake)).toEqual(round);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.text).toMatch(/SELECT TOP 1 .* FROM rounds r WHERE r\.status = 'published'/s);
+    expect(calls[0]?.text).toMatch(/ORDER BY r\.published_on DESC, r\.id DESC$/);
   });
 });
 
