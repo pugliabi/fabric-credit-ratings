@@ -31,4 +31,19 @@ describe('draft storage', () => {
     expect(() => writeDraft('fcr-card:1:2026-Q4', stored)).not.toThrow();
     expect(readDraft('fcr-card:1:2026-Q4')).toBeUndefined();
   });
+
+  it('removes the older record when a write fails, so it cannot come back later', () => {
+    const removeItem = vi.fn();
+    vi.stubGlobal('localStorage', { setItem: () => fail('QuotaExceededError'), removeItem });
+    writeDraft('fcr-card:1:2026-Q4', stored);
+    expect(removeItem).toHaveBeenCalledWith('fcr-card:1:2026-Q4');
+  });
+
+  it('keeps going when the cleanup after a failed write fails too', () => {
+    vi.stubGlobal('localStorage', {
+      setItem: () => fail('QuotaExceededError'),
+      removeItem: () => fail('SecurityError'),
+    });
+    expect(() => writeDraft('fcr-card:1:2026-Q4', stored)).not.toThrow();
+  });
 });

@@ -13,14 +13,21 @@ export function writeDraft(key: string, stored: StoredDraft): void {
   try {
     localStorage.setItem(key, JSON.stringify(stored));
   } catch {
-    // Storage is full or blocked; the draft lives only in this tab.
+    // Storage is full or blocked; the draft lives only in this tab. An older record must not come back.
+    try {
+      localStorage.removeItem(key);
+    } catch {
+      // Storage is blocked entirely.
+    }
   }
 }
 
 /**
  * Slider state that survives reloads. `initial` is the saved card; keep it referentially stable (useMemo).
  * Only the rows a stored draft actually changed come back, re-applied on top of `initial`, so a save made
- * elsewhere is not hidden by an old draft. Remount (change the React key) when `key` changes.
+ * elsewhere is not hidden by an old draft. Each write records `initial` as the draft's base, so change
+ * `initial` only together with `replace(...)` (as after a save) or by remounting. Remount (change the React
+ * key) when `key` changes.
  */
 export function usePersistentDraft(key: string, initial: Draft) {
   const [kept] = useState(() => restorable(readDraft(key), initial));
