@@ -1,11 +1,9 @@
 import { memo, useState, type CSSProperties, type KeyboardEvent, type SyntheticEvent } from 'react';
 import { Chevron } from '../components/Chevron';
 import { scoreColor } from '../components/FactorBars';
-import { ARTIFACTS } from '../data/artifacts';
 import { FACTORS } from '../data/factors';
-import { WORKLOADS } from '../data/workloads';
 import { MAX_SCORE, MIN_SCORE } from '../domain/grades';
-import type { Artifact, FactorValues, Score, WorkloadId } from '../domain/types';
+import type { Artifact, FactorValues, Score, Workload, WorkloadId } from '../domain/types';
 import { formatScore } from '../lib/format';
 import { EMPTY_TRIPLE, isBlank, isComplete, toScore, type Draft, type DraftScore, type DraftTriple } from './draft';
 import styles from './ScoreMatrix.module.css';
@@ -14,6 +12,8 @@ const STATUS_LABEL = { preview: 'Preview', retired: 'Retired' } as const;
 const UNSET_POSITION = 4;
 
 interface ScoreMatrixProps {
+  workloads: readonly Workload[];
+  artifacts: readonly Artifact[];
   draft: Draft;
   onChange: (artifactId: string, triple: DraftTriple) => void;
   /** Published values per artifact, shown under the name as a reminder. */
@@ -21,7 +21,14 @@ interface ScoreMatrixProps {
   referenceLabel?: string;
 }
 
-export function ScoreMatrix({ draft, onChange, reference, referenceLabel = 'Current' }: ScoreMatrixProps) {
+export function ScoreMatrix({
+  workloads,
+  artifacts,
+  draft,
+  onChange,
+  reference,
+  referenceLabel = 'Current',
+}: ScoreMatrixProps) {
   const [collapsed, setCollapsed] = useState<ReadonlySet<WorkloadId>>(new Set());
 
   const toggle = (id: WorkloadId) =>
@@ -34,8 +41,9 @@ export function ScoreMatrix({ draft, onChange, reference, referenceLabel = 'Curr
 
   return (
     <div className={styles.matrix}>
-      {WORKLOADS.map((workload) => {
-        const items = ARTIFACTS.filter((artifact) => artifact.workload === workload.id);
+      {workloads.map((workload) => {
+        const items = artifacts.filter((artifact) => artifact.workload === workload.id);
+        if (items.length === 0) return null;
         const rated = items.filter((artifact) => {
           const triple = draft[artifact.id];
           return triple !== undefined && isComplete(triple);

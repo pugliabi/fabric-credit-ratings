@@ -1,6 +1,5 @@
-import { ARTIFACTS } from '../data/artifacts';
 import { MAX_SCORE, MIN_SCORE } from '../domain/grades';
-import type { FactorValues, Score, ScoreTriple } from '../domain/types';
+import type { Artifact, FactorValues, Score, ScoreTriple } from '../domain/types';
 
 /** null = slider not touched yet. */
 export type DraftScore = Score | null;
@@ -29,10 +28,10 @@ export interface DraftSummary {
   partial: string[];
 }
 
-export function summarize(draft: Draft): DraftSummary {
+export function summarize(draft: Draft, artifacts: readonly Artifact[]): DraftSummary {
   const scores: Record<string, ScoreTriple> = {};
   const partial: string[] = [];
-  for (const artifact of ARTIFACTS) {
+  for (const artifact of artifacts) {
     const triple = draft[artifact.id];
     if (!triple || isBlank(triple)) continue;
     if (isComplete(triple)) scores[artifact.id] = triple;
@@ -49,6 +48,19 @@ export function sameDraft(a: Draft, b: Draft): boolean {
     if (x.some((score, i) => score !== y[i])) return false;
   }
   return true;
+}
+
+/** What usePersistentDraft keeps in localStorage. */
+export interface StoredDraft {
+  /** The saved card the draft was edited from. */
+  base: Draft;
+  draft: Draft;
+}
+
+/** A stored draft is worth restoring only if it holds edits that were never saved. */
+export function restorable(stored: StoredDraft | undefined, saved: Draft): Draft | undefined {
+  if (!stored || sameDraft(stored.draft, stored.base) || sameDraft(stored.draft, saved)) return undefined;
+  return stored.draft;
 }
 
 export function draftFromScores(scores: Readonly<Record<string, ScoreTriple>>): Draft {
