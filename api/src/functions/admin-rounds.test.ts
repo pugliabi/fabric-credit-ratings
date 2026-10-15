@@ -1,3 +1,4 @@
+import Anthropic from '@anthropic-ai/sdk';
 import sql from 'mssql';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AdminRound, DeployResult, SessionUser } from '../../../src/domain/api-types.ts';
@@ -42,7 +43,10 @@ vi.mock(import('../lib/db.ts'), async (importOriginal) => ({
   db: { query: () => Promise.reject(new Error('The repo functions are mocked.')) },
   transaction: vi.fn(),
 }));
-vi.mock(import('../lib/draft-why.ts'), () => ({ createDrafter: vi.fn() }));
+vi.mock(import('../lib/draft-why.ts'), async (importOriginal) => ({
+  ...(await importOriginal()),
+  createDrafter: vi.fn(),
+}));
 vi.mock(import('../lib/github.ts'), () => ({ startDeploy: vi.fn() }));
 vi.mock(import('../repo/catalog.ts'), () => ({ listArtifacts: vi.fn() }));
 vi.mock(import('../repo/dataset.ts'), () => ({ loadDataset: vi.fn() }));
@@ -572,14 +576,28 @@ describe('adminDraft', () => {
     expect(drafter).not.toHaveBeenCalled();
   });
 
-  it("answers 502 with the drafter's message, and logs the failure", async () => {
-    const failure = new Error('Anthropic is busy. Try again in a minute.');
-    drafter.mockRejectedValue(failure);
+  it("answers 502 with the drafter's message, and logs the provider's answer behind it", async () => {
+    const body = { type: 'error', error: { type: 'overloaded_error', message: 'Overloaded' } };
+    const provider = new Anthropic.InternalServerError(
+      529,
+      body,
+      undefined,
+      new Headers({ 'request-id': 'req_529' }),
+      'overloaded_error',
+    );
+    const overloaded = 'Anthropic is overloaded right now. Try again in a minute.';
+    drafter.mockRejectedValue(new Error(overloaded, { cause: provider }));
 
     await expect(call('adminDraft', { id: open.id, artifactId: 'notebook' })).rejects.toMatchObject({
       status: 502,
-      message: 'Anthropic is busy. Try again in a minute.',
+      message: overloaded,
     });
-    expect(log.warn).toHaveBeenCalledWith('AI draft failed', failure);
+    expect(log.warn).toHaveBeenCalledWith('AI draft failed', {
+      model: 'claude-sonnet-5-5',
+      status: 529,
+      requestId: 'req_529',
+      type: 'overloaded_error',
+      error: `InternalServerError: 529 ${JSON.stringify(body)}`,
+    });
   });
 });

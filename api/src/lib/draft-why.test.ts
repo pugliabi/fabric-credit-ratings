@@ -1,6 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { createDrafter, mentionsMath, promptFor, type DraftInput } from './draft-why.ts';
+import { createDrafter, failureDetails, mentionsMath, promptFor, type DraftInput } from './draft-why.ts';
 
 const clients = vi.hoisted(() => [] as { options: unknown; client: unknown }[]);
 
@@ -176,18 +176,80 @@ describe('createDrafter', () => {
       "ANTHROPIC_MODEL names a model this key can't use. Check the setting in the Function App.",
     ],
     [
+      'a rejected key',
+      new Anthropic.AuthenticationError(401, { type: 'error' }, undefined, new Headers()),
+      'Anthropic rejected ANTHROPIC_API_KEY. Check the key in the Function App settings.',
+    ],
+    [
+      'a key with no workspace',
+      new Anthropic.BadRequestError(
+        400,
+        { error: { message: 'anthropic-workspace-id is required' } },
+        undefined,
+        new Headers(),
+      ),
+      'This Anthropic key is not scoped to a workspace.',
+    ],
+    [
       'a rate limit',
       new Anthropic.RateLimitError(429, { type: 'error' }, undefined, new Headers()),
-      'Anthropic is busy. Try again in a minute.',
+      "Anthropic's rate limit for this key was reached. Wait a minute, then try again.",
     ],
     [
       'an overload',
       new Anthropic.InternalServerError(529, { type: 'error' }, undefined, new Headers()),
-      'Anthropic is busy. Try again in a minute.',
+      'Anthropic is overloaded right now. Try again in a minute.',
     ],
-  ])('explains %s', async (_, error, message) => {
+    [
+      'an overloaded error with another status',
+      new Anthropic.InternalServerError(500, { type: 'error' }, undefined, new Headers(), 'overloaded_error'),
+      'Anthropic is overloaded right now. Try again in a minute.',
+    ],
+  ])('explains %s, keeping the provider error as the cause', async (_, error, message) => {
     const draft = createDrafter(settings);
     stubbedCreate().mockRejectedValueOnce(error);
-    await expect(draft?.(input)).rejects.toThrow(message);
+    const failure = await draft?.(input).catch((caught: unknown) => caught);
+    expect(failure).toBeInstanceOf(Error);
+    expect((failure as Error).message).toContain(message);
+    expect((failure as Error).cause).toBe(error);
+  });
+});
+
+describe('failureDetails', () => {
+  const settings = { apiKey: 'sk-ant-unit-test-secret', workspaceId: '', model: 'claude-test' };
+
+  it("logs the provider's status, request id, and error type, and the model asked, from the cause", () => {
+    const body = { type: 'error', error: { type: 'rate_limit_error', message: 'Too many requests.' } };
+    const provider = new Anthropic.RateLimitError(
+      429,
+      body,
+      undefined,
+      new Headers({ 'request-id': 'req_123' }),
+      'rate_limit_error',
+    );
+    const failure = new Error("Anthropic's rate limit for this key was reached.", { cause: provider });
+
+    expect(failureDetails(failure, settings)).toEqual({
+      model: 'claude-test',
+      status: 429,
+      requestId: 'req_123',
+      type: 'rate_limit_error',
+      error: `RateLimitError: 429 ${JSON.stringify(body)}`,
+    });
+  });
+
+  it('names the default model and the message for a failure the provider did not send', () => {
+    const failure = new Error('The model kept mentioning scores or grades. Write this one by hand.');
+    expect(failureDetails(failure, { ...settings, model: '' })).toEqual({
+      model: 'claude-sonnet-5-5',
+      error: 'Error: The model kept mentioning scores or grades. Write this one by hand.',
+    });
+  });
+
+  it('carries neither the key nor the prompt', () => {
+    const provider = new Anthropic.NotFoundError(404, { type: 'error' }, undefined, new Headers());
+    const logged = JSON.stringify(failureDetails(new Error('Not found.', { cause: provider }), settings));
+    expect(logged).not.toContain(settings.apiKey);
+    expect(logged).not.toContain('why this rating');
   });
 });

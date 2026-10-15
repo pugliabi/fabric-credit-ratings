@@ -74,24 +74,28 @@ Rules:
 - Never mention scores, totals, letter grades, rater counts, or arithmetic. The reader must not be able to reconstruct the rating from the paragraph.`;
 }
 
-/** Turns the errors people actually hit into instructions. */
+/** Turns the errors people actually hit into instructions, keeping the provider's error as the cause for the log. */
 function explain(error: unknown): Error {
   const message = error instanceof Error ? error.message : String(error);
+  const friendly = (text: string) => new Error(text, { cause: error });
   if (message.includes('anthropic-workspace-id')) {
-    return new Error(
+    return friendly(
       'This Anthropic key is not scoped to a workspace. Set ANTHROPIC_WORKSPACE_ID in the Function App settings (Claude Console, Settings, Workspaces), or create the key inside a workspace.',
     );
   }
   if (error instanceof Anthropic.AuthenticationError) {
-    return new Error('Anthropic rejected ANTHROPIC_API_KEY. Check the key in the Function App settings.');
+    return friendly('Anthropic rejected ANTHROPIC_API_KEY. Check the key in the Function App settings.');
   }
   if (error instanceof Anthropic.NotFoundError) {
-    return new Error("ANTHROPIC_MODEL names a model this key can't use. Check the setting in the Function App.");
+    return friendly("ANTHROPIC_MODEL names a model this key can't use. Check the setting in the Function App.");
   }
-  if (error instanceof Anthropic.RateLimitError || (error instanceof Anthropic.APIError && error.status === 529)) {
-    return new Error('Anthropic is busy. Try again in a minute.');
+  if (error instanceof Anthropic.RateLimitError) {
+    return friendly("Anthropic's rate limit for this key was reached. Wait a minute, then try again.");
   }
-  if (timedOut(error)) return new Error('Anthropic did not answer in time. Try again.');
+  if (error instanceof Anthropic.APIError && (error.status === 529 || error.type === 'overloaded_error')) {
+    return friendly('Anthropic is overloaded right now. Try again in a minute.');
+  }
+  if (timedOut(error)) return friendly('Anthropic did not answer in time. Try again.');
   return error instanceof Error ? error : new Error(message);
 }
 
@@ -102,6 +106,23 @@ function timedOut(error: unknown): boolean {
     error instanceof Anthropic.APIUserAbortError ||
     (error instanceof DOMException && (error.name === 'TimeoutError' || error.name === 'AbortError'))
   );
+}
+
+const modelFor = (settings: AnthropicSettings) => settings.model || DEFAULT_MODEL;
+
+/**
+ * What to log for a failed draft: the model asked, and the provider's status, request id, error type, and message
+ * from the error's cause. The key travels only in request headers and the prompt only in the request body, and an SDK
+ * error keeps neither.
+ */
+export function failureDetails(error: unknown, settings: AnthropicSettings): Record<string, unknown> {
+  const cause = error instanceof Error && error.cause !== undefined ? error.cause : error;
+  const details: Record<string, unknown> = { model: modelFor(settings) };
+  if (cause instanceof Anthropic.APIError && cause.status !== undefined) {
+    Object.assign(details, { status: cause.status, requestId: cause.requestID ?? null, type: cause.type });
+  }
+  details.error = cause instanceof Error ? `${cause.constructor.name}: ${cause.message}` : String(cause);
+  return details;
 }
 
 function textOf(message: Anthropic.Message): string {
@@ -123,7 +144,7 @@ export function createDrafter(settings: AnthropicSettings) {
     maxRetries: 1,
     ...(settings.workspaceId ? { defaultHeaders: { 'anthropic-workspace-id': settings.workspaceId } } : {}),
   });
-  const model = settings.model || DEFAULT_MODEL;
+  const model = modelFor(settings);
 
   /** One retry if the first draft leaks the math. Throws on API errors, and once `signal` aborts. */
   return async function draft(input: DraftInput, signal?: AbortSignal): Promise<string> {
