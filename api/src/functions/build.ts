@@ -30,9 +30,9 @@ function deployedAt(value: unknown): Date {
 }
 
 /**
- * The database's clock, the one changed_at uses. markChanged stamps changed_at before its transaction commits, and
- * RCSI reads don't wait for that, so the read takes site_state's row lock (READCOMMITTEDLOCK): it waits for any
- * transaction that has already stamped to commit, and a later stamp is later than this time.
+ * The database's clock, the one changed_at uses. SYSUTCDATETIME() is fixed when this statement starts; the read then
+ * takes site_state's row lock (READCOMMITTEDLOCK), so it waits for any transaction that has already stamped. A stamp
+ * this read didn't wait for is no earlier than this time, and isBehind counts a tie as behind.
  */
 async function databaseNow(log: InvocationContext): Promise<Date> {
   const [locked] = await db.query<{ now: Date }>(
@@ -40,7 +40,10 @@ async function databaseNow(log: InvocationContext): Promise<Date> {
   );
   if (locked) return locked.now;
   // Without the row, markChanged has nothing to stamp, so there is nothing to wait for.
-  log.warn('site_state has no row, so the admin page will show the site as behind until npm run db:apply adds it.');
+  log.warn(
+    'site_state has no row, so the admin page shows the site as behind until npm run db:apply adds it ' +
+      'and the next deploy is confirmed.',
+  );
   const [clock] = await db.query<{ now: Date }>('SELECT SYSUTCDATETIME() AS now');
   if (!clock) throw new Error('SYSUTCDATETIME() returned no row.');
   return clock.now;
@@ -48,7 +51,7 @@ async function databaseNow(log: InvocationContext): Promise<Date> {
 
 /**
  * Read-only: the deploy workflow confirms with build/snapshot/deployed once the site is live. generatedAt is read
- * before the load starts, so a change is either in the snapshot or later than generatedAt.
+ * before the load starts, so a change is either in the snapshot or stamped no earlier than generatedAt.
  */
 route('buildSnapshot', 'GET', 'build/snapshot', 'build', async (ctx) => {
   const now = await databaseNow(ctx.log);
