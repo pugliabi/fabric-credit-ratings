@@ -21,7 +21,12 @@ export function toTriples(rows: readonly ScoreRow[]): Record<string, ScoreTriple
   return Object.fromEntries(rows.map((row) => [row.artifactId, triple(row)]));
 }
 
-/** Replaces one rater's whole card for a round. An empty card deletes it. Run inside a transaction. */
+/**
+ * Replaces one rater's whole card for a round. An empty card deletes it. Run inside a transaction, after lockRound on
+ * the same round in that transaction, and check the round's status on the row lockRound returned: a transaction alone
+ * lets two saves of one card interleave into a merged card or a duplicate-key error, and a status read before the
+ * transaction can be stale by the time the card is written.
+ */
 export async function replaceScorecard(
   db: Db,
   roundId: string,

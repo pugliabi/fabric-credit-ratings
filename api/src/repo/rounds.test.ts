@@ -1,0 +1,97 @@
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { useTarget } from '../../../db/target.ts';
+import type { Round, ScoreTriple } from '../../../src/domain/types.ts';
+import { closeDb, db, transaction, varchar, type Db, type Params } from '../lib/db.ts';
+import { ROUND_ID } from '../lib/validate.ts';
+import { listArtifacts } from './catalog.ts';
+import { lockRound } from './rounds.ts';
+import { replaceScorecard, scoresFor, toTriples } from './scores.ts';
+import { createUser } from './users.ts';
+
+function answering(rows: object[]): { calls: { text: string; params: Params }[]; fake: Db } {
+  const calls: { text: string; params: Params }[] = [];
+  const fake: Db = {
+    query<T>(text: string, params: Params = {}): Promise<T[]> {
+      calls.push({ text, params });
+      return Promise.resolve(rows as T[]);
+    },
+  };
+  return { calls, fake };
+}
+
+describe('lockRound', () => {
+  const round: Round = { id: '2026-Q4', label: 'Q4 2026', status: 'open', publishedOn: null };
+
+  it('reads the round with a lock held until commit, looking it up as varchar', async () => {
+    const { calls, fake } = answering([round]);
+    expect(await lockRound(fake, round.id)).toEqual(round);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.text).toMatch(/FROM rounds r WITH \(UPDLOCK, HOLDLOCK\) WHERE r\.id = @id/);
+    expect(calls[0]?.params).toEqual({ id: varchar(round.id) });
+  });
+
+  it('returns undefined for a round that does not exist', async () => {
+    const { fake } = answering([]);
+    expect(await lockRound(fake, '2099-NO')).toBeUndefined();
+  });
+});
+
+describe.skipIf(!process.env.FCR_DB_TESTS)('card writes against the dev database', () => {
+  const stamp = Date.now().toString(36);
+  const roundId = `2099-${stamp.slice(-3).toUpperCase()}`;
+  const login = `itest-card-${stamp}`;
+  let roundCreated = false;
+  let userId: number | undefined;
+
+  beforeAll(async () => {
+    useTarget([]);
+    expect(roundId).toMatch(ROUND_ID);
+    // Published, because the database allows only one open round and the seeded one holds that slot.
+    await db.query(
+      `INSERT INTO rounds (id, label, status, published_on) VALUES (@id, @label, 'published', '2099-01-01')`,
+      { id: varchar(roundId), label: `itest ${stamp}` },
+    );
+    roundCreated = true;
+    userId = await createUser(db, { login, displayName: `itest ${stamp}`, role: 'rater', passwordHash: 'unset' });
+  }, 120_000);
+
+  afterAll(async () => {
+    if (userId !== undefined) {
+      await db.query('DELETE FROM scores WHERE round_id = @roundId AND user_id = @userId', {
+        roundId: varchar(roundId),
+        userId,
+      });
+      await db.query('DELETE FROM users WHERE id = @id', { id: userId });
+    }
+    if (roundCreated) await db.query('DELETE FROM rounds WHERE id = @id', { id: varchar(roundId) });
+    await closeDb();
+  });
+
+  it('makes two writers of one card take turns, so it ends as exactly one of them', { timeout: 120_000 }, async () => {
+    const ids = (await listArtifacts(db)).slice(0, 3).map((artifact) => artifact.id);
+    expect(ids).toHaveLength(3);
+    const [a = '', b = '', c = ''] = ids;
+    // Overlapping on one item, so writes that interleave either collide on the key or merge into one card.
+    const cards: Record<string, Record<string, ScoreTriple>> = {
+      rater: { [a]: [1, 1, 1], [b]: [1, 1, 1] },
+      admin: { [b]: [2, 2, 2], [c]: [2, 2, 2] },
+    };
+    const events: string[] = [];
+    const save = (writer: string) =>
+      transaction(async (tx) => {
+        expect((await lockRound(tx, roundId))?.id).toBe(roundId);
+        events.push(`${writer} locked`);
+        // Without the lock, the other writer gets in here.
+        await new Promise((resolve) => setTimeout(resolve, 300));
+        await replaceScorecard(tx, roundId, userId ?? 0, cards[writer] ?? {});
+        events.push(`${writer} wrote`);
+      });
+
+    await Promise.all([save('rater'), save('admin')]);
+
+    const first = events[0]?.startsWith('rater') ? 'rater' : 'admin';
+    const second = first === 'rater' ? 'admin' : 'rater';
+    expect(events).toEqual([`${first} locked`, `${first} wrote`, `${second} locked`, `${second} wrote`]);
+    expect(toTriples(await scoresFor(db, roundId, userId ?? 0))).toEqual(cards[second]);
+  });
+});

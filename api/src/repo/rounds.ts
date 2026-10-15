@@ -19,6 +19,17 @@ export async function findOpenRound(db: Db): Promise<Round | undefined> {
   return round;
 }
 
+/**
+ * Holds the round row until commit, so card writes and publish/reopen of that round take turns. Use inside a
+ * transaction.
+ */
+export async function lockRound(tx: Db, id: string): Promise<Round | undefined> {
+  const [round] = await tx.query<Round>(`SELECT ${ROUND} FROM rounds r WITH (UPDLOCK, HOLDLOCK) WHERE r.id = @id`, {
+    id: varchar(id),
+  });
+  return round;
+}
+
 export async function listRoundsWithCounts(db: Db): Promise<AdminRound[]> {
   return db.query<AdminRound>(
     `SELECT ${ROUND},
