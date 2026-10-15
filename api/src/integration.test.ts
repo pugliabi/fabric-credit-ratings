@@ -184,7 +184,12 @@ describe.skipIf(!BASE)('API against the dev database', () => {
     expect(again.body.error).toBe(`The login ${raterLogin} is taken.`);
   });
 
-  it('refuses to let an admin remove their own admin access', async () => {
+  it('refuses to let an admin remove their own admin access', async (ctx) => {
+    // With one active admin, the last-admin rule refuses this too, so a broken self rule can't demote anyone.
+    const [admins] = await db.query<{ n: number }>(
+      `SELECT COUNT(*) AS n FROM users WHERE role = 'admin' AND active = 1`,
+    );
+    ctx.skip(admins?.n !== 1, `Runs only with exactly one active admin; this database has ${admins?.n ?? 0}.`);
     const reply = await admin.send('PUT', `/api/admin/users/${adminId}`, { role: 'rater' });
     expect(reply.status).toBe(409);
     expect(reply.body.error).toBe('You cannot remove your own admin access. Ask another admin to make this change.');
