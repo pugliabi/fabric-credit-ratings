@@ -44,7 +44,7 @@ CREATE TABLE dbo.sessions (
 );
 GO
 
-IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ix_sessions_user')
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ix_sessions_user' AND object_id = OBJECT_ID('dbo.sessions'))
 CREATE INDEX ix_sessions_user ON dbo.sessions (user_id);
 GO
 
@@ -67,7 +67,7 @@ CREATE TABLE dbo.rounds (
 );
 GO
 
-IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ux_rounds_one_open')
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ux_rounds_one_open' AND object_id = OBJECT_ID('dbo.rounds'))
 CREATE UNIQUE INDEX ux_rounds_one_open ON dbo.rounds (status) WHERE status = 'open';
 GO
 

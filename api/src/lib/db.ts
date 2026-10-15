@@ -9,10 +9,21 @@ export interface Db {
 }
 
 /** The database did not answer, even after retries. Fabric SQL databases pause when idle. */
-export class DatabaseUnavailableError extends Error {}
+export class DatabaseUnavailableError extends Error {
+  constructor(message?: string, options?: ErrorOptions) {
+    super(message, options);
+    this.name = 'DatabaseUnavailableError';
+  }
+}
 
 const SCOPE = 'https://database.windows.net/.default';
 const RETRY_DELAYS_MS = [2_000, 5_000, 10_000];
+const CONNECT_TIMEOUT_MS = 30_000;
+// Longer than CONNECT_TIMEOUT_MS so a stalled login fails as mssql's ConnectionError (ETIMEOUT), not as tarn's
+// acquire timeout, whose error has no name or code that withWakeRetry or isConnectionError could recognize.
+const ACQUIRE_TIMEOUT_MS = CONNECT_TIMEOUT_MS + 5_000;
+// Keeps a request well inside the 230 s Functions HTTP timeout when a cold open() has already used its own retries.
+const WAKE_RETRY_BUDGET_MS = 150_000;
 const TOKEN_REFRESH_MARGIN_MS = 5 * 60_000;
 const OLD_POOL_GRACE_MS = 60_000;
 const CONNECTION_CODES = new Set(['ESOCKET', 'ECONNCLOSED', 'ETIMEOUT', 'ELOGIN', 'ENOTOPEN', 'EINSTLOOKUP']);
@@ -50,10 +61,17 @@ async function open(): Promise<Connection> {
         port: 1433,
         options: { encrypt: true, trustServerCertificate: false },
         authentication: { type: 'azure-active-directory-access-token', options: { token: token.token } },
-        pool: { max: 5, min: 0, idleTimeoutMillis: 30_000 },
-        connectionTimeout: 30_000,
+        pool: {
+          max: 5,
+          min: 0,
+          idleTimeoutMillis: 30_000,
+          acquireTimeoutMillis: ACQUIRE_TIMEOUT_MS,
+          createTimeoutMillis: ACQUIRE_TIMEOUT_MS,
+        },
+        connectionTimeout: CONNECT_TIMEOUT_MS,
         requestTimeout: 30_000,
       });
+      pool.on('error', (error: unknown) => console.error('SQL pool error', error));
       await pool.connect();
       return { pool, expiresAt: token.expiresOnTimestamp };
     } catch (error) {
@@ -63,14 +81,19 @@ async function open(): Promise<Connection> {
       await sleep(delay);
     }
   }
-  throw new DatabaseUnavailableError(lastError instanceof Error ? lastError.message : String(lastError));
+  const message = lastError instanceof Error ? lastError.message : String(lastError);
+  throw new DatabaseUnavailableError(message, { cause: lastError });
 }
 
 function retire(pool: sql.ConnectionPool): void {
   setTimeout(() => void pool.close().catch(() => undefined), OLD_POOL_GRACE_MS).unref();
 }
 
-/** One pool per process, rebuilt shortly before its Entra token expires or after it breaks. */
+/**
+ * One pool per process, rebuilt shortly before its Entra token expires or after opening it failed. A pool stays
+ * `connected` when the server goes away (a paused database, a dropped socket); it replaces dead connections on the
+ * next acquire, and withWakeRetry waits for the database to come back.
+ */
 async function getPool(): Promise<sql.ConnectionPool> {
   const current = pending;
   if (current) {
@@ -87,41 +110,79 @@ async function getPool(): Promise<sql.ConnectionPool> {
   return (await pending).pool;
 }
 
+/**
+ * Retries `run` while no connection could be acquired, which is how a paused database looks to a warm process. Stops
+ * once another attempt could end past WAKE_RETRY_BUDGET_MS, so a call whose cold open() already waited is not doubled.
+ */
+async function withWakeRetry<T>(run: () => Promise<T>): Promise<T> {
+  const started = Date.now();
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      return await run();
+    } catch (error) {
+      const delay = RETRY_DELAYS_MS[attempt];
+      const name = typeof error === 'object' && error !== null ? (error as { name?: unknown }).name : undefined;
+      // ConnectionError means no connection was acquired, so the statement never reached the server.
+      if (delay === undefined || name !== 'ConnectionError') throw error;
+      if (Date.now() - started + delay + ACQUIRE_TIMEOUT_MS > WAKE_RETRY_BUDGET_MS) throw error;
+      await sleep(delay);
+    }
+  }
+}
+
 function bind(request: sql.Request, params: Params): sql.Request {
-  for (const [name, value] of Object.entries(params)) request.input(name, value);
+  for (const [name, value] of Object.entries(params)) {
+    // mssql binds a Date as legacy datetime by default, which rounds to 1/300 s.
+    if (value instanceof Date) request.input(name, sql.DateTime2, value);
+    else request.input(name, value);
+  }
   return request;
 }
 
 export const db: Db = {
-  async query<T>(text: string, params: Params = {}): Promise<T[]> {
-    const pool = await getPool();
-    const result = await bind(pool.request(), params).query<T>(text);
-    return result.recordset ?? [];
+  query<T>(text: string, params: Params = {}): Promise<T[]> {
+    return withWakeRetry(async () => {
+      const pool = await getPool();
+      const result = await bind(pool.request(), params).query<T>(text);
+      return result.recordset ?? [];
+    });
   },
 };
 
-/** Runs `work` in one transaction. Queries inside must run one at a time. */
+/** Runs `work` in one transaction. Its queries run one at a time, in the order they are called. */
 export async function transaction<T>(work: (tx: Db) => Promise<T>): Promise<T> {
-  const pool = await getPool();
-  const tx = new sql.Transaction(pool);
-  await tx.begin();
+  const tx = await withWakeRetry(async () => {
+    const begun = new sql.Transaction(await getPool());
+    await begun.begin();
+    return begun;
+  });
+  let queue: Promise<unknown> = Promise.resolve();
   const scoped: Db = {
-    async query<R>(text: string, params: Params = {}): Promise<R[]> {
-      const result = await bind(new sql.Request(tx), params).query<R>(text);
-      return result.recordset ?? [];
+    query<R>(text: string, params: Params = {}): Promise<R[]> {
+      const next = queue.then(async () => {
+        const result = await bind(new sql.Request(tx), params).query<R>(text);
+        return result.recordset ?? [];
+      });
+      queue = next.catch(() => undefined);
+      return next;
     },
   };
+  // mssql refuses to commit or roll back while a request is in flight; a failed rollback leaks the connection and
+  // its locks, so both wait for the queue.
   try {
     const value = await work(scoped);
+    await queue;
     await tx.commit();
     return value;
   } catch (error) {
+    await queue;
     await tx.rollback().catch(() => undefined);
     throw error;
   }
 }
 
 export function isConnectionError(error: unknown): boolean {
+  if (error instanceof DatabaseUnavailableError) return true;
   if (typeof error !== 'object' || error === null) return false;
   const { name, code } = error as { name?: unknown; code?: unknown };
   return name === 'ConnectionError' || (typeof code === 'string' && CONNECTION_CODES.has(code));
