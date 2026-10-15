@@ -1,60 +1,52 @@
-import { gradeFor, totalOf } from '../domain/scale';
-import type { Artifact, Rating, RatingPoint, Submission, Workload, WorkloadId } from '../domain/types';
+import { asOfDate as roundsAsOf, buildRatings, findUnrated } from '../domain/aggregate';
+import type { Artifact, Rating, Round, RoundData, RoundNotes, Scorecard, Workload, WorkloadId } from '../domain/types';
 import { ARTIFACTS } from './artifacts';
-import { SUBMISSIONS } from './submissions.mock';
 import { WORKLOADS } from './workloads';
 
-function toPoint(submission: Submission): RatingPoint {
-  return {
-    date: submission.date,
-    scores: submission.scores,
-    total: totalOf(submission.scores),
-    grade: gradeFor(submission.scores, submission.flag),
-    outlook: submission.outlook,
-    note: submission.note,
-    flag: submission.flag,
-  };
+const roundFiles = import.meta.glob<Round>('./rounds/*/round.json', { eager: true, import: 'default' });
+const noteFiles = import.meta.glob<RoundNotes>('./rounds/*/notes.json', { eager: true, import: 'default' });
+const scoreFiles = import.meta.glob<Scorecard>('./rounds/*/scores/*.json', { eager: true, import: 'default' });
+
+/** './rounds/2026-Q4/scores/pugliabi.json' -> '2026-Q4' */
+function folderOf(path: string): string {
+  return path.split('/')[2] ?? '';
 }
 
-export function buildRatings(artifacts: readonly Artifact[], submissions: readonly Submission[]): Rating[] {
-  const byArtifact = new Map<string, Submission[]>();
-  for (const submission of submissions) {
-    const list = byArtifact.get(submission.artifactId) ?? [];
-    list.push(submission);
-    byArtifact.set(submission.artifactId, list);
-  }
+export const ROUNDS: readonly RoundData[] = Object.entries(roundFiles).map(([path, round]) => {
+  const folder = folderOf(path);
+  return {
+    round,
+    notes: noteFiles[`./rounds/${folder}/notes.json`] ?? {},
+    scorecards: Object.entries(scoreFiles)
+      .filter(([scorePath]) => folderOf(scorePath) === folder)
+      .map(([, card]) => card),
+  };
+});
 
-  const ratings: Rating[] = [];
-  for (const artifact of artifacts) {
-    const entries = (byArtifact.get(artifact.id) ?? []).sort((a, b) => a.date.localeCompare(b.date));
-    const latest = entries.at(-1);
-    if (!latest) continue;
-    ratings.push({
-      artifact,
-      current: toPoint(latest),
-      upside: latest.upside ?? [],
-      downside: latest.downside ?? [],
-      history: entries.map(toPoint),
-    });
-  }
-  return ratings;
+/** The round raters can currently submit to, if any. */
+export function openRound(): Round | undefined {
+  return ROUNDS.find((data) => data.round.status === 'open')?.round;
 }
 
 export function getRatings(): Rating[] {
-  return buildRatings(ARTIFACTS, SUBMISSIONS);
+  return buildRatings(ARTIFACTS, ROUNDS);
+}
+
+export function getUnrated(ratings: readonly Rating[]): Artifact[] {
+  return findUnrated(ARTIFACTS, ratings);
 }
 
 export function getWorkloads(): readonly Workload[] {
   return WORKLOADS;
 }
 
-export function groupByWorkload(ratings: Rating[]): Map<WorkloadId, Rating[]> {
-  const groups = new Map<WorkloadId, Rating[]>(WORKLOADS.map((w) => [w.id, []]));
-  for (const rating of ratings) groups.get(rating.artifact.workload)?.push(rating);
+export function groupByWorkload<T>(items: readonly T[], workloadOf: (item: T) => WorkloadId): Map<WorkloadId, T[]> {
+  const groups = new Map<WorkloadId, T[]>(WORKLOADS.map((w) => [w.id, []]));
+  for (const item of items) groups.get(workloadOf(item))?.push(item);
   return groups;
 }
 
-/** Most recent submission date across all artifacts. */
-export function asOfDate(ratings: Rating[]): string {
-  return ratings.reduce((latest, r) => (r.current.date > latest ? r.current.date : latest), '');
+/** Publication date of the newest published round. */
+export function asOfDate(): string {
+  return roundsAsOf(ROUNDS);
 }

@@ -1,4 +1,4 @@
-import type { Band, Grade, Outlook, RatingFlag, Scores } from './types';
+import type { Band, FactorValues, Grade } from './types.ts';
 
 export const GRADES: readonly Grade[] = [
   'AAA',
@@ -20,7 +20,6 @@ export const GRADES: readonly Grade[] = [
   'CCC',
   'CC',
   'C',
-  'D',
   'E',
 ];
 
@@ -28,7 +27,6 @@ export const MIN_SCORE = 1;
 export const MAX_SCORE = 7;
 export const MIN_TOTAL = 3;
 export const MAX_TOTAL = 21;
-export const INVESTMENT_GRADE_FLOOR = 12;
 
 export const TOTAL_TO_GRADE: Readonly<Record<number, Grade>> = {
   21: 'AAA',
@@ -52,19 +50,16 @@ export const TOTAL_TO_GRADE: Readonly<Record<number, Grade>> = {
   3: 'C',
 };
 
-export const FLAG_GRADE: Readonly<Record<RatingFlag, Grade>> = {
-  broken: 'D',
-  withdrawn: 'E',
-};
+export const WITHDRAWN_GRADE: Grade = 'E';
 
-export function totalOf(scores: Scores): number {
+export function totalOf(scores: FactorValues): number {
   return scores.capability + scores.ux + scores.cost;
 }
 
-export function gradeFor(scores: Scores, flag?: RatingFlag): Grade {
-  if (flag) return FLAG_GRADE[flag];
-  const total = Math.min(MAX_TOTAL, Math.max(MIN_TOTAL, totalOf(scores)));
-  return TOTAL_TO_GRADE[total] ?? 'C';
+/** Averaged totals can be fractional; they round to the nearest notch. */
+export function gradeForTotal(total: number): Grade {
+  const notch = Math.min(MAX_TOTAL, Math.max(MIN_TOTAL, Math.round(total)));
+  return TOTAL_TO_GRADE[notch] ?? 'C';
 }
 
 export function gradeIndex(grade: Grade): number {
@@ -73,7 +68,6 @@ export function gradeIndex(grade: Grade): number {
 
 export function bandOf(grade: Grade): Band {
   if (grade === 'E') return 'withdrawn';
-  if (grade === 'D') return 'default';
   const i = gradeIndex(grade);
   if (i <= gradeIndex('BBB-')) return 'investment';
   if (i <= gradeIndex('B-')) return 'speculative';
@@ -125,13 +119,6 @@ export const BAND_META: Readonly<Record<Band, BandMeta>> = {
     color: 'var(--band-distressed)',
     background: 'var(--band-distressed-bg)',
   },
-  default: {
-    label: 'Broken',
-    shortLabel: 'Broken',
-    range: 'D',
-    color: 'var(--band-default)',
-    background: 'var(--band-default-bg)',
-  },
   withdrawn: {
     label: 'Withdrawn',
     shortLabel: 'Withdrawn',
@@ -141,41 +128,7 @@ export const BAND_META: Readonly<Record<Band, BandMeta>> = {
   },
 };
 
-export const BAND_ORDER: readonly Band[] = ['investment', 'speculative', 'distressed', 'default', 'withdrawn'];
-
-export interface OutlookMeta {
-  label: string;
-  symbol: string;
-  description: string;
-  color: string;
-}
-
-export const OUTLOOK_META: Readonly<Record<Outlook, OutlookMeta>> = {
-  positive: {
-    label: 'Positive',
-    symbol: '▲',
-    description: 'Likely to be upgraded at the next review.',
-    color: 'var(--band-investment)',
-  },
-  stable: {
-    label: 'Stable',
-    symbol: '●',
-    description: 'No change expected.',
-    color: 'var(--ink-muted)',
-  },
-  negative: {
-    label: 'Negative',
-    symbol: '▼',
-    description: 'Likely to be downgraded at the next review.',
-    color: 'var(--band-distressed)',
-  },
-  developing: {
-    label: 'Developing',
-    symbol: '◆',
-    description: 'Moving fast, usually in preview. Could go either way.',
-    color: 'var(--band-speculative)',
-  },
-};
+export const BAND_ORDER: readonly Band[] = ['investment', 'speculative', 'distressed', 'withdrawn'];
 
 /** Spoken form for screen readers: "AA+" -> "AA plus". */
 export function spokenGrade(grade: Grade): string {

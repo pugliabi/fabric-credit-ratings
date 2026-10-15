@@ -23,6 +23,11 @@ export function formatMonth(date: Date): string {
   return monthOnly.format(date);
 }
 
+/** 6 -> "6", 6.5 -> "6.5". Averaged scores carry at most one decimal. */
+export function formatScore(value: number): string {
+  return Number.isInteger(value) ? String(value) : value.toFixed(1);
+}
+
 export function pluralize(count: number, singular: string, plural = `${singular}s`): string {
   return `${count} ${count === 1 ? singular : plural}`;
 }

@@ -1,8 +1,8 @@
 import { useRef, type KeyboardEvent } from 'react';
 import { gradeIndex, isInvestmentGrade, medianGrade } from '../domain/scale';
-import type { Rating, Workload } from '../domain/types';
+import type { Artifact, Rating, Workload } from '../domain/types';
 import { pluralize } from '../lib/format';
-import { ArtifactRow } from './ArtifactRow';
+import { ArtifactRow, UnratedRow } from './ArtifactRow';
 import { Chevron } from './Chevron';
 import { Collapsible } from './Collapsible';
 import { DistributionBar } from './DistributionBar';
@@ -12,6 +12,7 @@ import styles from './WorkloadSection.module.css';
 interface WorkloadSectionProps {
   workload: Workload;
   ratings: Rating[];
+  unrated: Artifact[];
   open: boolean;
   openRowId: string | undefined;
   asOf: string;
@@ -23,6 +24,7 @@ interface WorkloadSectionProps {
 export function WorkloadSection({
   workload,
   ratings,
+  unrated,
   open,
   openRowId,
   asOf,
@@ -37,6 +39,7 @@ export function WorkloadSection({
   const grades = sorted.map((r) => r.current.grade);
   const median = medianGrade(grades);
   const investment = grades.filter(isInvestmentGrade).length;
+  const itemCount = sorted.length + unrated.length;
   const headingId = `${workload.id}-heading`;
   const panelId = `${workload.id}-panel`;
 
@@ -68,21 +71,28 @@ export function WorkloadSection({
           <span className={styles.titleBlock}>
             <span className={styles.name}>{workload.name}</span>
             <span className={styles.meta}>
-              {pluralize(sorted.length, 'item')} · {workload.blurb}
+              {pluralize(itemCount, 'item')} · {workload.blurb}
             </span>
           </span>
           <span className={styles.summary}>
-            <span className={styles.summaryText}>
-              <span className={styles.summaryStrong}>{investment}</span> of {sorted.length} investment grade
-            </span>
-            <DistributionBar grades={grades} />
+            {sorted.length > 0 ? (
+              <>
+                <span className={styles.summaryText}>
+                  <span className={styles.summaryStrong}>{investment}</span> of {sorted.length} investment grade
+                </span>
+                <DistributionBar grades={grades} />
+              </>
+            ) : (
+              <span className={styles.summaryText}>Not yet rated</span>
+            )}
+            {sorted.length > 0 && unrated.length > 0 && (
+              <span className={styles.summaryText}>{unrated.length} not rated</span>
+            )}
           </span>
-          {median && (
-            <span className={styles.median}>
-              <span className={styles.medianLabel}>Median</span>
-              <GradeBadge grade={median} size="md" />
-            </span>
-          )}
+          <span className={styles.median}>
+            <span className={styles.medianLabel}>Median</span>
+            {median ? <GradeBadge grade={median} size="md" /> : <span className={styles.medianNone}>NR</span>}
+          </span>
           <Chevron open={open} />
         </button>
       </h2>
@@ -97,6 +107,11 @@ export function WorkloadSection({
                 open={openRowId === rating.artifact.id}
                 onToggle={() => onToggleRow(rating.artifact.id)}
               />
+            </li>
+          ))}
+          {unrated.map((artifact) => (
+            <li key={artifact.id}>
+              <UnratedRow artifact={artifact} />
             </li>
           ))}
         </ul>

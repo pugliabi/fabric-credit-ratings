@@ -7,10 +7,11 @@ import styles from './SiteHeader.module.css';
 
 interface SiteHeaderProps {
   ratings: Rating[];
+  itemCount: number;
   asOf: string;
 }
 
-export function SiteHeader({ ratings, asOf }: SiteHeaderProps) {
+export function SiteHeader({ ratings, itemCount, asOf }: SiteHeaderProps) {
   const grades = ratings.map((r) => r.current.grade);
   const investment = grades.filter(isInvestmentGrade).length;
   const median = medianGrade(grades);
@@ -18,7 +19,6 @@ export function SiteHeader({ ratings, asOf }: SiteHeaderProps) {
   return (
     <div id="top" className={styles.header}>
       <div className={styles.inner}>
-        <p className={styles.eyebrow}>Example ratings for design review</p>
         <h1 className={styles.title}>Microsoft Fabric Credit Ratings</h1>
         <p className={styles.lede}>
           A bond-style rating for every Fabric item, from <strong>AAA</strong> down to <strong>E</strong>. Each item is
@@ -28,7 +28,10 @@ export function SiteHeader({ ratings, asOf }: SiteHeaderProps) {
         <dl className={styles.stats}>
           <div className={styles.stat}>
             <dt>Items rated</dt>
-            <dd>{ratings.length}</dd>
+            <dd>
+              {ratings.length}
+              <span className={styles.statSub}> of {itemCount}</span>
+            </dd>
           </div>
           <div className={styles.stat}>
             <dt>Investment grade</dt>
@@ -45,10 +48,12 @@ export function SiteHeader({ ratings, asOf }: SiteHeaderProps) {
               </dd>
             </div>
           )}
-          <div className={styles.stat}>
-            <dt>Ratings as of</dt>
-            <dd className={styles.statDate}>{formatFullDate(asOf)}</dd>
-          </div>
+          {asOf && (
+            <div className={styles.stat}>
+              <dt>Ratings as of</dt>
+              <dd className={styles.statDate}>{formatFullDate(asOf)}</dd>
+            </div>
+          )}
         </dl>
 
         <ScaleLegend />

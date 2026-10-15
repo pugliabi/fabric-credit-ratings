@@ -121,7 +121,7 @@ export function HistorySparkline({ history, asOf }: HistorySparklineProps) {
           className={styles.dot}
           fill={BAND_META[bandOf(p.grade)].color}
         >
-          <title>{`${formatMonthYear(p.date)}: ${p.grade}${p.flag ? '' : ` (${p.total}/21)`}`}</title>
+          <title>{`${formatMonthYear(p.date)}: ${p.grade}`}</title>
         </circle>
       ))}
     </svg>

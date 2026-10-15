@@ -1,19 +1,25 @@
 import type { CSSProperties } from 'react';
 import { FACTORS } from '../data/factors';
 import { MAX_SCORE } from '../domain/scale';
-import type { Score, Scores } from '../domain/types';
+import type { FactorValues } from '../domain/types';
+import { formatScore } from '../lib/format';
 import styles from './FactorBars.module.css';
 
 const SEGMENTS = Array.from({ length: MAX_SCORE }, (_, i) => i + 1);
 
-export function scoreColor(score: Score): string {
+export function scoreColor(score: number): string {
   if (score >= 6) return 'var(--band-investment)';
   if (score >= 4) return 'var(--fabric-green-soft)';
-  if (score === 3) return 'var(--band-speculative)';
+  if (score >= 3) return 'var(--band-speculative)';
   return 'var(--band-distressed)';
 }
 
-export function FactorBars({ scores }: { scores: Scores }) {
+/** Share of segment n (1-based) covered by the score: 6.5 fills segment 7 halfway. */
+function segmentFill(score: number, n: number): number {
+  return Math.min(1, Math.max(0, score - (n - 1)));
+}
+
+export function FactorBars({ scores }: { scores: FactorValues }) {
   return (
     <ul className={styles.list}>
       {FACTORS.map((factor) => {
@@ -23,7 +29,7 @@ export function FactorBars({ scores }: { scores: Scores }) {
             <div className={styles.header}>
               <span className={styles.label}>{factor.label}</span>
               <span className={styles.value}>
-                <strong>{score}</strong>/{MAX_SCORE}
+                <strong>{formatScore(score)}</strong>/{MAX_SCORE}
               </span>
             </div>
             <span
@@ -36,7 +42,11 @@ export function FactorBars({ scores }: { scores: Scores }) {
               style={{ '--fill': scoreColor(score) } as CSSProperties}
             >
               {SEGMENTS.map((n) => (
-                <span key={n} className={styles.segment} data-filled={n <= score} />
+                <span
+                  key={n}
+                  className={styles.segment}
+                  style={{ '--segment-fill': `${segmentFill(score, n) * 100}%` } as CSSProperties}
+                />
               ))}
             </span>
           </li>

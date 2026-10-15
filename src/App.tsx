@@ -4,15 +4,18 @@ import { SiteFooter } from './components/SiteFooter';
 import { SiteHeader } from './components/SiteHeader';
 import { SiteNav, type NavItem } from './components/SiteNav';
 import { WorkloadSection } from './components/WorkloadSection';
-import { asOfDate, getRatings, getWorkloads, groupByWorkload } from './data';
+import { asOfDate, getRatings, getUnrated, getWorkloads, groupByWorkload, openRound } from './data';
 import { useAccordionState } from './hooks/useAccordionState';
 import { useActiveSection } from './hooks/useActiveSection';
 import styles from './App.module.css';
 
 const RATINGS = getRatings();
+const UNRATED = getUnrated(RATINGS);
 const WORKLOADS = getWorkloads();
-const GROUPS = groupByWorkload(RATINGS);
-const AS_OF = asOfDate(RATINGS);
+const GROUPS = groupByWorkload(RATINGS, (r) => r.artifact.workload);
+const UNRATED_GROUPS = groupByWorkload(UNRATED, (a) => a.workload);
+const AS_OF = asOfDate();
+const OPEN_ROUND = openRound();
 const WORKLOAD_IDS = WORKLOADS.map((w) => w.id);
 const NAV_ITEMS: NavItem[] = [
   ...WORKLOADS.map((w) => ({ id: w.id, label: w.shortName })),
@@ -48,8 +51,12 @@ export function App() {
       const hash = decodeURIComponent(location.hash.slice(1));
       if (!hash) return;
       const rating = RATINGS.find((r) => `item-${r.artifact.id}` === hash);
+      const unrated = UNRATED.find((a) => `item-${a.id}` === hash);
       if (rating) {
         openRow(rating.artifact.workload, rating.artifact.id);
+        scrollToId(hash);
+      } else if (unrated) {
+        openSection(unrated.workload);
         scrollToId(hash);
       } else if (NAV_IDS.includes(hash)) {
         navigate(hash);
@@ -58,7 +65,7 @@ export function App() {
     applyHash();
     window.addEventListener('hashchange', applyHash);
     return () => window.removeEventListener('hashchange', applyHash);
-  }, [navigate, openRow]);
+  }, [navigate, openRow, openSection]);
 
   return (
     <>
@@ -66,7 +73,7 @@ export function App() {
         Skip to ratings
       </a>
       <SiteNav items={NAV_ITEMS} active={active} onNavigate={navigate} />
-      <SiteHeader ratings={RATINGS} asOf={AS_OF} />
+      <SiteHeader ratings={RATINGS} itemCount={RATINGS.length + UNRATED.length} asOf={AS_OF} />
 
       <main id="ratings" className={styles.main}>
         <div className={styles.toolbar}>
@@ -90,6 +97,7 @@ export function App() {
               key={workload.id}
               workload={workload}
               ratings={GROUPS.get(workload.id) ?? []}
+              unrated={UNRATED_GROUPS.get(workload.id) ?? []}
               open={accordion.isSectionOpen(workload.id)}
               openRowId={accordion.openRowIn(workload.id)}
               asOf={AS_OF}
@@ -103,7 +111,7 @@ export function App() {
         <HowItWorks />
       </main>
 
-      <SiteFooter asOf={AS_OF} />
+      <SiteFooter asOf={AS_OF} openRoundLabel={OPEN_ROUND?.label} />
     </>
   );
 }

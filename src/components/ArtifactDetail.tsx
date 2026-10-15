@@ -1,10 +1,8 @@
 import type { Rating } from '../domain/types';
 import { formatFullDate } from '../lib/format';
-import { DriverList } from './DriverList';
 import { FactorBars } from './FactorBars';
 import { HistorySparkline } from './HistorySparkline';
 import { RatingHistory } from './RatingHistory';
-import { ScoreSum } from './ScoreSum';
 import styles from './ArtifactDetail.module.css';
 
 interface ArtifactDetailProps {
@@ -13,29 +11,27 @@ interface ArtifactDetailProps {
 }
 
 export function ArtifactDetail({ rating, asOf }: ArtifactDetailProps) {
-  const { current, history, upside, downside } = rating;
+  const { artifact, current, history } = rating;
 
   return (
     <div className={styles.detail}>
       <div className={styles.column}>
         <section>
           <h4 className={styles.title}>Why this rating</h4>
-          <p className={styles.rationale}>{current.note}</p>
-          <p className={styles.meta}>Rated {formatFullDate(current.date)}</p>
+          {current.note && <p className={styles.rationale}>{current.note}</p>}
+          <p className={styles.meta}>
+            Rated {formatFullDate(current.date)} in the {current.roundLabel} review
+            {current.raters > 1 && ` · average of ${current.raters} raters`}
+          </p>
         </section>
 
         <section>
           <h4 className={styles.title}>Scores</h4>
           <FactorBars scores={current.scores} />
-          <ScoreSum point={current} />
+          {artifact.status === 'retired' && (
+            <p className={styles.retiredNote}>Retired, so it's rated E regardless of scores.</p>
+          )}
         </section>
-
-        {(upside.length > 0 || downside.length > 0) && (
-          <section>
-            <h4 className={styles.title}>What would move it</h4>
-            <DriverList upside={upside} downside={downside} />
-          </section>
-        )}
       </div>
 
       <div className={styles.column}>

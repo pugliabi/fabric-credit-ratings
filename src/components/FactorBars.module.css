@@ -37,9 +37,5 @@
 .segment {
   height: 8px;
   border-radius: 2px;
-  background: var(--fabric-green-pale);
-}
-
-.segment[data-filled='true'] {
-  background: var(--fill);
+  background: linear-gradient(90deg, var(--fill) var(--segment-fill), var(--fabric-green-pale) var(--segment-fill));
 }

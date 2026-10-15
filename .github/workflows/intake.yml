@@ -1,0 +1,76 @@
+name: Rating intake
+
+# Records scores submitted from fabriccreditratings.com/rate as "Scores: <round>" issues.
+# Commits made with GITHUB_TOKEN do not trigger the deploy workflow, which is fine:
+# open rounds are not shown on the site until they are published from the desk.
+
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  contents: write
+  issues: write
+
+concurrency:
+  group: rating-intake
+  cancel-in-progress: false
+
+jobs:
+  intake:
+    if: startsWith(github.event.issue.title, 'Scores:')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Record scores
+        id: intake
+        env:
+          ISSUE_BODY: ${{ github.event.issue.body }}
+          ISSUE_AUTHOR: ${{ github.event.issue.user.login }}
+        run: node scripts/intake.ts
+
+      - name: Commit scorecard
+        id: commit
+        if: steps.intake.outputs.ok == 'true'
+        env:
+          ISSUE_AUTHOR: ${{ github.event.issue.user.login }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          ROUND: ${{ steps.intake.outputs.round }}
+          SCORE_FILE: ${{ steps.intake.outputs.file }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -- "$SCORE_FILE"
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m "Scores from @$ISSUE_AUTHOR for $ROUND (#$ISSUE_NUMBER)"
+          for attempt in 1 2 3; do
+            git pull --rebase origin main && git push origin HEAD:main && exit 0
+            sleep $((attempt * 5))
+          done
+          exit 1
+
+      - name: Reply on the issue
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          OK: ${{ steps.intake.outputs.ok }}
+          COMMIT_OUTCOME: ${{ steps.commit.outcome }}
+        run: |
+          if [ ! -f intake-result.md ]; then
+            echo "Something went wrong while reading this scorecard. The maintainer has been notified by the failed run." > intake-result.md
+            OK=false
+          fi
+          if [ "$COMMIT_OUTCOME" = "failure" ]; then
+            echo "Your scores were read but could not be saved. The maintainer has been notified by the failed run; no need to resubmit." > intake-result.md
+            OK=false
+          fi
+          gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body-file intake-result.md
+          if [ "$OK" = "true" ]; then
+            gh issue close "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --reason completed
+          fi
