@@ -14,15 +14,21 @@ export async function siteState(db: Db): Promise<SiteState> {
 
 export function isBehind(state: SiteState): boolean {
   if (!state.lastSnapshotAt) return true;
-  return state.changedAt !== null && state.changedAt > state.lastSnapshotAt;
+  // Both come back truncated to milliseconds; a tie may hide a change made just after the snapshot's clock read.
+  return state.changedAt !== null && state.changedAt >= state.lastSnapshotAt;
 }
 
 /**
- * Call inside the same transaction as any change the public site would show: publish, reopen, published edits, catalog
- * edits.
+ * Call after any change the public site would show (publish, reopen, published edits, catalog edits): inside its
+ * transaction as the last statement, or after it commits. SYSUTCDATETIME() is fixed when a statement starts, before it
+ * waits for the row lock, so the first UPDATE takes the lock and the second stamps a time later than any snapshot clock
+ * read that got past it. The first must be a real write: a lock on an unchanged row doesn't hold back locking readers.
  */
 export async function markChanged(db: Db): Promise<void> {
-  await db.query('UPDATE site_state SET changed_at = SYSUTCDATETIME() WHERE id = 1');
+  await db.query(
+    `UPDATE site_state SET changed_at = SYSUTCDATETIME() WHERE id = 1;
+     UPDATE site_state SET changed_at = SYSUTCDATETIME() WHERE id = 1;`,
+  );
 }
 
 /**
