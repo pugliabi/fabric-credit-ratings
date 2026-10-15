@@ -5,7 +5,10 @@ export type Method = 'GET' | 'POST' | 'PUT' | 'DELETE';
 export interface ApiOptions {
   /** False for calls that are slow by nature (AI drafting, the deploy trigger), so they never show the wake notice. */
   wakeNotice?: boolean;
-  /** Aborting rejects with fetch's own AbortError, not an ApiError. */
+  /**
+   * Aborting rejects with the signal's reason, never an ApiError: an AbortError for abort(), a TimeoutError for
+   * AbortSignal.timeout().
+   */
   signal?: AbortSignal;
 }
 

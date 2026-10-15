@@ -1,9 +1,10 @@
 import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
-import { api, errorMessage } from '../lib/api';
+import { api, ApiError, errorMessage } from '../lib/api';
 import { MIN_PASSWORD_LENGTH, newPasswordProblem } from './password-rules';
 import styles from './Account.module.css';
 
-type State = { kind: 'idle' | 'saving' | 'done' } | { kind: 'error'; message: string };
+/** `field` is the input the error is about, for aria-describedby. */
+type State = { kind: 'idle' | 'saving' | 'done' } | { kind: 'error'; message: string; field?: 'current' | 'next' };
 
 interface ChangePasswordDialogProps {
   /** For password managers, which file a new password under the account's username. */
@@ -13,18 +14,32 @@ interface ChangePasswordDialogProps {
 
 export function ChangePasswordDialog({ login, onClose }: ChangePasswordDialogProps) {
   const ref = useRef<HTMLDialogElement>(null);
+  const currentRef = useRef<HTMLInputElement>(null);
   const titleId = useId();
+  const errorId = useId();
   const [current, setCurrent] = useState('');
   const [next, setNext] = useState('');
   const [repeat, setRepeat] = useState('');
   const [state, setState] = useState<State>({ kind: 'idle' });
   const [attempt, setAttempt] = useState(0);
   const saving = state.kind === 'saving';
+  const describedBy = (field: 'current' | 'next') =>
+    state.kind === 'error' && state.field === field ? errorId : undefined;
 
   useEffect(() => {
     const dialog = ref.current;
     if (dialog && !dialog.open) dialog.showModal();
   }, []);
+
+  useEffect(() => {
+    if (!saving) return;
+    // Chrome closes on a second Escape even when cancel was prevented; a prevented keydown never asks to close.
+    const holdEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') event.preventDefault();
+    };
+    document.addEventListener('keydown', holdEscape, true);
+    return () => document.removeEventListener('keydown', holdEscape, true);
+  }, [saving]);
 
   const close = () => ref.current?.close();
 
@@ -34,7 +49,7 @@ export function ChangePasswordDialog({ login, onClose }: ChangePasswordDialogPro
     setAttempt((count) => count + 1);
     const problem = newPasswordProblem(next, repeat);
     if (problem) {
-      setState({ kind: 'error', message: problem });
+      setState({ kind: 'error', message: problem, field: 'next' });
       return;
     }
     setState({ kind: 'saving' });
@@ -42,7 +57,13 @@ export function ChangePasswordDialog({ login, onClose }: ChangePasswordDialogPro
       await api('PUT', '/me/password', { current, next });
       setState({ kind: 'done' });
     } catch (reason) {
-      setState({ kind: 'error', message: errorMessage(reason) });
+      // The new password already passed the server's rules here, so a 400 means the current password is wrong.
+      const wrongCurrent = reason instanceof ApiError && reason.status === 400;
+      setState({ kind: 'error', message: errorMessage(reason), field: wrongCurrent ? 'current' : undefined });
+      if (wrongCurrent) {
+        currentRef.current?.focus();
+        currentRef.current?.select();
+      }
     }
   };
 
@@ -79,10 +100,12 @@ export function ChangePasswordDialog({ login, onClose }: ChangePasswordDialogPro
           <label className={styles.field}>
             <span>Current password</span>
             <input
+              ref={currentRef}
               type="password"
               value={current}
               onChange={(event) => setCurrent(event.target.value)}
               autoComplete="current-password"
+              aria-describedby={describedBy('current')}
               required
             />
           </label>
@@ -93,6 +116,7 @@ export function ChangePasswordDialog({ login, onClose }: ChangePasswordDialogPro
               value={next}
               onChange={(event) => setNext(event.target.value)}
               autoComplete="new-password"
+              aria-describedby={describedBy('next')}
             />
           </label>
           <label className={styles.field}>
@@ -105,7 +129,7 @@ export function ChangePasswordDialog({ login, onClose }: ChangePasswordDialogPro
             />
           </label>
           {state.kind === 'error' && (
-            <p key={attempt} className={styles.error} role="alert">
+            <p key={attempt} id={errorId} className={styles.error} role="alert">
               {state.message}
             </p>
           )}

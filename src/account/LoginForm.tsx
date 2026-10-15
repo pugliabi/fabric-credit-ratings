@@ -1,4 +1,4 @@
-import { useId, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
 import { errorMessage } from '../lib/api';
 import styles from './Account.module.css';
 
@@ -11,11 +11,17 @@ interface LoginFormProps {
 
 export function LoginForm({ title, notice, onLogin }: LoginFormProps) {
   const errorId = useId();
+  const loginRef = useRef<HTMLInputElement>(null);
   const passwordRef = useRef<HTMLInputElement>(null);
   const [login, setLogin] = useState('');
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+
+  // After a logout or an expired session, the control that had focus is gone and focus sits on <body>.
+  useEffect(() => {
+    if (!document.activeElement || document.activeElement === document.body) loginRef.current?.focus();
+  }, []);
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
@@ -44,12 +50,14 @@ export function LoginForm({ title, notice, onLogin }: LoginFormProps) {
       <label className={styles.field}>
         <span>Login</span>
         <input
+          ref={loginRef}
           name="username"
           value={login}
           onChange={(event) => setLogin(event.target.value)}
           autoComplete="username"
           autoCapitalize="none"
           spellCheck={false}
+          aria-describedby={error ? errorId : undefined}
           required
         />
       </label>

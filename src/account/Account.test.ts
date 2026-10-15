@@ -86,6 +86,7 @@ describe('ChangePasswordDialog', () => {
     expect(inputs(html).filter((input) => 'required' in input)).toEqual([
       expect.objectContaining({ autocomplete: 'current-password' }),
     ]);
+    expect(html).not.toMatch(/aria-describedby/i);
   });
 
   it('is named by its heading and tells password managers whose password changes', () => {

@@ -165,6 +165,19 @@ describe('api', () => {
     expect(reason).toMatchObject({ name: 'AbortError' });
     expect(states).toEqual([false, true, false]);
   });
+
+  it('still reports a network failure as status 0 when the call carries a signal that was not aborted', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        throw new TypeError('Failed to fetch');
+      }),
+    );
+    await expect(api('GET', '/me', undefined, { signal: new AbortController().signal })).rejects.toMatchObject({
+      name: 'ApiError',
+      status: 0,
+    });
+  });
 });
 
 describe('slow requests', () => {

@@ -2,7 +2,14 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { SessionUser } from '../domain/api-types';
 import { ApiError, api, onSignedOut } from '../lib/api';
 import { runLogout, type LogoutState } from './logout';
-import { createSessionActions, EXPIRED, sessionAfterError, sessionAfterSignedOut, type Session } from './useSession';
+import {
+  createSessionActions,
+  EXPIRED,
+  LEFTOVER_SESSION,
+  sessionAfterError,
+  sessionAfterSignedOut,
+  type Session,
+} from './useSession';
 
 const user: SessionUser = { id: 1, login: 'ann', displayName: 'Ann', role: 'rater' };
 const WAKING = 'The ratings database is not responding. Try again in a minute.';
@@ -89,12 +96,43 @@ describe('session actions', () => {
     expect(session.current()).toEqual({ status: 'signed-out', notice: '' });
   });
 
-  it('stays logged in, and says why, when logging out fails', async () => {
+  it('logs out, with a note, when the server answered an error but had already cleared the cookie', async () => {
+    const answers = [reply(503, { error: WAKING }), reply(204)];
+    const fetchMock = vi.fn(async (_url: string, _init: RequestInit) => answers.shift());
+    vi.stubGlobal('fetch', fetchMock);
+    const session = harness({ status: 'signed-in', user });
+    await session.actions.logout();
+    session.stop();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.calls[1]?.[0]).toBe('/api/auth/logout');
+    expect(fetchMock.mock.calls[1]?.[1]).toMatchObject({ method: 'POST', signal: expect.any(AbortSignal) });
+    expect(session.current()).toEqual({ status: 'signed-out', notice: LEFTOVER_SESSION });
+    expect(LEFTOVER_SESSION).toBe('You are logged out. The ratings server will remove the old session on its own.');
+  });
+
+  it('logs out without a note when only the second try got an answer', async () => {
     const answers: (() => Response)[] = [
-      () => reply(503, { error: WAKING }),
       () => {
         throw new TypeError('Failed to fetch');
       },
+      () => reply(204),
+    ];
+    vi.stubGlobal('fetch', vi.fn(async () => answers.shift()?.()));
+    const session = harness({ status: 'signed-in', user });
+    await session.actions.logout();
+    session.stop();
+    expect(session.current()).toEqual({ status: 'signed-out', notice: '' });
+  });
+
+  it('stays logged in, with the first reason, when the second try fails too', async () => {
+    const offline = () => {
+      throw new TypeError('Failed to fetch');
+    };
+    const answers: (() => Response)[] = [
+      () => reply(503, { error: WAKING }),
+      () => reply(503, { error: WAKING }),
+      offline,
+      offline,
     ];
     vi.stubGlobal('fetch', vi.fn(async () => answers.shift()?.()));
     const session = harness({ status: 'signed-in', user });
@@ -102,6 +140,16 @@ describe('session actions', () => {
     await expect(session.actions.logout()).rejects.toMatchObject({ status: 0 });
     session.stop();
     expect(session.current()).toEqual({ status: 'signed-in', user });
+  });
+
+  it('still ends a session logged in from this tab when a later request answers 401', async () => {
+    const answers = [reply(200, user), reply(401, { error: 'Log in to continue.' })];
+    vi.stubGlobal('fetch', vi.fn(async () => answers.shift()));
+    const session = harness({ status: 'signed-out', notice: '' });
+    await session.actions.login('ann', 'the-right-one');
+    await expect(api('GET', '/rounds/open/my-scores')).rejects.toMatchObject({ status: 401 });
+    session.stop();
+    expect(session.current()).toEqual({ status: 'signed-out', notice: EXPIRED });
   });
 
   it('drops a logged-in user back to the login form when any call answers 401', async () => {
@@ -163,6 +211,23 @@ describe('runLogout', () => {
     await runLogout(session.actions.logout, (state) => states.push(state));
     session.stop();
     expect(states).toEqual([{ kind: 'leaving' }, { kind: 'failed', message: `${WAKING} You are still logged in.` }]);
+    expect(session.current()).toEqual({ status: 'signed-in', user });
+  });
+
+  it('says plainly that the server could not be reached and the user is still logged in', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        throw new TypeError('Failed to fetch');
+      }),
+    );
+    const session = harness({ status: 'signed-in', user });
+    const states: LogoutState[] = [];
+    await runLogout(session.actions.logout, (state) => states.push(state));
+    session.stop();
+    const message =
+      'Could not reach the ratings server. You are still logged in. Check your connection, then log out again.';
+    expect(states.at(-1)).toEqual({ kind: 'failed', message });
     expect(session.current()).toEqual({ status: 'signed-in', user });
   });
 });
