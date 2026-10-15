@@ -1,5 +1,21 @@
-import { describe, expect, it } from 'vitest';
-import { clientIp, corsHeaders } from './http.ts';
+import { HttpRequest, InvocationContext, type HttpFunctionOptions, type HttpResponseInit } from '@azure/functions';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { clientIp, corsHeaders, route } from './http.ts';
+
+const registered = vi.hoisted(() => new Map<string, HttpFunctionOptions>());
+
+vi.mock(import('@azure/functions'), async (importOriginal) => {
+  const original = await importOriginal();
+  return {
+    ...original,
+    app: {
+      ...original.app,
+      http: (name: string, options: HttpFunctionOptions) => {
+        registered.set(name, options);
+      },
+    },
+  };
+});
 
 describe('corsHeaders', () => {
   it('echoes allowed origins with credentials', () => {
@@ -32,5 +48,54 @@ describe('clientIp', () => {
     expect(clientIp('not-an-ip')).toBe('unknown');
     expect(clientIp('a'.repeat(150))).toBe('unknown');
     expect(clientIp('203.0.113.7, not-an-ip')).toBe('unknown');
+  });
+});
+
+describe('mutation checks', () => {
+  const handler = vi.fn(async () => undefined);
+  route('testBuildPost', 'POST', 'test/build', 'build', handler);
+  route('testUserPost', 'POST', 'test/user', 'user', handler);
+  route('testPublicPost', 'POST', 'test/public', 'public', handler);
+
+  async function post(name: string, headers: Record<string, string>): Promise<HttpResponseInit> {
+    const options = registered.get(name);
+    if (!options) throw new Error(`${name} was not registered.`);
+    const url = 'http://localhost/api/test';
+    const request = new HttpRequest({ method: 'POST', url, headers, body: { string: '{}' } });
+    return (await options.handler(request, new InvocationContext())) as HttpResponseInit;
+  }
+
+  const json = { 'content-type': 'application/json' };
+  const token = { authorization: 'Bearer build-secret' };
+
+  beforeEach(() => {
+    handler.mockClear();
+    vi.stubEnv('SNAPSHOT_TOKEN', 'build-secret');
+    vi.stubEnv('ALLOWED_ORIGINS', 'https://fabriccreditratings.com');
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('lets a build POST with a valid token through without an Origin, since GitHub Actions sends none', async () => {
+    expect((await post('testBuildPost', { ...json, ...token })).status).toBe(204);
+    expect(handler).toHaveBeenCalledTimes(1);
+  });
+
+  it('still requires JSON and the token on a build POST', async () => {
+    expect((await post('testBuildPost', { ...token, 'content-type': 'text/plain' })).status).toBe(415);
+    expect((await post('testBuildPost', json)).status).toBe(401);
+    expect((await post('testBuildPost', { ...json, authorization: 'Bearer wrong' })).status).toBe(401);
+    expect(handler).not.toHaveBeenCalled();
+  });
+
+  it('refuses user and public POSTs without an allowed Origin', async () => {
+    for (const name of ['testUserPost', 'testPublicPost']) {
+      expect((await post(name, json)).status).toBe(403);
+      expect((await post(name, { ...json, ...token })).status).toBe(403);
+      expect((await post(name, { ...json, origin: 'https://evil.example' })).status).toBe(403);
+    }
+    expect(handler).not.toHaveBeenCalled();
   });
 });

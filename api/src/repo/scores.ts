@@ -6,7 +6,10 @@ const COLUMNS = `s.round_id AS roundId, s.user_id AS userId, u.display_name AS n
   s.capability, s.ux, s.cost, s.updated_at AS updatedAt`;
 
 export async function allScores(db: Db): Promise<ScoreRow[]> {
-  return db.query<ScoreRow>(`SELECT ${COLUMNS} FROM scores s JOIN users u ON u.id = s.user_id`);
+  return db.query<ScoreRow>(
+    `SELECT ${COLUMNS} FROM scores s JOIN users u ON u.id = s.user_id
+     ORDER BY s.round_id, u.display_name, s.user_id, s.artifact_id`,
+  );
 }
 
 export async function scoresFor(db: Db, roundId: string, userId: number): Promise<ScoreRow[]> {

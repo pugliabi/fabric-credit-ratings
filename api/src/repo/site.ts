@@ -22,7 +22,15 @@ export async function markChanged(db: Db): Promise<void> {
   await db.query('UPDATE site_state SET changed_at = SYSUTCDATETIME() WHERE id = 1');
 }
 
-/** Pass the time read before loading the dataset, so a change made during the build still shows as behind. */
+/**
+ * Call once the site built from a snapshot is live, with that snapshot's generatedAt: the database time read before
+ * its dataset was loaded, so a change made during the build still shows as behind. Never moves the stamp back, so a
+ * late confirmation of an older deploy doesn't undo a newer one's.
+ */
 export async function markSnapshotTaken(db: Db, takenAt: Date): Promise<void> {
-  await db.query('UPDATE site_state SET last_snapshot_at = @takenAt WHERE id = 1', { takenAt });
+  await db.query(
+    `UPDATE site_state SET last_snapshot_at = @takenAt
+     WHERE id = 1 AND (last_snapshot_at IS NULL OR last_snapshot_at < @takenAt)`,
+    { takenAt },
+  );
 }

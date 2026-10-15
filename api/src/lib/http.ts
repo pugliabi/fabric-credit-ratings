@@ -61,10 +61,13 @@ function sameSecret(given: string, expected: string): boolean {
   return expected !== '' && timingSafeEqual(digest(given), digest(expected));
 }
 
-/** Cross-site form posts can't send JSON, and other sites' Origin headers are refused. */
-function checkMutation(request: HttpRequest, config: Config): void {
+/**
+ * Cross-site form posts can't send JSON, and other sites' Origin headers are refused. Build calls skip the Origin
+ * check: GitHub Actions sends none, and their bearer token is never attached by a browser, so CSRF can't use it.
+ */
+function checkMutation(request: HttpRequest, config: Config, access: Access): void {
   const origin = request.headers.get('origin');
-  if (!origin || !config.allowedOrigins.includes(origin)) {
+  if (access !== 'build' && (!origin || !config.allowedOrigins.includes(origin))) {
     throw new HttpError(403, 'This request came from a page that is not allowed to change ratings.');
   }
   const type = request.headers.get('content-type') ?? '';
@@ -115,7 +118,7 @@ async function handle(
   }
   const cookies: Cookie[] = [];
   try {
-    if (method !== 'GET') checkMutation(request, config);
+    if (method !== 'GET') checkMutation(request, config, access);
     if (access === 'build') {
       const given = request.headers.get('authorization')?.replace(/^Bearer\s+/i, '') ?? '';
       if (!sameSecret(given, config.snapshotToken)) throw new HttpError(401, 'A valid build token is required.');

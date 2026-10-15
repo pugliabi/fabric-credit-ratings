@@ -122,7 +122,7 @@ notes (
 )
 site_state (
   id               int PRIMARY KEY CHECK (id = 1),
-  last_snapshot_at datetime2 NULL,               -- set by GET /api/build/snapshot
+  last_snapshot_at datetime2 NULL,               -- set by POST /api/build/snapshot/deployed
   changed_at       datetime2 NULL                -- stamped by every change to public data
 )
 ```
@@ -196,7 +196,8 @@ Publishing a round also starts the deploy workflow. An admin can't demote themse
 
 | Method + path | Auth | Result |
 |---|---|---|
-| `GET /api/build/snapshot` | `Authorization: Bearer <SNAPSHOT_TOKEN>` | the snapshot JSON. Sets `site_state.last_snapshot_at` |
+| `GET /api/build/snapshot` | `Authorization: Bearer <SNAPSHOT_TOKEN>` | the snapshot JSON. Writes nothing. `generatedAt` is the database's time (`SYSUTCDATETIME()`), read before the data is loaded |
+| `POST /api/build/snapshot/deployed` | `Authorization: Bearer <SNAPSHOT_TOKEN>` | body `{ generatedAt }`, the deployed snapshot's. 204. Sets `site_state.last_snapshot_at` to it, only ever forward. 400 unless it's an ISO timestamp exactly as the snapshot gave it and no more than 5 minutes in the future. Skips the `Origin` check, since GitHub Actions sends none and the token is the protection, but still needs `Content-Type: application/json` |
 
 ## Auth and security
 
@@ -244,9 +245,10 @@ Publishing a round also starts the deploy workflow. An admin can't demote themse
 Triggers: push to `main`, `workflow_dispatch`. Permissions: `contents: write`, `pages: write`, `id-token: write`.
 
 1. Checkout, setup-node, `npm ci`.
-2. When the `API_URL` variable is set, `npm run snapshot` (`scripts/snapshot.ts`) fetches `${API_URL}/api/build/snapshot` with `secrets.SNAPSHOT_TOKEN`. On HTTP 200 with a valid snapshot it writes `src/data/snapshot.json`. It skips the write when only `generatedAt` differs. On any failure it keeps the committed file and logs a warning. Locally the same script reads the token from `api/local.settings.json`.
+2. When the `API_URL` variable is set, `npm run snapshot` (`scripts/snapshot.ts`) fetches `${API_URL}/api/build/snapshot` with `secrets.SNAPSHOT_TOKEN`, with a timeout of about 200 seconds so a paused database can wake (under the 230-second Functions limit). On HTTP 200 with a valid snapshot it writes `src/data/snapshot.json`, and it skips the write when only `generatedAt` differs. Either way it outputs the fetched `generatedAt` for step 5. On any failure it keeps the committed file, logs a warning, and outputs nothing. Locally the same script reads the token from `api/local.settings.json`.
 3. If the snapshot changed, commit it as `github-actions[bot]` ("Snapshot <asOf>") and push with a pull-rebase retry. `GITHUB_TOKEN` commits don't retrigger the workflow.
 4. Build, upload `dist`, deploy to Pages.
+5. After `actions/deploy-pages` succeeds, if step 2 output a `generatedAt`, POST it as `{ generatedAt }` to `${API_URL}/api/build/snapshot/deployed` with the same token. That includes the run where step 2 skipped the write because only `generatedAt` differed, since the deployed data is the same. If the fetch failed, the run doesn't POST, because the site still shows the committed file. So a failed fetch, or a deploy that fails or is cancelled after it, leaves `last_snapshot_at` where it was, and the admin page still shows the site as behind.
 
 The function starts the workflow with `POST https://api.github.com/repos/<GITHUB_REPO>/actions/workflows/<GITHUB_WORKFLOW>/dispatches` and `{ "ref": "<GITHUB_BRANCH>" }` (defaults `deploy.yml` and `main`). It uses a fine-grained token scoped to this repo with Actions read/write, and the token expires within a year. Changes reach the site about 2 minutes after publish or "Update public site".
 
