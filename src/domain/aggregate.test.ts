@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { asOfDate, buildRatings, findUnrated, previousPoint } from './aggregate.ts';
-import type { Artifact, RoundData } from './types.ts';
+import type { Artifact, RoundData, ScoreTriple } from './types.ts';
 
 const lakehouse: Artifact = { id: 'lakehouse', name: 'Lakehouse', workload: 'storage', status: 'ga' };
 const legacy: Artifact = { id: 'legacy', name: 'Legacy item', workload: 'storage', status: 'retired' };
@@ -9,17 +9,17 @@ const catalog = [lakehouse, legacy, fresh];
 
 const rounds: RoundData[] = [
   {
+    round: { id: '2026-Q4', label: 'Q4 2026', status: 'published', publishedOn: '2026-10-01' },
+    notes: {},
+    scorecards: [{ rater: 'ann', submittedAt: '2026-09-30T00:00:00Z', scores: { lakehouse: [7, 7, 7] } }],
+  },
+  {
     round: { id: '2026-Q3', label: 'Q3 2026', status: 'published', publishedOn: '2026-07-01' },
     notes: { lakehouse: 'First look.' },
     scorecards: [
       { rater: 'ann', submittedAt: '2026-06-30T00:00:00Z', scores: { lakehouse: [6, 5, 4], legacy: [7, 7, 7] } },
       { rater: 'bo', submittedAt: '2026-06-30T00:00:00Z', scores: { lakehouse: [5, 5, 4] } },
     ],
-  },
-  {
-    round: { id: '2026-Q4', label: 'Q4 2026', status: 'published', publishedOn: '2026-10-01' },
-    notes: {},
-    scorecards: [{ rater: 'ann', submittedAt: '2026-09-30T00:00:00Z', scores: { lakehouse: [7, 7, 7] } }],
   },
   {
     round: { id: '2027-Q1', label: 'Q1 2027', status: 'open', publishedOn: null },
@@ -42,6 +42,22 @@ describe('buildRatings', () => {
     expect(q3?.raters).toBe(2);
     expect(q3?.grade).toBe('A-');
     expect(q3?.note).toBe('First look.');
+  });
+
+  it('grades from the unrounded total even when rounded factors would drop a notch', () => {
+    const card = (rater: string, triple: ScoreTriple) => ({
+      rater,
+      submittedAt: '2026-06-30T00:00:00Z',
+      scores: { lakehouse: triple },
+    });
+    const sixRaters: RoundData = {
+      round: { id: '2026-Q3', label: 'Q3 2026', status: 'published', publishedOn: '2026-07-01' },
+      notes: {},
+      scorecards: [card('a', [4, 4, 4]), ...['b', 'c', 'd', 'e', 'f'].map((rater) => card(rater, [5, 5, 5]))],
+    };
+    const point = buildRatings([lakehouse], [sixRaters])[0]?.current;
+    expect(point?.scores).toEqual({ capability: 4.8, ux: 4.8, cost: 4.8 });
+    expect(point?.grade).toBe('A-');
   });
 
   it('keeps history oldest to newest with the newest as current', () => {
