@@ -24,13 +24,14 @@ describe('totalOf', () => {
     expect(totalOf({ capability: 7, ux: 7, cost: 7, outlook: 7 })).toBe(21);
     expect(totalOf({ capability: 1, ux: 1, cost: 1, outlook: 1 })).toBe(3);
     expect(totalOf({ capability: 5.5, ux: 5, cost: 4, outlook: 5 })).toBeCloseTo(14.85, 10);
+    expect(totalOf({ capability: 5, ux: 4, cost: 5, outlook: 5 })).toBe(14.25);
   });
 
   it('lets the weights, not the sum, decide the notch', () => {
     // 7/1/1/7: the old sum was 9 (BB-); weighted it is 3 x (2.8 + 0.25 + 0.25 + 0.7) = 12 (BBB-).
     expect(gradeForTotal(totalOf({ capability: 7, ux: 1, cost: 1, outlook: 7 }))).toBe('BBB-');
-    // 7/7/1/1: 3 x (2.8 + 1.75 + 0.25 + 0.1) = 14.7 -> A-.
-    expect(gradeForTotal(totalOf({ capability: 7, ux: 7, cost: 1, outlook: 1 }))).toBe('A-');
+    // 1/7/7/1: the old sum was 15 (A-); weighted it is 3 x (0.4 + 1.75 + 1.75 + 0.1) = 12 (BBB-).
+    expect(gradeForTotal(totalOf({ capability: 1, ux: 7, cost: 7, outlook: 1 }))).toBe('BBB-');
   });
 
   it('exposes the weights, which sum to one', () => {

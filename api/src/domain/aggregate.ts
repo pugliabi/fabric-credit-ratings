@@ -1,4 +1,5 @@
-import { DEPRECATED_GRADE, gradeForTotal, totalOf } from './formula.ts';
+import { FACTORS } from '../../../src/data/factors.ts';
+import { DEPRECATED_GRADE, gradeForTotal, weightedUnits } from './formula.ts';
 import type {
   Artifact,
   FactorId,
@@ -10,7 +11,7 @@ import type {
 } from '../../../src/domain/types.ts';
 
 /** Position of each factor inside a ScoreTuple. */
-export const FACTOR_ORDER: readonly FactorId[] = ['capability', 'ux', 'cost', 'outlook'];
+export const FACTOR_ORDER: readonly FactorId[] = FACTORS.map((factor) => factor.id);
 
 function roundTo1(value: number): number {
   return Math.round(value * 10) / 10;
@@ -36,15 +37,15 @@ export function averageScores(tuples: readonly ScoreTuple[]): FactorValues {
 /** Grade from the unrounded mean of each rater's weighted total, so display rounding never moves a notch. */
 export function gradeForTuples(artifact: Artifact, tuples: readonly ScoreTuple[]): RatingPoint['grade'] {
   if (artifact.status === 'retired') return DEPRECATED_GRADE;
-  const meanTotal =
-    tuples.reduce((acc, tuple) => {
-      const values = {} as FactorValues;
-      FACTOR_ORDER.forEach((id, i) => {
-        values[id] = tuple[i] ?? 0;
-      });
-      return acc + totalOf(values);
-    }, 0) / tuples.length;
-  return gradeForTotal(meanTotal);
+  // Integer units summed first, one division at the end: an exact x.5 mean stays exactly x.5.
+  const units = tuples.reduce((acc, tuple) => {
+    const values = {} as FactorValues;
+    FACTOR_ORDER.forEach((id, i) => {
+      values[id] = tuple[i] ?? 0;
+    });
+    return acc + weightedUnits(values);
+  }, 0);
+  return gradeForTotal((3 * units) / (100 * tuples.length));
 }
 
 export function pointFor(artifact: Artifact, data: RoundData, date: string): RatingPoint | undefined {

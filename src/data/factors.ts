@@ -22,4 +22,11 @@ export const FACTORS: readonly Factor[] = [
     low: 'Burns capacity for the result',
     high: 'Cheapest way to get the result',
   },
+  {
+    id: 'outlook',
+    label: 'Outlook',
+    question: 'Where is it headed over the next year?',
+    low: 'Stalled or on its way out',
+    high: 'Clear momentum and investment',
+  },
 ];

@@ -79,20 +79,22 @@ CREATE TABLE dbo.scores (
   capability tinyint NOT NULL CONSTRAINT ck_scores_capability CHECK (capability BETWEEN 1 AND 7),
   ux tinyint NOT NULL CONSTRAINT ck_scores_ux CHECK (ux BETWEEN 1 AND 7),
   cost tinyint NOT NULL CONSTRAINT ck_scores_cost CHECK (cost BETWEEN 1 AND 7),
-  outlook tinyint NOT NULL CONSTRAINT ck_scores_outlook CHECK (outlook BETWEEN 1 AND 7),
+  outlook tinyint NOT NULL CONSTRAINT df_scores_outlook DEFAULT 4 CONSTRAINT ck_scores_outlook CHECK (outlook BETWEEN 1 AND 7),
   updated_at datetime2 NOT NULL CONSTRAINT df_scores_updated DEFAULT SYSUTCDATETIME(),
   CONSTRAINT pk_scores PRIMARY KEY (round_id, user_id, artifact_id)
 );
 GO
 
--- Outlook (Plan 4). Added with a temporary default so rows from before the column survive; the default is dropped next.
+-- Outlook (Plan 4). Added with a default so rows from before the column survive. The default is kept on purpose: the
+-- schema is applied before the new API deploys, and the old API's INSERT names no outlook.
 IF COL_LENGTH('dbo.scores', 'outlook') IS NULL
 ALTER TABLE dbo.scores ADD outlook tinyint NOT NULL CONSTRAINT df_scores_outlook DEFAULT 4
   CONSTRAINT ck_scores_outlook CHECK (outlook BETWEEN 1 AND 7);
 GO
 
-IF OBJECT_ID('dbo.df_scores_outlook', 'D') IS NOT NULL
-ALTER TABLE dbo.scores DROP CONSTRAINT df_scores_outlook;
+-- A database migrated by an earlier draft of this batch dropped the default; put it back.
+IF OBJECT_ID('dbo.df_scores_outlook', 'D') IS NULL
+ALTER TABLE dbo.scores ADD CONSTRAINT df_scores_outlook DEFAULT 4 FOR outlook;
 GO
 
 -- An artifact delete's foreign-key check seeks this instead of scanning, and waiting on, every card being saved.

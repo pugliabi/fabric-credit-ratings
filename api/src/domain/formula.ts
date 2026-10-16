@@ -37,13 +37,17 @@ export const FACTOR_WEIGHTS: Readonly<Record<FactorId, number>> = {
 
 const FACTOR_IDS = Object.keys(FACTOR_WEIGHTS) as FactorId[];
 
-/**
- * Weighted mean of the four factors, scaled by 3 so it runs 3 to 21 like the old three-factor sum.
- * Rounded to 10 places so float noise (21.000000000000004) cannot tip a notch boundary.
- */
+/** The weights in hundredths, so whole scores give whole units and the arithmetic stays exact. */
+const WEIGHT_UNITS: Readonly<Record<FactorId, number>> = { capability: 40, ux: 25, cost: 25, outlook: 10 };
+
+/** 40·capability + 25·ux + 25·cost + 10·outlook: an integer for whole scores. */
+export function weightedUnits(scores: FactorValues): number {
+  return FACTOR_IDS.reduce((acc, id) => acc + WEIGHT_UNITS[id] * scores[id], 0);
+}
+
+/** Weighted mean of the four factors, scaled by 3 so it runs 3 to 21 like the old three-factor sum. */
 export function totalOf(scores: FactorValues): number {
-  const total = 3 * FACTOR_IDS.reduce((acc, id) => acc + FACTOR_WEIGHTS[id] * scores[id], 0);
-  return Math.round(total * 1e10) / 1e10;
+  return (3 * weightedUnits(scores)) / 100;
 }
 
 /** Averaged totals can be fractional; they round to the nearest notch. */
