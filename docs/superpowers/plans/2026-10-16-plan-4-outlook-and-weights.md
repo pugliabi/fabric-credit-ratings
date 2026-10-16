@@ -46,7 +46,7 @@ README.md, docs/superpowers/specs/2026-10-15-login-fabric-backend-design.md   on
 
 Renames (exported identifiers only; local variable names may stay): `ScoreTriple → ScoreTuple`, `DraftTriple → DraftTuple`, `EMPTY_TRIPLE → EMPTY_TUPLE`, `triplesFor → tuplesFor`, `gradeForTriples → gradeForTuples`, `triple() → tuple()` (dataset.ts), `toTriples → toTuples`, `WITHDRAWN_GRADE → DEPRECATED_GRADE`.
 
-**Mechanical rule for existing tests (used by Tasks 2–5):** every three-value score literal `[a, b, c]` (digits 1–7) in a test or fixture becomes `[a, b, c, c]` (the fourth value repeats the third), unless the task lists a different value. Tests that only compare tuples for equality or change detection keep passing; tests that assert an average or a grade get the new expected values stated in the task. Files with such literals: `src/account/logout.test.ts`, `src/admin/AdminPage.dom.test.ts`, `src/admin/PublishTab.dom.test.ts`, `src/admin/RaterCardEditor.dom.test.ts`, `src/admin/ReviewTab.dom.test.ts`, `src/admin/ReviewTab.test.ts`, `src/rating-ui/draft.test.ts`, `src/rating-ui/save.test.ts`, `src/rating-ui/ScorecardEditor.dom.test.ts`, `src/rating-ui/ScorecardEditor.test.ts`, `src/rating-ui/usePersistentDraft.test.ts`, `api/src/domain/aggregate.test.ts`, `api/src/domain/fixtures.ts`, `api/src/domain/review.test.ts`, `api/src/functions/admin-rounds.test.ts`, `api/src/functions/rater.test.ts`, `api/src/integration.test.ts`, `api/src/lib/validate.test.ts`, `api/src/repo/rounds.test.ts`.
+**Mechanical rule for existing tests (used by Tasks 2–5):** every three-value score literal `[a, b, c]` (digits 1–7) in a test or fixture becomes `[a, b, c, c]` (the fourth value repeats the third), unless the task lists a different value. Tests that only compare tuples for equality or change detection keep passing; tests that assert an average or a grade get the new expected values stated in the task. The same rule applies to three-key `FactorValues` object literals `{ capability, ux, cost }` in tests (add `outlook` with the cost value), which also live in `api/src/lib/draft-why.test.ts:32` and `src/admin/PublishTab.test.ts:16`. Files with such literals: `src/account/logout.test.ts`, `src/admin/AdminPage.dom.test.ts`, `src/admin/PublishTab.dom.test.ts`, `src/admin/RaterCardEditor.dom.test.ts`, `src/admin/ReviewTab.dom.test.ts`, `src/admin/ReviewTab.test.ts`, `src/rating-ui/draft.test.ts`, `src/rating-ui/save.test.ts`, `src/rating-ui/ScorecardEditor.dom.test.ts`, `src/rating-ui/ScorecardEditor.test.ts`, `src/rating-ui/usePersistentDraft.test.ts`, `api/src/domain/aggregate.test.ts`, `api/src/domain/fixtures.ts`, `api/src/domain/review.test.ts`, `api/src/functions/admin-rounds.test.ts`, `api/src/functions/rater.test.ts`, `api/src/integration.test.ts`, `api/src/lib/validate.test.ts`, `api/src/repo/rounds.test.ts`.
 
 ---
 
@@ -231,8 +231,8 @@ describe('totalOf', () => {
   it('lets the weights, not the sum, decide the notch', () => {
     // 7/1/1/7: the old sum was 9 (BB-); weighted it is 3 x (2.8 + 0.25 + 0.25 + 0.7) = 12 (BBB-).
     expect(gradeForTotal(totalOf({ capability: 7, ux: 1, cost: 1, outlook: 7 }))).toBe('BBB-');
-    // 7/7/1/1: 3 x (2.8 + 1.75 + 0.25 + 0.1) = 14.7 -> A-.
-    expect(gradeForTotal(totalOf({ capability: 7, ux: 7, cost: 1, outlook: 1 }))).toBe('A-');
+    // 1/7/7/1: the old sum was 15 (A-); weighted it is 3 x (0.4 + 1.75 + 1.75 + 0.1) = 12 (BBB-).
+    expect(gradeForTotal(totalOf({ capability: 1, ux: 7, cost: 7, outlook: 1 }))).toBe('BBB-');
   });
 
   it('exposes the weights, which sum to one', () => {
@@ -261,11 +261,21 @@ export const FACTOR_WEIGHTS: Readonly<Record<FactorId, number>> = {
 
 const FACTOR_IDS = Object.keys(FACTOR_WEIGHTS) as FactorId[];
 
+/** The weights in hundredths, so whole scores give whole units and the arithmetic stays exact. */
+const WEIGHT_UNITS: Readonly<Record<FactorId, number>> = { capability: 40, ux: 25, cost: 25, outlook: 10 };
+
+/** 40·capability + 25·ux + 25·cost + 10·outlook: an integer for whole scores. */
+export function weightedUnits(scores: FactorValues): number {
+  return FACTOR_IDS.reduce((acc, id) => acc + WEIGHT_UNITS[id] * scores[id], 0);
+}
+
 /** Weighted mean of the four factors, scaled by 3 so it runs 3 to 21 like the old three-factor sum. */
 export function totalOf(scores: FactorValues): number {
-  return 3 * FACTOR_IDS.reduce((acc, id) => acc + FACTOR_WEIGHTS[id] * scores[id], 0);
+  return (3 * weightedUnits(scores)) / 100;
 }
 ```
+
+`FACTOR_WEIGHTS` stays exported for the tests and the docs; `WEIGHT_UNITS` is what the arithmetic uses, so `totalOf` of whole scores is a single correctly rounded division (no `21.000000000000004`), and a mean that is exactly `x.5` in real arithmetic is exactly `x.5` as a double, so `Math.round` can never drop it a notch. (The cloud review of the plan found the float-noise failure; the implementer's first version rounded to ten decimals instead, which this replaces.)
 
 and change the import to `import type { FactorId, FactorValues, Grade } from '../../../src/domain/types.ts';`. Keep `gradeForTotal` as is.
 
@@ -279,17 +289,19 @@ and change the import to `import type { FactorId, FactorValues, Grade } from '..
 /** Grade from the unrounded mean of each rater's weighted total, so display rounding never moves a notch. */
 export function gradeForTuples(artifact: Artifact, tuples: readonly ScoreTuple[]): RatingPoint['grade'] {
   if (artifact.status === 'retired') return DEPRECATED_GRADE;
-  const meanTotal =
-    tuples.reduce((acc, tuple) => {
-      const values = {} as FactorValues;
-      FACTOR_ORDER.forEach((id, i) => {
-        values[id] = tuple[i] ?? 0;
-      });
-      return acc + totalOf(values);
-    }, 0) / tuples.length;
-  return gradeForTotal(meanTotal);
+  // Integer units summed first, one division at the end: an exact x.5 mean stays exactly x.5.
+  const units = tuples.reduce((acc, tuple) => {
+    const values = {} as FactorValues;
+    FACTOR_ORDER.forEach((id, i) => {
+      values[id] = tuple[i] ?? 0;
+    });
+    return acc + weightedUnits(values);
+  }, 0);
+  return gradeForTotal((3 * units) / (100 * tuples.length));
 }
 ```
+
+and `FACTOR_ORDER` is derived, not written twice: `export const FACTOR_ORDER: readonly FactorId[] = FACTORS.map((factor) => factor.id);` with `import { FACTORS } from '../../../src/data/factors.ts';` (the API already imports `FACTORS` in `draft-why.ts`), so the tuple position order has one source for the UI and the server.
 
   - in `pointFor`, use `tuplesFor` and `gradeForTuples`.
   - `src/domain/api-types.ts`, `api/src/domain/review.ts`, `api/src/domain/snapshot.ts`, `api/src/functions/*.ts`, `src/rating-ui/*.ts`: rename the type `ScoreTriple` → `ScoreTuple` wherever imported (`rg -l ScoreTriple src api db scripts` lists them; a global search-and-replace of the identifier is safe).
@@ -425,21 +437,20 @@ and in the "at most ten problems" test use `[5, 5, 5, 5]`.
   outlook tinyint NOT NULL CONSTRAINT ck_scores_outlook CHECK (outlook BETWEEN 1 AND 7),
 ```
 
-and after that table's `GO` add two batches:
+and after that table's `GO` add one batch:
 
 ```sql
--- Outlook (Plan 4). Added with a temporary default so rows from before the column survive; the default is dropped next.
+-- Outlook (Plan 4). The default lets rows written by an API from before the column (the deploy window) and rows from
+-- before the migration exist; the API always writes the column, so the default never applies to a real save.
 IF COL_LENGTH('dbo.scores', 'outlook') IS NULL
 ALTER TABLE dbo.scores ADD outlook tinyint NOT NULL CONSTRAINT df_scores_outlook DEFAULT 4
   CONSTRAINT ck_scores_outlook CHECK (outlook BETWEEN 1 AND 7);
 GO
-
-IF OBJECT_ID('dbo.df_scores_outlook', 'D') IS NOT NULL
-ALTER TABLE dbo.scores DROP CONSTRAINT df_scores_outlook;
-GO
 ```
 
-Run: `npm run db:apply` (against `fcr-dev` from `api/local.settings.json`). Expected: `Applied 16 schema batches.` Run it twice; the second run must also succeed (idempotent).
+The default is kept on purpose (cloud review of the plan): the schema is applied to production before the new API is deployed, and the old API's `INSERT` names no `outlook`, so dropping the default would make every save fail during the deploy window. The `CREATE TABLE` branch for a fresh database carries the same default for consistency: `outlook tinyint NOT NULL CONSTRAINT df_scores_outlook DEFAULT 4 CONSTRAINT ck_scores_outlook CHECK (outlook BETWEEN 1 AND 7),`.
+
+Run: `npm run db:apply` (against `fcr-dev` from `api/local.settings.json`). Expected: `Applied 15 schema batches.` Run it twice; the second run must also succeed (idempotent).
 
 - [ ] **Step 6: Route and repo tests.** Apply the mechanical rule to `api/src/functions/rater.test.ts`, `api/src/functions/admin-rounds.test.ts`, `api/src/repo/rounds.test.ts` and `api/src/integration.test.ts` (`[5, 6, 7]` → `[5, 6, 7, 7]` in both places, and the breakdown expectation). Where a route test asserts a review `scores` object or a grade computed from the fixtures, use the Task 2 Step 5 values. Where a test asserts the 400 text, use "needs four whole scores from 1 to 7.".
 
@@ -537,7 +548,9 @@ the partial note reads `Set all four, or clear`; `EMPTY_TUPLE` replaces `EMPTY_T
       </p>
 ```
 
-- [ ] **Step 7: Other front-end tests.** Apply the mechanical rule to the files listed above. In `ScorecardEditor.dom.test.ts` and `RaterCardEditor.dom.test.ts`, where a test sets sliders by factor label, add the fourth (`Outlook`) where the test expects a complete card, and where it asserts the partial note, expect `Set all four, or clear`.
+- [ ] **Step 6b: Stored drafts from before Outlook.** `parseStoredDraft`/`isRow` upgrade a valid 3-entry row `[a, b, c]` to the partial row `[a, b, c, null]` instead of discarding the whole stored draft; rows of any other length stay invalid. Two tests in `draft.test.ts` (an upgraded 3-entry draft; 2- and 5-entry rows rejected). Cloud review of the plan: without this a rater's unsaved draft vanishes on the first load after the release.
+
+- [ ] **Step 7: Other front-end tests.** Apply the mechanical rule to the files listed above (object literals included: `src/admin/PublishTab.test.ts:16`). In `ScorecardEditor.dom.test.ts` and `RaterCardEditor.dom.test.ts`, where a test sets sliders by factor label, add the fourth (`Outlook`) where the test expects a complete card, and where it asserts the partial note, expect `Set all four, or clear`.
 
 - [ ] **Step 8: Run the front-end tests and typecheck.**
 
@@ -636,10 +649,12 @@ Check `src/test/dom.ts` for the actual `render` helper's name and signature (it 
 
 (import `FACTORS`). The breakdown line already joins the whole tuple.
 
+- [ ] **Step 5b: Hard-coded copy the first draft missed** (cloud review of the plan): `src/components/SiteHeader.tsx:23-24` ("from AAA down to C. Each item is scored 1 to 7 on feature capability, user experience, CU / token cost, and outlook."), `src/components/ArtifactDetail.tsx:32` ("Retired, so it's rated D regardless of scores."), `index.html:9` meta description (four factors, no E). Then `rg -n "\bE\b|three factors|rated E|down to E" src index.html rate.html admin.html` shows no stale copy.
+
 - [ ] **Step 6: Run everything.**
 
 Run: `npm run typecheck; npx vitest run`
-Expected: typecheck exit 0 (apart from `scripts/`, Task 6, if it errors on the snapshot type); all tests pass. Then `npx vite build` and check the bundle: `rg -l "0\.4|outlook.*0\.1|FACTOR_WEIGHTS|21:\"AAA\"" dist` → no output (the weights never ship; `boundary.test.ts` still guards the formula file).
+Expected: typecheck exit 0 (apart from `scripts/`, Task 6, if it errors on the snapshot type); all tests pass. Then `npx vite build` and check the bundle with patterns that survive minification: `rg -l '21:"AAA"|capability:\.4|outlook:\.1|ux:\.25' dist` → no output (the weights never ship; `boundary.test.ts` still guards the formula file).
 
 - [ ] **Step 7: Commit.**
 
@@ -659,7 +674,7 @@ git commit -m "Site: Outlook card, four bands with Low investment grade, D for d
 - [ ] **Step 1: Failing check test.** In `scripts/snapshot-checks.test.ts`: the `point` helper's scores become `{ capability: 5, ux: 4.5, cost: 6, outlook: 3 }`; add to the table-driven problems test a row:
 
 ```ts
-    ['a point without outlook', (s) => { delete (s.ratings[0].current.scores as Record<string, unknown>).outlook; }, 'snapshot.ratings[0].current.scores.outlook is not a score'],
+    ['a point without outlook', (s) => { delete (s.ratings[0].current.scores as Record<string, unknown>).outlook; }, 'snapshot.ratings[0].current.scores.outlook is missing'],
 ```
 
 (match the file's existing row format and the exact message shape its `object()` helper produces: check a neighbouring row such as the "unknown grade" one at line 70 and mirror it). Also change any `'E'` grade literal in the file to `'D'`.
@@ -668,7 +683,7 @@ git commit -m "Site: Outlook card, four bands with Low investment grade, D for d
 
 - [ ] **Step 3: Checks.** `scripts/snapshot-checks.ts:65`: `scores: object({ capability: score, ux: score, cost: score, outlook: score }),`.
 
-- [ ] **Step 4: Docs.** README "How ratings are computed": first bullet "each of the four factors is averaged…", second bullet "The grade comes from the unrounded weighted average total (`api/src/domain/formula.ts`, server-side only; the weights are never published). Retired items are rated D." In the 2026-10-15 spec: line 137 → "The four factors (capability, ux, cost, outlook) stay in code…"; in "Grade math stays server-side" add "Plan 4 (`2026-10-16-outlook-factor-weighted-formula-design.md`) made the total a weighted one and renamed E to D; that spec wins for the factors, the formula and the bands."
+- [ ] **Step 4: Docs.** README line 3 lists the four factors ("…**CU / Token Cost**, and **Outlook** (the feature's potential)."). README "How ratings are computed": first bullet "each of the four factors is averaged…", second bullet "The grade comes from the unrounded weighted average total (`api/src/domain/formula.ts`, server-side only; the weights are never published). Retired items are rated D." In the 2026-10-15 spec: line 137 → "The four factors (capability, ux, cost, outlook) stay in code…"; in "Grade math stays server-side" add "Plan 4 (`2026-10-16-outlook-factor-weighted-formula-design.md`) made the total a weighted one and renamed E to D; that spec wins for the factors, the formula and the bands."
 
 - [ ] **Step 5: Run and commit.**
 
@@ -697,9 +712,9 @@ git commit -m "Snapshot checks require outlook; docs for the weighted formula an
 
 **Files:** none
 
-- [ ] **Step 1: Production schema.** `. ./infra/names.ps1; npm run db:apply -- --server $sqlServer --database $sqlDatabase` → `Applied 16 schema batches.` `fcr` has no score rows, so the default never applies to anything. Read-only check: `node .superpowers/sdd/p3-fcr-state.ts --server $sqlServer --database $sqlDatabase` still shows 78 artifacts, 2026-Q4 open, 0 scorecards.
+- [ ] **Step 1: Production schema.** `. ./infra/names.ps1; npm run db:apply -- --server $sqlServer --database $sqlDatabase` → `Applied 15 schema batches.` `fcr` has no score rows; the default stays so the old API can still save during the deploy window. Read-only check: `node .superpowers/sdd/p3-fcr-state.ts --server $sqlServer --database $sqlDatabase` still shows 78 artifacts, 2026-Q4 open, 0 scorecards.
 
-- [ ] **Step 2: Push.** `npm run typecheck; npx vitest run; npm run build; git status --short` clean; `git push origin main`. Watch `api-deploy.yml` (it runs first and then dispatches `deploy.yml`): `gh run watch (gh run list -R pugliabi/fabric-credit-ratings --workflow api-deploy.yml -L 1 --json databaseId --jq '.[0].databaseId') -R pugliabi/fabric-credit-ratings --exit-status`, then the same for `deploy.yml`. Expected: both green; the site run logs "Snapshot unchanged." (nothing published).
+- [ ] **Step 2: Push.** Both workflows start on the same push and the site usually lands minutes before the API, so for a few minutes the four-slider page talks to the three-entry API (saves get "needs three whole scores" until the API lands; a reload after the API deploy fixes it). Accepted for this release: production has no raters yet and the admin is the only user; push at a quiet moment and do not score during the window. `npm run typecheck; npx vitest run; npm run build; git status --short` clean; `git push origin main`. Watch `api-deploy.yml` (it runs first and then dispatches `deploy.yml`): `gh run watch (gh run list -R pugliabi/fabric-credit-ratings --workflow api-deploy.yml -L 1 --json databaseId --jq '.[0].databaseId') -R pugliabi/fabric-credit-ratings --exit-status`, then the same for `deploy.yml`. Expected: both green; the site run logs "Snapshot unchanged." (nothing published).
 
 - [ ] **Step 3: Live check.** `https://fabriccreditratings.com` How it works shows four factor cards (Outlook last), four bands including "Low investment grade", and the "Deprecated" block with a D badge; the header's rating-scale legend ends in D. At `/admin.html`: the Score tab rows have four sliders and the hint sentence; set four sliders on one item, save, reload, clear it, save again (nothing stays scored); Publish tab still "up to date". Record the result in the ledger, and close the plan with a short note in `.superpowers/sdd/`.
 
@@ -707,7 +722,7 @@ git commit -m "Snapshot checks require outlook; docs for the weighted formula an
 
 ## Done When
 
-- `fcr` and `fcr-dev` have `scores.outlook` (no default constraint left); `db:apply` is idempotent at 16 batches.
+- `fcr` and `fcr-dev` have `scores.outlook` (default 4 kept for the deploy window); `db:apply` is idempotent at 15 batches.
 - A card is four whole 1–7 scores; three- or five-entry cards get the 400 text "needs four whole scores from 1 to 7."
 - `totalOf` is the weighted 3-to-21 total; 7/1/1/7 grades BBB-, 7/7/1/1 grades A-; retired items grade D.
 - Bands: AAA–A- investment, BBB+–BBB- low investment, BB+–B- speculative, CCC–C distressed, D deprecated; the legend, the distribution bar, the sparkline and the badges use them.
