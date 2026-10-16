@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Round } from '../domain/types';
-import { localToday, nextRound, roundIdProblem } from './rounds';
+import { localToday, nextRound, publishDate, roundIdProblem } from './rounds';
 
 const round = (id: string): Round => ({ id, label: id, status: 'published', publishedOn: '2026-01-01' });
 
@@ -25,6 +25,15 @@ describe('roundIdProblem', () => {
     for (const id of ['2027-q1', '27-Q1', '2027-Q123', '2027Q1', '']) {
       expect(roundIdProblem(id)).toBe('Round ids look like 2027-Q1.');
     }
+  });
+});
+
+describe('publishDate', () => {
+  it('defaults to today, never before the latest published round', () => {
+    expect(publishDate('2026-10-15')).toBe('2026-10-15');
+    expect(publishDate('2026-10-15', '2026-09-30')).toBe('2026-10-15');
+    expect(publishDate('2026-10-15', '2026-10-15')).toBe('2026-10-15');
+    expect(publishDate('2026-10-15', '2026-11-01')).toBe('2026-11-01');
   });
 });
 

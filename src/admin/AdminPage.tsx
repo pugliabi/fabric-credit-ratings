@@ -10,6 +10,7 @@ import { useFocusIfLost } from '../hooks/useFocusIfLost';
 import { api, ApiError, errorMessage } from '../lib/api';
 import { ScorecardEditor } from '../rating-ui/ScorecardEditor';
 import { NewRoundForm } from './NewRoundForm';
+import { PublishTab } from './PublishTab';
 import { ReviewTab } from './ReviewTab';
 import styles from './Admin.module.css';
 
@@ -18,6 +19,7 @@ const CURRENT = currentValues();
 const TABS = [
   { id: 'score', label: 'Score' },
   { id: 'review', label: 'Review & why' },
+  { id: 'publish', label: 'Publish' },
 ] as const;
 
 type Tab = (typeof TABS)[number]['id'];
@@ -201,6 +203,9 @@ function AdminShell({ user, onLogout, onForbidden }: AdminShellProps) {
             <NewRoundForm rounds={data.rounds} onCreated={setRounds} />
           ))}
         {data && tab === 'review' && <ReviewTab rounds={data.rounds} catalog={data.catalog} users={data.users} />}
+        {data && tab === 'publish' && (
+          <PublishTab rounds={data.rounds} catalogSize={data.catalog.artifacts.length} onRounds={setRounds} />
+        )}
       </main>
     </div>
   );
