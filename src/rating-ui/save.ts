@@ -1,8 +1,8 @@
-import type { MyScores } from '../domain/api-types';
+import type { MyScores, RoundReview } from '../domain/api-types';
 import type { ScoreTriple } from '../domain/types';
 import { api, ApiError, errorMessage } from '../lib/api';
 import { formatTimestamp } from '../lib/format';
-import { draftFromScores, hasChanges, rebase, sameDraft, type Draft } from './draft';
+import { draftFromScores, hasChanges, rebase, sameDraft, type Draft, type DraftTriple } from './draft';
 
 export const CHANGED_ELSEWHERE =
   'Your scores were changed somewhere else after this page opened, in another window or by an admin. ' +
@@ -92,6 +92,91 @@ export async function pressSave(form: SaveForm, page: SaveHandlers): Promise<voi
     return;
   }
   page.saved(outcome.card, settleSave(outcome, form.saved, form.sent, form.ids));
+}
+
+/** The admin's card editor, when the rater's card changed after the editor opened. */
+export const raterCardChanged = (name: string) =>
+  `${name}'s card changed after you opened it, on their page or in another admin window. ` +
+  'Your edits here are kept on top of it. Check the sliders, then save again.';
+export const CHANGED_WHILE_SAVING =
+  'Saved. You changed scores while it was saving, and those changes are not saved yet. Save again to keep them.';
+
+/** One rater's card, rebuilt from the per-rater breakdown of the whole review (never a filtered list of items). */
+export function cardFromReview(review: RoundReview, userId: number): Draft {
+  const card: Record<string, DraftTriple> = {};
+  for (const item of review.items) {
+    const entry = item.breakdown.find((row) => row.userId === userId);
+    if (entry) card[item.artifact.id] = entry.scores;
+  }
+  return card;
+}
+
+export type RaterSaveOutcome = { kind: 'saved' | 'changed'; review: RoundReview };
+
+/**
+ * An admin saves a rater's card in any round, unless the rater's card in the round's latest review no longer matches
+ * `saved` (the card the editor opened with): a save replaces the whole card, so it would undo the rater's newer save.
+ * Then nothing is saved and the newer review comes back as `changed`. `raterId` is the number the server returned.
+ * A save that lands between the GET and the PUT is still overwritten; only a precondition on the PUT would close that.
+ */
+export async function saveRaterCard(
+  roundId: string,
+  raterId: number,
+  saved: Draft,
+  scores: Readonly<Record<string, ScoreTriple>>,
+): Promise<RaterSaveOutcome> {
+  const latest = await api<RoundReview>('GET', `/admin/rounds/${roundId}/review`);
+  if (!sameDraft(cardFromReview(latest, raterId), saved)) return { kind: 'changed', review: latest };
+  const path = `/admin/rounds/${roundId}/scores/${String(raterId)}`;
+  return { kind: 'saved', review: await api<RoundReview>('PUT', path, { scores }) };
+}
+
+export interface RaterSaveForm {
+  /** saveBlocked() for the card as it is now. */
+  blocked: boolean;
+  roundId: string;
+  rater: { userId: number; name: string };
+  /** The card the editor opened with, or the newer one it was refreshed to. */
+  saved: Draft;
+  /** The draft at the moment Save was pressed. */
+  sent: Draft;
+  scores: Readonly<Record<string, ScoreTriple>>;
+}
+
+export interface RaterSaveHandlers {
+  saving: () => void;
+  /** The draft now: sliders may have moved while the save was out. */
+  live: () => Draft;
+  /** The card is saved as it is on screen: close the editor. */
+  saved: (review: RoundReview) => void;
+  /** Keep the editor open on the newer review, with the draft rebased onto it, and show `message`. */
+  refreshed: (review: RoundReview, draft: (current: Draft) => Draft, message: string) => void;
+  failed: (message: string) => void;
+}
+
+/**
+ * One press of Save card. While Save is blocked nothing happens. Otherwise the checked save runs (saveRaterCard), and
+ * the draft is rebased, never replaced, so the rater's newer save and slider moves made meanwhile both survive. The
+ * comparison is by content, so a re-save of the same values isn't a conflict.
+ */
+export async function pressRaterSave(form: RaterSaveForm, page: RaterSaveHandlers): Promise<void> {
+  if (form.blocked) return;
+  page.saving();
+  let outcome: RaterSaveOutcome;
+  try {
+    outcome = await saveRaterCard(form.roundId, form.rater.userId, form.saved, form.scores);
+  } catch (reason) {
+    page.failed(errorMessage(reason));
+    return;
+  }
+  const card = cardFromReview(outcome.review, form.rater.userId);
+  if (outcome.kind === 'changed') {
+    page.refreshed(outcome.review, (current) => rebase(form.saved, current, card), raterCardChanged(form.rater.name));
+  } else if (sameDraft(page.live(), form.sent)) {
+    page.saved(outcome.review);
+  } else {
+    page.refreshed(outcome.review, (current) => rebase(form.sent, current, card), CHANGED_WHILE_SAVING);
+  }
 }
 
 /** A failed save: the server's words, plus a reminder that nothing typed here was lost. */

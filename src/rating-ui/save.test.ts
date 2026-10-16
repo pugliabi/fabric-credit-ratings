@@ -1,14 +1,19 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { MyScores } from '../domain/api-types';
-import type { Round } from '../domain/types';
+import type { MyScores, RoundReview } from '../domain/api-types';
+import type { Round, ScoreTriple } from '../domain/types';
 import { ApiError } from '../lib/api';
 import type { Draft } from './draft';
 import {
+  cardFromReview,
   CHANGED_ELSEWHERE,
+  CHANGED_WHILE_SAVING,
+  pressRaterSave,
   pressSave,
+  raterCardChanged,
   saveBlocked,
   saveCard,
   saveFailureMessage,
+  saveRaterCard,
   saveStateText,
   settleSave,
 } from './save';
@@ -25,7 +30,7 @@ function reply(status: number, body: unknown): Response {
 }
 
 /** Answers GETs with `latest` and PUTs with `put`, and records each call as "METHOD /path". */
-function server(latest: MyScores, put: () => Response) {
+function server(latest: unknown, put: () => Response) {
   const fetchMock = vi.fn(async (_url: string, init?: RequestInit) =>
     init?.method === 'PUT' ? put() : reply(200, latest),
   );
@@ -167,6 +172,161 @@ describe('pressSave', () => {
       message: `${error} Your draft is kept in this browser.`,
       reload: true,
     });
+    expect(handlers.saved).not.toHaveBeenCalled();
+  });
+});
+
+const raterA = { userId: 9, name: 'P2 Rater A' };
+const NAMES: Record<number, string> = { 2: 'Tommy Puglia', 9: raterA.name };
+
+/** A review of `round` holding these cards (keyed by user id), one breakdown row per rater and item. */
+function review(cards: Record<number, Record<string, ScoreTriple>>): RoundReview {
+  const raters = Object.keys(cards).map(Number);
+  const ids = [...new Set(Object.values(cards).flatMap((scores) => Object.keys(scores)))];
+  return {
+    round,
+    raters: raters.map((userId) => ({ userId, name: NAMES[userId] ?? '' })),
+    items: ids.map((id) => ({
+      artifact: { id, name: id, workload: 'data-engineering', status: 'ga' },
+      point: {
+        round: round.id,
+        roundLabel: round.label,
+        date: '2026-10-15',
+        scores: { capability: 5, ux: 5, cost: 5 },
+        raters: 1,
+        grade: 'A',
+        note: '',
+      },
+      previous: null,
+      change: { kind: 'new', text: 'First rating' },
+      breakdown: raters.flatMap((userId) => {
+        const scores = cards[userId]?.[id];
+        return scores ? [{ userId, name: NAMES[userId] ?? '', scores }] : [];
+      }),
+    })),
+    notes: {},
+    aiEnabled: true,
+  };
+}
+
+const opened = { notebook: [2, 5, 4], environment: [3, 4, 7] } as const;
+const adminCard = { notebook: [6, 6, 5] } as const;
+const edited = { notebook: [3, 5, 4], environment: [3, 4, 7] } as const;
+
+describe('cardFromReview', () => {
+  it("rebuilds one rater's card from the breakdown, without the other raters' scores", () => {
+    const both = review({ 9: opened, 2: { ...adminCard, lakehouse: [1, 1, 1] } });
+    expect(cardFromReview(both, 9)).toEqual(opened);
+    expect(cardFromReview(both, 5)).toEqual({});
+  });
+});
+
+describe('saveRaterCard', () => {
+  it('saves when the review still has the card the editor opened with', async () => {
+    const after = review({ 9: edited, 2: adminCard });
+    const api = server(review({ 9: opened, 2: adminCard }), () => reply(200, after));
+    await expect(saveRaterCard(round.id, raterA.userId, opened, edited)).resolves.toEqual({
+      kind: 'saved',
+      review: after,
+    });
+    expect(api.calls()).toEqual(['GET /api/admin/rounds/2026-Q4/review', 'PUT /api/admin/rounds/2026-Q4/scores/9']);
+    expect(api.sent()).toEqual({ scores: edited });
+  });
+
+  it('does not save over a card the rater changed after the editor opened', async () => {
+    const newer = review({ 9: { ...opened, environment: [7, 7, 7] }, 2: adminCard });
+    const api = server(newer, () => reply(200, newer));
+    await expect(saveRaterCard(round.id, raterA.userId, opened, edited)).resolves.toEqual({
+      kind: 'changed',
+      review: newer,
+    });
+    expect(api.calls()).toEqual(['GET /api/admin/rounds/2026-Q4/review']);
+  });
+
+  it("saves when only someone else's card changed, or this one was saved again unchanged", async () => {
+    const others = review({ 9: opened, 2: { notebook: [1, 1, 1] } });
+    const api = server(others, () => reply(200, review({ 9: edited })));
+    await expect(saveRaterCard(round.id, raterA.userId, opened, edited)).resolves.toMatchObject({ kind: 'saved' });
+    expect(api.calls()).toHaveLength(2);
+  });
+
+  it('leaves other refusals to the server, in its own words', async () => {
+    const error = 'An item on this card was just deleted. Reload the page to get the current list.';
+    server(review({ 9: opened }), () => reply(409, { error }));
+    await expect(saveRaterCard(round.id, raterA.userId, opened, edited)).rejects.toMatchObject({
+      status: 409,
+      message: error,
+    });
+  });
+
+  it('sends no PUT when the check itself fails', async () => {
+    const fetchMock = vi.fn(async () => reply(503, { error: 'The ratings database is not responding.' }));
+    vi.stubGlobal('fetch', fetchMock);
+    await expect(saveRaterCard(round.id, raterA.userId, opened, edited)).rejects.toMatchObject({ status: 503 });
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
+});
+
+describe('pressRaterSave', () => {
+  function page(live: Draft) {
+    return { saving: vi.fn(), live: () => live, saved: vi.fn(), refreshed: vi.fn(), failed: vi.fn() };
+  }
+
+  function form(blocked: boolean) {
+    return { blocked, roundId: round.id, rater: raterA, saved: opened, sent: edited, scores: edited };
+  }
+
+  it('does nothing while Save is blocked', async () => {
+    const fetchMock = vi.fn(async () => reply(200, review({ 9: opened })));
+    vi.stubGlobal('fetch', fetchMock);
+    const handlers = page(edited);
+    await pressRaterSave(form(true), handlers);
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(handlers.saving).not.toHaveBeenCalled();
+  });
+
+  it('closes the editor when the save went through and nothing moved meanwhile', async () => {
+    const after = review({ 9: edited });
+    server(review({ 9: opened }), () => reply(200, after));
+    const handlers = page(edited);
+    await pressRaterSave(form(false), handlers);
+    expect(handlers.saving).toHaveBeenCalledOnce();
+    expect(handlers.saved).toHaveBeenCalledWith(after);
+    expect(handlers.refreshed).not.toHaveBeenCalled();
+  });
+
+  it('stays open after a save when a slider moved meanwhile, and keeps that move unsaved', async () => {
+    const after = review({ 9: edited });
+    server(review({ 9: opened }), () => reply(200, after));
+    const moved: Draft = { ...edited, environment: [7, 7, 7] };
+    const handlers = page(moved);
+    await pressRaterSave(form(false), handlers);
+    expect(handlers.saved).not.toHaveBeenCalled();
+    const [next, rebased, message] = handlers.refreshed.mock.calls[0] ?? [];
+    expect(next).toEqual(after);
+    expect(rebased(moved)).toEqual(moved);
+    expect(message).toBe(CHANGED_WHILE_SAVING);
+  });
+
+  it("puts the admin's edits on top of the rater's newer card, without saving, and says so", async () => {
+    const newer = review({ 9: { ...opened, environment: [7, 7, 7] } });
+    const api = server(newer, () => reply(200, newer));
+    const handlers = page(edited);
+    await pressRaterSave(form(false), handlers);
+    expect(api.calls()).toEqual(['GET /api/admin/rounds/2026-Q4/review']);
+    const [next, rebased, message] = handlers.refreshed.mock.calls[0] ?? [];
+    expect(next).toEqual(newer);
+    expect(rebased(edited)).toEqual({ notebook: [3, 5, 4], environment: [7, 7, 7] });
+    expect(message).toBe(raterCardChanged('P2 Rater A'));
+    expect(message).toMatch(/^P2 Rater A's card changed after you opened it/);
+  });
+
+  it("shows a failed save in the server's words", async () => {
+    const error = 'That conflicts with a change someone just made. Reload the page and try again.';
+    server(review({ 9: opened }), () => reply(409, { error }));
+    const handlers = page(edited);
+    await pressRaterSave(form(false), handlers);
+    expect(handlers.failed).toHaveBeenCalledWith(error);
     expect(handlers.saved).not.toHaveBeenCalled();
   });
 });
