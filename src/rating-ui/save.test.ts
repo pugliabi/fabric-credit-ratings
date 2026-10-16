@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { MyScores } from '../domain/api-types';
 import type { Round } from '../domain/types';
-import { saveCard } from './save';
+import { ApiError } from '../lib/api';
+import { saveCard, saveFailureMessage, saveStateText } from './save';
 
 const round: Round = { id: '2026-Q4', label: 'Q4 2026', status: 'open', publishedOn: null };
 const loaded = { notebook: [5, 5, 5] } as const;
@@ -47,7 +48,10 @@ describe('saveCard', () => {
   it('does not save over a card that changed after this page loaded it', async () => {
     const newer = card({ notebook: [5, 5, 5], lakehouse: [6, 6, 6] }, '2026-10-15T23:04:00.000Z');
     const api = server(newer, () => reply(200, newer));
-    await expect(saveCard(round.id, loaded, { notebook: [6, 5, 5] })).resolves.toEqual({ kind: 'changed', card: newer });
+    await expect(saveCard(round.id, loaded, { notebook: [6, 5, 5] })).resolves.toEqual({
+      kind: 'changed',
+      card: newer,
+    });
     expect(api.calls()).toEqual(['GET /api/rounds/open/my-scores']);
   });
 
@@ -62,6 +66,42 @@ describe('saveCard', () => {
     const next: Round = { id: '2027-Q1', label: 'Q1 2027', status: 'open', publishedOn: null };
     const error = 'The open round is now Q1 2027. Reload the page to score it.';
     server(card({}, '2027-01-02T10:00:00.000Z', next), () => reply(409, { error }));
-    await expect(saveCard(round.id, loaded, { notebook: [6, 5, 5] })).rejects.toMatchObject({ status: 409, message: error });
+    await expect(saveCard(round.id, loaded, { notebook: [6, 5, 5] })).rejects.toMatchObject({
+      status: 409,
+      message: error,
+    });
+  });
+});
+
+describe('saveFailureMessage', () => {
+  it("keeps the server's 409 words and says the draft is kept", () => {
+    const reason = new ApiError(409, 'The open round is now Q1 2027. Reload the page to score it.');
+    expect(saveFailureMessage(reason)).toBe(
+      'The open round is now Q1 2027. Reload the page to score it. Your draft is kept in this browser.',
+    );
+  });
+
+  it('says the draft is kept when the server is unreachable, asleep, or rejects an item', () => {
+    for (const status of [0, 400, 503]) {
+      expect(saveFailureMessage(new ApiError(status, 'Try again.'))).toBe(
+        'Try again. Your draft is kept in this browser.',
+      );
+    }
+  });
+});
+
+describe('saveStateText', () => {
+  const error = { kind: 'error', message: 'Try again. Your draft is kept in this browser.', reload: false } as const;
+  const updatedAt = '2026-10-15T23:00:00.000Z';
+
+  it('still says the card has unsaved changes while a failed save is shown', () => {
+    expect(saveStateText(error, { dirty: true, restored: false, updatedAt })).toBe('Unsaved changes');
+    expect(saveStateText(error, { dirty: true, restored: true, updatedAt })).toBe('Unsaved draft restored');
+  });
+
+  it('says saving, saved, or nothing saved yet', () => {
+    expect(saveStateText({ kind: 'saving' }, { dirty: true, restored: false, updatedAt })).toBe('Saving…');
+    expect(saveStateText({ kind: 'idle' }, { dirty: false, restored: false, updatedAt })).toMatch(/^Saved [A-Z]/);
+    expect(saveStateText(error, { dirty: false, restored: false, updatedAt: null })).toBe('Nothing saved yet');
   });
 });

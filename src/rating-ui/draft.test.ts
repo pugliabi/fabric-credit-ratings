@@ -1,6 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import type { Artifact } from '../domain/types';
-import { draftFromValues, parseStoredDraft, rebase, restorable, sameDraft, summarize, type Draft } from './draft';
+import {
+  draftFromValues,
+  hasChanges,
+  parseStoredDraft,
+  rebase,
+  restorable,
+  sameDraft,
+  summarize,
+  type Draft,
+} from './draft';
 
 const artifacts: Artifact[] = [
   { id: 'notebook', name: 'Notebook', workload: 'data-engineering', status: 'ga' },
@@ -29,6 +38,19 @@ describe('sameDraft', () => {
   it('treats a missing row and a blank row as equal', () => {
     expect(sameDraft({}, { notebook: [null, null, null] })).toBe(true);
     expect(sameDraft({ notebook: [1, 2, 3] }, { notebook: [1, 2, 4] })).toBe(false);
+  });
+});
+
+describe('hasChanges', () => {
+  const ids = new Set(['notebook', 'lakehouse']);
+
+  it('ignores rows for items no longer in the catalog', () => {
+    expect(hasChanges({ notebook: [5, 5, 5], gone: [1, 1, 1] }, { notebook: [5, 5, 5] }, ids)).toBe(false);
+  });
+
+  it('counts an edited or cleared catalog row', () => {
+    expect(hasChanges({ notebook: [6, 5, 5] }, { notebook: [5, 5, 5] }, ids)).toBe(true);
+    expect(hasChanges({}, { notebook: [5, 5, 5] }, ids)).toBe(true);
   });
 });
 

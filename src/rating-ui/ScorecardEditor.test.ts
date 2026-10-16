@@ -27,6 +27,10 @@ describe('CardForm', () => {
     expect(html).not.toContain('role="status"');
   });
 
+  it('names the toolbar so focus can land on it when the control that had it is gone', () => {
+    expect(render()).toMatch(/^<div tabindex="-1" role="group" aria-label="Your scorecard"/);
+  });
+
   it('keeps Save focusable when there is nothing to save', () => {
     const save = /<button[^>]*>Save scores<\/button>/.exec(render())?.[0];
     expect(save).toContain('aria-disabled="true"');

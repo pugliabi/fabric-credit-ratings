@@ -50,6 +50,11 @@ export function sameDraft(a: Draft, b: Draft): boolean {
   return true;
 }
 
+/** Unsaved changes, counting only items in the catalog: a row for a deleted item can't be seen or saved. */
+export function hasChanges(draft: Draft, saved: Draft, ids: ReadonlySet<string>): boolean {
+  return !sameDraft(Object.fromEntries(Object.entries(draft).filter(([id]) => ids.has(id))), saved);
+}
+
 /** What usePersistentDraft keeps in localStorage. */
 export interface StoredDraft {
   /** The saved card the draft was edited from. */

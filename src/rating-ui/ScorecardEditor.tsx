@@ -1,10 +1,9 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Catalog, MyScores, SessionUser } from '../domain/api-types';
 import type { FactorValues } from '../domain/types';
 import { api, ApiError, errorMessage } from '../lib/api';
-import { formatTimestamp } from '../lib/format';
-import { draftFromScores, draftFromValues, rebase, sameDraft, summarize, type Draft } from './draft';
-import { CHANGED_ELSEWHERE, saveCard } from './save';
+import { draftFromScores, draftFromValues, hasChanges, rebase, summarize, type Draft, type DraftTriple } from './draft';
+import { CHANGED_ELSEWHERE, saveCard, saveFailureMessage, saveStateText, type SaveStatus } from './save';
 import { ScoreMatrix } from './ScoreMatrix';
 import { cardDraftPrefix, usePersistentDraft } from './usePersistentDraft';
 import styles from './Editor.module.css';
@@ -16,6 +15,18 @@ type Load =
   | { kind: 'closed' }
   | { kind: 'failed'; message: string }
   | { kind: 'ready'; catalog: Catalog; card: MyScores };
+
+/**
+ * Focuses the returned element on mount if focus sits on <body>, as it does when the control that had it (Log in, Try
+ * again) has just been removed.
+ */
+function useFocusIfLost<T extends HTMLElement>() {
+  const ref = useRef<T>(null);
+  useEffect(() => {
+    if (!document.activeElement || document.activeElement === document.body) ref.current?.focus();
+  }, []);
+  return ref;
+}
 
 interface ScorecardEditorProps {
   user: SessionUser;
@@ -52,17 +63,7 @@ export function ScorecardEditor({ user, reference }: ScorecardEditorProps) {
 
   if (load.kind === 'loading') return <p className={styles.muted}>Loading your scorecard…</p>;
   if (load.kind === 'closed') return <Closed />;
-  if (load.kind === 'failed') {
-    return (
-      <section className={styles.panel} role="alert">
-        <h2 className={styles.panelTitle}>Could not load your scorecard</h2>
-        <p className={styles.muted}>{load.message}</p>
-        <button type="button" className={styles.secondary} onClick={() => void fetchCard()}>
-          Try again
-        </button>
-      </section>
-    );
-  }
+  if (load.kind === 'failed') return <LoadFailed message={load.message} onRetry={() => void fetchCard()} />;
   return (
     <CardForm
       key={load.card.round.id}
@@ -75,10 +76,28 @@ export function ScorecardEditor({ user, reference }: ScorecardEditorProps) {
   );
 }
 
+function LoadFailed({ message, onRetry }: { message: string; onRetry: () => void }) {
+  const heading = useFocusIfLost<HTMLHeadingElement>();
+  return (
+    <section className={styles.panel} role="alert">
+      <h2 ref={heading} tabIndex={-1} className={styles.panelTitle}>
+        Could not load your scorecard
+      </h2>
+      <p className={styles.muted}>{message}</p>
+      <button type="button" className={styles.secondary} onClick={onRetry}>
+        Try again
+      </button>
+    </section>
+  );
+}
+
 function Closed() {
+  const heading = useFocusIfLost<HTMLHeadingElement>();
   return (
     <section className={styles.panel}>
-      <h2 className={styles.panelTitle}>No review round is open right now</h2>
+      <h2 ref={heading} tabIndex={-1} className={styles.panelTitle}>
+        No review round is open right now
+      </h2>
       <p className={styles.muted}>
         Scores are collected in rounds, usually once a quarter. Check back when the next one opens, or browse the{' '}
         <a href="/">current ratings</a>.
@@ -100,23 +119,39 @@ interface CardFormProps {
   onSaved: (card: MyScores) => void;
 }
 
-type Status = { kind: 'idle' | 'saving' } | { kind: 'error'; message: string };
-
 /** Exported for markup tests; pages use ScorecardEditor. */
 export function CardForm({ user, catalog, card, reference, onSaved }: CardFormProps) {
   const { round, previous } = card;
   const saved = useMemo(() => draftFromScores(card.scores), [card.scores]);
   const { draft, setTriple, replace, restored } = usePersistentDraft(`${cardDraftPrefix(user.id)}${round.id}`, saved);
-  const [status, setStatus] = useState<Status>({ kind: 'idle' });
+  const [status, setStatus] = useState<SaveStatus>({ kind: 'idle' });
   const [attempt, setAttempt] = useState(0);
+  const toolbar = useFocusIfLost<HTMLDivElement>();
 
   const ids = useMemo(() => new Set(catalog.artifacts.map((artifact) => artifact.id)), [catalog.artifacts]);
   const summary = summarize(draft, catalog.artifacts);
-  // A draft row for an item deleted since it was edited can't be seen or saved, so it doesn't count as a change.
-  const dirty = !sameDraft(Object.fromEntries(Object.entries(draft).filter(([id]) => ids.has(id))), saved);
+  const dirty = hasChanges(draft, saved, ids);
   const touched = summary.rated + summary.partial.length > 0;
   const hasReference = Object.keys(reference).length > 0;
   const blocked = !dirty || summary.partial.length > 0 || status.kind === 'saving';
+
+  // An old error no longer describes the card once the user changes it.
+  const dropError = useCallback(
+    () => setStatus((current) => (current.kind === 'error' ? { kind: 'idle' } : current)),
+    [],
+  );
+  // Stable, so MatrixRow's memo holds.
+  const edit = useCallback(
+    (artifactId: string, triple: DraftTriple) => {
+      setTriple(artifactId, triple);
+      dropError();
+    },
+    [setTriple, dropError],
+  );
+  const change = (next: Draft) => {
+    replace(next);
+    dropError();
+  };
 
   const save = async () => {
     const sent = draft;
@@ -129,8 +164,8 @@ export function CardForm({ user, catalog, card, reference, onSaved }: CardFormPr
       if (outcome.kind === 'changed') {
         replace((current) => rebase(saved, current, next));
         onSaved(outcome.card);
-        const nothingLeft = sameDraft(rebase(saved, sent, next), next);
-        setStatus(nothingLeft ? { kind: 'idle' } : { kind: 'error', message: CHANGED_ELSEWHERE });
+        const nothingLeft = !hasChanges(rebase(saved, sent, next), next, ids);
+        setStatus(nothingLeft ? { kind: 'idle' } : { kind: 'error', message: CHANGED_ELSEWHERE, reload: false });
         return;
       }
       replace((current) => rebase(sent, current, next));
@@ -138,38 +173,29 @@ export function CardForm({ user, catalog, card, reference, onSaved }: CardFormPr
       setStatus({ kind: 'idle' });
     } catch (reason) {
       // The stored draft stays put on every failure; a 401 unmounts this form and the login notice says so.
-      const kept = reason instanceof ApiError && reason.status !== 400 ? ' Your draft is kept in this browser.' : '';
-      setStatus({ kind: 'error', message: `${errorMessage(reason)}${kept}` });
+      const reload = reason instanceof ApiError && reason.status === 409;
+      setStatus({ kind: 'error', message: saveFailureMessage(reason), reload });
     }
   };
 
   const prefill = (next: Draft, what: string) => {
     if (touched && !confirm(`Replace your sliders with ${what}?`)) return;
-    replace(next);
+    change(next);
   };
 
-  const stateText =
-    status.kind === 'saving'
-      ? 'Saving…'
-      : status.kind === 'error'
-        ? ''
-        : dirty
-          ? restored
-            ? 'Unsaved draft restored'
-            : 'Unsaved changes'
-          : card.updatedAt
-            ? `Saved ${formatTimestamp(card.updatedAt)}`
-            : 'Nothing saved yet';
+  const stateText = saveStateText(status, { dirty, restored, updatedAt: card.updatedAt });
 
   return (
     <>
-      <div className={styles.toolbar}>
+      <div ref={toolbar} tabIndex={-1} role="group" aria-label="Your scorecard" className={styles.toolbar}>
         <div className={styles.toolbarText}>
           <strong>
             {round.label} · {summary.rated} of {catalog.artifacts.length} rated
           </strong>
           {summary.partial.length > 0 && <span className={styles.warn}> · {summary.partial.length} incomplete</span>}
-          <span aria-live="polite">{stateText && <span className={styles.muted}> · {stateText}</span>}</span>
+          <span aria-live="polite">
+            <span className={styles.muted}> · {stateText}</span>
+          </span>
           {status.kind === 'error' && (
             <span key={attempt} className={styles.error} role="alert">
               {' '}
@@ -178,6 +204,11 @@ export function CardForm({ user, catalog, card, reference, onSaved }: CardFormPr
           )}
         </div>
         <div className={styles.toolbarActions}>
+          {status.kind === 'error' && status.reload && (
+            <button type="button" className={styles.secondary} onClick={() => location.reload()}>
+              Reload page
+            </button>
+          )}
           {previous && (
             <button
               type="button"
@@ -197,7 +228,7 @@ export function CardForm({ user, catalog, card, reference, onSaved }: CardFormPr
             </button>
           )}
           {dirty && (
-            <button type="button" className={styles.secondary} onClick={() => replace(saved)}>
+            <button type="button" className={styles.secondary} onClick={() => change(saved)}>
               Discard changes
             </button>
           )}
@@ -206,7 +237,7 @@ export function CardForm({ user, catalog, card, reference, onSaved }: CardFormPr
               type="button"
               className={styles.secondary}
               onClick={() => {
-                if (confirm('Clear every slider?')) replace(EMPTY);
+                if (confirm('Clear every slider?')) change(EMPTY);
               }}
             >
               Clear all
@@ -236,7 +267,7 @@ export function CardForm({ user, catalog, card, reference, onSaved }: CardFormPr
         workloads={catalog.workloads}
         artifacts={catalog.artifacts}
         draft={draft}
-        onChange={setTriple}
+        onChange={edit}
         reference={reference}
       />
     </>
