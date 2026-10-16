@@ -109,6 +109,8 @@ describe('createDrafter', () => {
     expect(clients).toHaveLength(1);
     expect(clients[0]?.options).toMatchObject({
       apiKey: 'k',
+      // So the client can't pick up ANTHROPIC_AUTH_TOKEN from the environment and send it as well.
+      authToken: null,
       timeout: 40_000,
       maxRetries: 1,
       defaultHeaders: { 'anthropic-workspace-id': 'ws' },

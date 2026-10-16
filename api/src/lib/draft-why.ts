@@ -168,6 +168,8 @@ export function createDrafter(settings: AnthropicSettings) {
   // caller's signal bounds the whole draft.
   const client = new Anthropic({
     apiKey,
+    // Otherwise the SDK reads ANTHROPIC_AUTH_TOKEN from the environment and sends it too.
+    authToken: null,
     timeout: REQUEST_TIMEOUT_MS,
     maxRetries: 1,
     ...(settings.workspaceId ? { defaultHeaders: { 'anthropic-workspace-id': settings.workspaceId } } : {}),
