@@ -233,6 +233,17 @@ describe('createDrafter', () => {
     expect((failure as Error).message).toContain(message);
     expect((failure as Error).cause).toBe(error);
   });
+
+  it('passes the text of an error it has no message for, still keeping that error as the cause', async () => {
+    const fetchFailed = new TypeError('fetch failed');
+    const provider = new Anthropic.APIConnectionError({ message: 'Connection error.', cause: fetchFailed });
+    const draft = createDrafter(settings);
+    stubbedCreate().mockRejectedValueOnce(provider);
+
+    const failure = await draft?.(input).catch((caught: unknown) => caught);
+    expect((failure as Error).message).toBe('Connection error.');
+    expect((failure as Error).cause).toBe(provider);
+  });
 });
 
 describe('failureDetails', () => {
@@ -255,6 +266,19 @@ describe('failureDetails', () => {
       requestId: 'req_123',
       type: 'rate_limit_error',
       error: `RateLimitError: 429 ${JSON.stringify(body)}`,
+    });
+  });
+
+  it('logs the chain behind a network failure, with the socket code, and no status', () => {
+    const socket = Object.assign(new Error('getaddrinfo ENOTFOUND api.anthropic.com'), { code: 'ENOTFOUND' });
+    const fetchFailed = new TypeError('fetch failed', { cause: socket });
+    const provider = new Anthropic.APIConnectionError({ message: 'Connection error.', cause: fetchFailed });
+
+    expect(failureDetails(new Error('Connection error.', { cause: provider }), settings)).toEqual({
+      model: 'claude-test',
+      error:
+        'APIConnectionError: Connection error. <- TypeError: fetch failed ' +
+        '<- Error: getaddrinfo ENOTFOUND api.anthropic.com (ENOTFOUND)',
     });
   });
 

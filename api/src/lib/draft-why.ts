@@ -97,7 +97,7 @@ function explain(error: unknown): Error {
     return friendly('Anthropic is overloaded right now. Try again in a minute.');
   }
   if (timedOut(error)) return friendly('Anthropic did not answer in time. Try again.');
-  return error instanceof Error ? error : new Error(message);
+  return friendly(message);
 }
 
 /** One attempt's own timeout, or the caller's deadline: the SDK reports that as a user abort. */
@@ -112,9 +112,9 @@ function timedOut(error: unknown): boolean {
 const modelFor = (settings: AnthropicSettings) => settings.model || DEFAULT_MODEL;
 
 /**
- * What to log for a failed draft: the model asked, and the provider's status, request id, error type, and message
- * from the error's cause. The key travels only in request headers and the prompt only in the request body, and an SDK
- * error keeps neither.
+ * What to log for a failed draft: the model asked, and the provider's status, request id, and error type from the
+ * error's cause, then that cause's own chain, such as the fetch error and socket code behind a connection error. The
+ * key travels only in request headers and the prompt only in the request body, and none of these errors keeps either.
  */
 export function failureDetails(error: unknown, settings: AnthropicSettings): Record<string, unknown> {
   const cause = error instanceof Error && error.cause !== undefined ? error.cause : error;
@@ -122,7 +122,12 @@ export function failureDetails(error: unknown, settings: AnthropicSettings): Rec
   if (cause instanceof Anthropic.APIError && cause.status !== undefined) {
     Object.assign(details, { status: cause.status, requestId: cause.requestID ?? null, type: cause.type });
   }
-  details.error = cause instanceof Error ? `${cause.constructor.name}: ${cause.message}` : String(cause);
+  const chain: string[] = [];
+  for (let link: unknown = cause, depth = 0; link instanceof Error && depth < 3; link = link.cause, depth += 1) {
+    const code = (link as { code?: unknown }).code;
+    chain.push(`${link.constructor.name}: ${link.message}${typeof code === 'string' ? ` (${code})` : ''}`);
+  }
+  details.error = chain.length > 0 ? chain.join(' <- ') : String(cause);
   return details;
 }
 
