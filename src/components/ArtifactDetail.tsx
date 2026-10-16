@@ -29,7 +29,7 @@ export function ArtifactDetail({ rating, asOf }: ArtifactDetailProps) {
           <h4 className={styles.title}>Scores</h4>
           <FactorBars scores={current.scores} />
           {artifact.status === 'retired' && (
-            <p className={styles.retiredNote}>Retired, so it's rated E regardless of scores.</p>
+            <p className={styles.retiredNote}>Retired, so it's rated D regardless of scores.</p>
           )}
         </section>
       </div>

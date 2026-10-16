@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { GradeBadge } from '../components/GradeBadge';
+import { FACTORS } from '../data/factors';
 import type { AdminCatalog, AdminRound, AdminUser, RoundReview } from '../domain/api-types';
 import { mayLeave, useUnsavedWork } from '../hooks/useUnsavedWork';
 import { api, errorMessage } from '../lib/api';
@@ -340,7 +341,7 @@ export function RoundReviewPanel({ review, catalog, users, onReview }: RoundRevi
               <section key={workload.id} className={styles.reviewGroup}>
                 <h2 className={styles.groupTitle}>{workload.name}</h2>
                 {group.map(({ artifact, point, change, breakdown }) => {
-                  const { capability, ux, cost } = point.scores;
+                  const scoreText = FACTORS.map((factor) => formatScore(point.scores[factor.id])).join(' · ');
                   const note = notes[artifact.id] ?? '';
                   const tooLong = noteTooLong(note);
                   const limitId = `${idPrefix}-${artifact.id}-limit`;
@@ -353,11 +354,8 @@ export function RoundReviewPanel({ review, catalog, users, onReview }: RoundRevi
                             {change.text}
                           </span>
                         </div>
-                        <span
-                          className={styles.cardScores}
-                          title="Feature capability · User experience · CU / token cost"
-                        >
-                          {formatScore(capability)} · {formatScore(ux)} · {formatScore(cost)}
+                        <span className={styles.cardScores} title={FACTORS.map((factor) => factor.label).join(' · ')}>
+                          {scoreText}
                         </span>
                         <GradeBadge grade={point.grade} size="md" variant="pill" />
                       </header>

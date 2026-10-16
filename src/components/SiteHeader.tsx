@@ -20,8 +20,8 @@ export function SiteHeader({ ratings, asOf }: SiteHeaderProps) {
       <div className={styles.inner}>
         <h1 className={styles.title}>Microsoft Fabric Credit Ratings</h1>
         <p className={styles.lede}>
-          A bond-style rating for every Fabric item, from <strong>AAA</strong> down to <strong>E</strong>. Each item is
-          scored 1 to 7 on feature capability, user experience, and CU / token cost.
+          A bond-style rating for every Fabric item, from <strong>AAA</strong> down to <strong>C</strong>. Each item is
+          scored 1 to 7 on feature capability, user experience, CU / token cost, and outlook.
         </p>
 
         <dl className={styles.stats}>

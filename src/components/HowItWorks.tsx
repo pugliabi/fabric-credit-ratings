@@ -5,10 +5,11 @@ import type { Band } from '../domain/types';
 import { GradeBadge } from './GradeBadge';
 import styles from './HowItWorks.module.css';
 
-const BANDS = ['investment', 'speculative', 'distressed'] as const satisfies readonly Band[];
+const BANDS = ['investment', 'lowInvestment', 'speculative', 'distressed'] as const satisfies readonly Band[];
 
 const BAND_COPY: Readonly<Record<(typeof BANDS)[number], string>> = {
   investment: 'The item does its job well. You can build on it.',
+  lowInvestment: 'Does the job today, with rough edges or costs to plan around.',
   speculative: 'Usable, with gaps you should plan around.',
   distressed: 'Falling behind, or the wrong tool for new work.',
 };
@@ -22,7 +23,7 @@ export function HowItWorks() {
           How the ratings work
         </h2>
         <p className={styles.lede}>
-          Every Fabric item is scored from {MIN_SCORE} to {MAX_SCORE} on three factors, where {MAX_SCORE} is best. Those
+          Every Fabric item is scored from {MIN_SCORE} to {MAX_SCORE} on four factors, where {MAX_SCORE} is best. Those
           scores, along with other factors such as release status and reliability, inform a rating from AAA down to C.
         </p>
       </header>
@@ -50,7 +51,7 @@ export function HowItWorks() {
       <div className={styles.block}>
         <h3 className={styles.blockTitle}>Rating bands</h3>
         <p className={styles.blockText}>
-          The scores and those other factors place an item in one of three bands. Withdrawn items sit outside them.
+          The scores and those other factors place an item in one of four bands. Deprecated items sit outside them.
         </p>
         <ul className={styles.bands}>
           {BANDS.map((band) => {
@@ -71,10 +72,10 @@ export function HowItWorks() {
 
       <div className={styles.grid}>
         <div className={styles.block}>
-          <h3 className={styles.blockTitle}>Withdrawn</h3>
-          <div className={styles.withdrawn}>
-            <GradeBadge grade="E" size="lg" />
-            <p className={styles.blockText}>Retired or deprecated items are rated E. Plan a migration.</p>
+          <h3 className={styles.blockTitle}>Deprecated</h3>
+          <div className={styles.deprecated}>
+            <GradeBadge grade="D" size="lg" />
+            <p className={styles.blockText}>Retired items are rated D. Plan a migration.</p>
           </div>
         </div>
 

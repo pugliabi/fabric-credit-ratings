@@ -1,13 +1,14 @@
+import { FACTORS } from '../data/factors';
 import { notchDelta } from '../domain/grades';
 import type { RatingPoint } from '../domain/types';
 import { formatFullDate, formatScore, pluralize } from '../lib/format';
 import { GradeBadge } from './GradeBadge';
 import styles from './RatingHistory.module.css';
 
-type ActionKind = 'initiated' | 'upgrade' | 'downgrade' | 'affirmed' | 'withdrawn';
+type ActionKind = 'initiated' | 'upgrade' | 'downgrade' | 'affirmed' | 'deprecated';
 
 function describe(point: RatingPoint, previous: RatingPoint | undefined): { kind: ActionKind; label: string } {
-  if (point.grade === 'E' && previous?.grade !== 'E') return { kind: 'withdrawn', label: 'Withdrawn' };
+  if (point.grade === 'D' && previous?.grade !== 'D') return { kind: 'deprecated', label: 'Deprecated' };
   if (!previous) return { kind: 'initiated', label: 'Initiated' };
   const delta = notchDelta(previous.grade, point.grade);
   if (delta > 0) return { kind: 'upgrade', label: `Upgraded ${pluralize(delta, 'notch', 'notches')}` };
@@ -21,7 +22,8 @@ export function RatingHistory({ history }: { history: RatingPoint[] }) {
   return (
     <ol className={styles.list}>
       {entries.map(({ point, action }, i) => {
-        const { capability, ux, cost } = point.scores;
+        const scoreText = FACTORS.map((factor) => formatScore(point.scores[factor.id])).join(' · ');
+        const scoreLabel = FACTORS.map((factor) => `${factor.label} ${formatScore(point.scores[factor.id])}`).join(', ');
         return (
           <li key={point.round} className={styles.entry} data-current={i === 0}>
             <div className={styles.top}>
@@ -31,13 +33,8 @@ export function RatingHistory({ history }: { history: RatingPoint[] }) {
               <span className={styles.action} data-kind={action.kind}>
                 {action.label}
               </span>
-              <span
-                className={styles.scores}
-                aria-label={`Feature capability ${formatScore(capability)}, user experience ${formatScore(ux)}, CU / token cost ${formatScore(cost)}`}
-              >
-                <span aria-hidden="true">
-                  {formatScore(capability)} · {formatScore(ux)} · {formatScore(cost)}
-                </span>
+              <span className={styles.scores} aria-label={scoreLabel}>
+                <span aria-hidden="true">{scoreText}</span>
               </span>
               <GradeBadge grade={point.grade} size="sm" variant="pill" />
             </div>

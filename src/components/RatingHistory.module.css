@@ -57,7 +57,7 @@
   color: var(--band-distressed);
 }
 
-.action[data-kind='withdrawn'] {
+.action[data-kind='deprecated'] {
   color: var(--band-deprecated);
 }
 
