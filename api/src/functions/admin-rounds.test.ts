@@ -661,8 +661,8 @@ describe('adminDraft', () => {
     await expect(call('adminDraft', { id: open.id, artifactId: 'notebook' }, {}, admin, badKey)).rejects.toMatchObject({
       status: 502,
       message:
-        "ANTHROPIC_API_KEY doesn't look like an Anthropic key: it's too short, or it has spaces, quotes, line breaks, " +
-        'or other characters a key never has. Paste the key again in the Function App settings.',
+        "ANTHROPIC_API_KEY doesn't look like an Anthropic key: it's too short, or it has spaces, quotes, " +
+        'line breaks, or other characters a key never has. Paste the key again in the Function App settings.',
     });
     expect(loadDataset).not.toHaveBeenCalled();
     expect(drafter).not.toHaveBeenCalled();
