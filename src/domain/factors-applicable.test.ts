@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import type { FactorId } from './types.ts';
 import { applicableFactors, naFactorsProblem, parseNaFactors, serializeNaFactors } from './factors-applicable.ts';
 
 describe('applicable factors', () => {
@@ -6,6 +7,10 @@ describe('applicable factors', () => {
     expect(applicableFactors({ naFactors: [] })).toEqual(['capability', 'ux', 'cost', 'outlook']);
     expect(applicableFactors({ naFactors: ['cost'] })).toEqual(['capability', 'ux', 'outlook']);
     expect(applicableFactors({ naFactors: ['outlook', 'cost'] })).toEqual(['capability', 'ux']);
+  });
+
+  it('treats a missing naFactors (an older API) as none', () => {
+    expect(applicableFactors({} as { naFactors?: FactorId[] })).toEqual(['capability', 'ux', 'cost', 'outlook']);
   });
 
   it('round-trips the stored form in FACTORS order', () => {

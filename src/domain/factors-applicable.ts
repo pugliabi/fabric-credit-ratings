@@ -9,9 +9,14 @@ function isFactorId(value: unknown): value is FactorId {
   return typeof value === 'string' && (IDS as string[]).includes(value);
 }
 
+/** The item's not-applicable factors; an older API that omits the field means none. */
+export function naFactorsOf(artifact: { naFactors?: readonly FactorId[] }): readonly FactorId[] {
+  return artifact.naFactors ?? [];
+}
+
 /** The factors a rater scores for the item, in FACTORS order. */
-export function applicableFactors(artifact: { naFactors: readonly FactorId[] }): FactorId[] {
-  return IDS.filter((id) => !artifact.naFactors.includes(id));
+export function applicableFactors(artifact: { naFactors?: readonly FactorId[] }): FactorId[] {
+  return IDS.filter((id) => !naFactorsOf(artifact).includes(id));
 }
 
 /** The stored form: ids in FACTORS order, comma-separated, '' for none. Unknown ids are dropped on read. */

@@ -11,7 +11,7 @@ export type Draft = Readonly<Record<string, DraftTuple>>;
 export const EMPTY_TUPLE: DraftTuple = [null, null, null, null];
 
 /** Every position the item's factors apply to is set; a not-applicable position is null and not looked at. */
-export function isComplete(tuple: DraftTuple, artifact: { naFactors: readonly FactorId[] }): tuple is ScoreTuple {
+export function isComplete(tuple: DraftTuple, artifact: { naFactors?: readonly FactorId[] }): tuple is ScoreTuple {
   const applicable = applicableFactors(artifact);
   return FACTORS.every((factor, i) => (applicable.includes(factor.id) ? tuple[i] !== null : true));
 }

@@ -42,7 +42,7 @@ Vite proxies `/api` to the local API, so the session cookie works on localhost. 
 | `npm run api` | Build and start the Functions API locally |
 | `npm run build` | Typecheck everything, then build the site to `dist/` |
 | `npm run typecheck` | TypeScript for the site, scripts, and API |
-| `npm test` | Unit tests, with no network unless `FCR_API_URL` or `FCR_DB_TESTS` is set. The 13-test API integration suite also runs when `FCR_API_URL` is set |
+| `npm test` | Unit tests, with no network unless `FCR_API_URL` or `FCR_DB_TESTS` is set. The 14-test API integration suite also runs when `FCR_API_URL` is set |
 | `npm run snapshot` | Refresh `src/data/snapshot.json` from the API |
 | `npm run snapshot -- --confirm` | Refresh it, then tell the local API it's live, as a deploy does. Don't commit a snapshot built from `fcr-dev` |
 | `npm run db:apply` | Apply `db/schema.sql` (safe to re-run) |

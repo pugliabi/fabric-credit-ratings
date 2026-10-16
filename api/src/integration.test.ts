@@ -146,11 +146,16 @@ describe.skipIf(!BASE)('API against the dev database', () => {
     try {
       if (!onDevDatabase) return;
       const adminSession = sessionHash(admin);
+      let naDeleted: string | number | undefined;
       // The throwaway item can only be deleted once no card holds it, so the rater's rows go first. Skipped when the
       // test never created it; a failed delete leaves the item for a person to remove.
       if (naArtifactId) {
         await clearTestRows();
-        await admin.send('DELETE', `/api/admin/artifacts/${naArtifactId}`).catch(() => undefined);
+        const status = await admin.send('DELETE', `/api/admin/artifacts/${naArtifactId}`).then(
+          (reply) => reply.status,
+          () => 0,
+        );
+        naDeleted = status === 200 || status === 204 ? 'deleted' : status;
       }
       // Ends the admin's session, the one row the suite leaves that clearTestRows can't tell from a real one.
       const loggedOut = await admin.send('POST', '/api/auth/logout').then(
@@ -169,8 +174,9 @@ describe.skipIf(!BASE)('API against the dev database', () => {
       // stamps changed_at (create and delete both do), so that field can't be compared; lastSnapshotAt can.
       const site = siteBefore ? { lastSnapshotAt: (await siteState(db)).lastSnapshotAt } : undefined;
       // One assertion, so a failed logout can't hide whether the cleanup worked, or the other way round.
-      expect({ loggedOut, left, site }).toEqual({
+      expect({ loggedOut, naDeleted, left, site }).toEqual({
         loggedOut: 204,
+        naDeleted: naArtifactId ? 'deleted' : undefined,
         left: { users: 0, attempts: 0, adminSessions: 0 },
         site: siteBefore ? { lastSnapshotAt: siteBefore.lastSnapshotAt } : undefined,
       });

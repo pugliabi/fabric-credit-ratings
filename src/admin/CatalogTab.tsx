@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type FormEvent } from 'react';
 import type { AdminArtifact, AdminCatalog, AdminWorkload } from '../domain/api-types';
 import { FACTORS } from '../data/factors';
 import type { ReleaseStatus } from '../domain/types';
+import { naFactorsOf } from '../domain/factors-applicable';
 import { useFocusIfLost } from '../hooks/useFocusIfLost';
 import { deleteFocus, focusKeys as keys, focusLost, moveFocus, pickFocus } from './catalog-focus';
 import { followServer, slugify, workloadBody, type ArtifactChanges, type WorkloadFields } from './catalog-order';
@@ -421,10 +422,10 @@ export function ArtifactRowEditor({
             <label key={factor.id} className={styles.check}>
               <input
                 type="checkbox"
-                checked={artifact.naFactors.includes(factor.id)}
+                checked={naFactorsOf(artifact).includes(factor.id)}
                 onChange={(event) => {
                   const next = FACTORS.map((f) => f.id).filter((id) =>
-                    id === factor.id ? event.target.checked : artifact.naFactors.includes(id),
+                    id === factor.id ? event.target.checked : naFactorsOf(artifact).includes(id),
                   );
                   if (next.length >= FACTORS.length) return;
                   update({ naFactors: next }, [keys.na(artifact.id, factor.id)]);

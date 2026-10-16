@@ -135,7 +135,8 @@ INSERT INTO dbo.site_state (id) VALUES (1);
 GO
 
 -- Plan 5: a not-applicable factor is stored as NULL (the CHECK constraints already allow NULL).
-IF EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('dbo.scores') AND name = 'cost' AND is_nullable = 0)
+IF EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('dbo.scores') AND name IN ('capability', 'ux', 'cost', 'outlook')
+    AND is_nullable = 0)
 BEGIN
   ALTER TABLE dbo.scores ALTER COLUMN capability tinyint NULL;
   ALTER TABLE dbo.scores ALTER COLUMN ux tinyint NULL;
