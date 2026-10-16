@@ -61,7 +61,7 @@ function expectAriaDisabledOnly(button: string | undefined, busy: boolean) {
 
 describe('UsersTab', () => {
   const html = renderToStaticMarkup(
-    createElement(UsersTab, { users: [mine, ann, gone], me, onUsers: noop, onForbidden: noop }),
+    createElement(UsersTab, { users: [mine, ann, gone], me, onUsers: noop, onForbidden: () => false }),
   );
 
   it('gives the tab a heading that can take focus after login', () => {
@@ -169,10 +169,15 @@ describe('detailsChanges', () => {
 });
 
 describe('failureMessage', () => {
-  it('re-reads /me on a 403 only, and keeps the server text', () => {
+  it('re-reads /me only on the 403 that means this account lost admin rights, and keeps the server text', () => {
     const calls: string[] = [];
-    const forbidden = () => void calls.push('me');
+    const forbidden = () => {
+      calls.push('me');
+      return true;
+    };
+    const origin = 'This request came from a page that is not allowed to change ratings.';
     expect(failureMessage(new ApiError(403, 'Only admins can do that.'), forbidden)).toBe('Only admins can do that.');
+    expect(failureMessage(new ApiError(403, origin), forbidden)).toBe(origin);
     expect(failureMessage(new ApiError(409, SELF_ROLE), forbidden)).toBe(SELF_ROLE);
     expect(failureMessage(new ApiError(401, 'Log in to continue.'), forbidden)).toBe('Log in to continue.');
     expect(calls).toEqual(['me']);

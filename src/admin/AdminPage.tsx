@@ -156,6 +156,8 @@ function AdminShell({ user, onLogout, onForbidden }: AdminShellProps) {
   };
 
   const open = data?.rounds.find((round) => round.status === 'open');
+  // The session has no setter, so the header's name follows the Users tab's copy once you rename yourself.
+  const self = data?.users.find((item) => item.id === user.id);
 
   // The Score tab lost its round. If the reload still lists that round as open (published and reopened meanwhile, or a
   // 409 that a fresh card fixes), the editor remounts. A report from the editor's own load does that once per round,
@@ -196,7 +198,7 @@ function AdminShell({ user, onLogout, onForbidden }: AdminShellProps) {
             </button>
           ))}
         </nav>
-        <AccountBar user={user} onLogout={onLogout} />
+        <AccountBar user={self ? { ...user, displayName: self.displayName } : user} onLogout={onLogout} />
       </header>
 
       <main className={styles.main}>

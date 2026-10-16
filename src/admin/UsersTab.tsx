@@ -18,9 +18,14 @@ export function detailsChanges(isMe: boolean, name: string, role: Role): Record<
   return isMe ? { displayName: name } : { displayName: name, role };
 }
 
-/** The message for a failed change. A 403 means this account lost admin rights, so it also re-reads /me. */
-export function failureMessage(reason: unknown, onForbidden: () => void): string {
-  if (reason instanceof ApiError && reason.status === 403) onForbidden();
+const NOT_ADMIN = 'Only admins can do that.';
+
+/**
+ * The message for a failed change. The 403 "Only admins can do that." means this account lost admin rights, so it also
+ * re-reads /me; any other 403 (an origin the server refuses, say) is only shown.
+ */
+export function failureMessage(reason: unknown, onForbidden: () => boolean): string {
+  if (reason instanceof ApiError && reason.status === 403 && reason.message === NOT_ADMIN) onForbidden();
   return errorMessage(reason);
 }
 
@@ -35,8 +40,8 @@ interface UsersTabProps {
   users: readonly AdminUser[];
   me: SessionUser;
   onUsers: (users: AdminUser[]) => void;
-  /** A 403 means this account is no longer an admin: re-reading /me sends it to /rate. */
-  onForbidden: () => void;
+  /** "Only admins can do that." means this account is no longer an admin: re-reading /me sends it to /rate. */
+  onForbidden: () => boolean;
 }
 
 export function UsersTab({ users, me, onUsers, onForbidden }: UsersTabProps) {

@@ -223,6 +223,28 @@ describe('AdminPage session and loads', () => {
     );
   });
 
+  it('shows your new name in the header once you rename yourself on the Users tab', async () => {
+    history.replaceState(null, '', '#users');
+    const me = { id: 2, login: 'admin', displayName: 'Ada Admin', role: 'admin' as const };
+    const row = { ...me, active: true, createdAt: '2026-10-01T00:00:00Z', lastScoredRound: null };
+    const api = server({
+      'GET /api/admin/users': [row],
+      'PUT /api/admin/users/2': (body: unknown) => [{ ...row, ...(body as object) }],
+    });
+    vi.stubGlobal('fetch', api.fetchMock);
+    const { container } = await render(AdminPage, {});
+    await settleAll();
+    expect(container.querySelector('header')?.textContent).toContain('Logged in as Ada Admin');
+    await click(find(container, 'button', 'Edit'));
+    const name = container.querySelector<HTMLInputElement>('td input[maxlength="80"]');
+    await type(name, 'Bea Admin');
+    await click(find(container, 'button', 'Save'));
+    await settleAll();
+    expect(container.textContent).toContain('Bea Admin is saved.');
+    expect(container.querySelector('header')?.textContent).toContain('Logged in as Bea Admin');
+    expect(container.querySelector('header')?.textContent).not.toContain('Ada Admin');
+  });
+
   it('asks before Log out drops unsaved whys, once', async () => {
     history.replaceState(null, '', '#review');
     const api = server();
