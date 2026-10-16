@@ -297,7 +297,7 @@ git commit -m "Front end: API client with session-expiry and slow-request signal
 **Files:**
 - Create: `src/account/useSession.ts`, `src/account/LoginForm.tsx`, `src/account/Unavailable.tsx`, `src/account/AccountBar.tsx`, `src/account/ChangePasswordDialog.tsx`, `src/account/WakeNotice.tsx`, `src/account/Account.module.css`
 
-- [ ] **Step 1: Create `src/account/useSession.ts`.**
+- [ ] **Step 1: Create `src/account/useSession.ts`.** Logout doesn't swallow failures. The API clears the cookie before it deletes the session, so after an error answer the cookie is usually gone, but a gateway error, a lost answer, or a 400/403/415 refused before the handler leaves it. So on any failure the hook sends one more `POST /auth/logout`, which answers 204 without touching the database when no cookie is left. A 204 means signed out, with no message. Otherwise the hook rethrows the first error. As built on `p2-front-end` (`83ad1ed`), `api()` takes a fourth `options` argument (`wakeNotice: false` skips the wake notice, `signal` aborts the request), which the Task 1 block above doesn't show; that `src/lib/api.ts` wins. The Log out button runs `logout` through `runLogout` in `src/account/logout.ts`. It shows the first error followed by "You are still logged in.", or for status 0 "Could not reach the ratings server. You are still logged in. Check your connection, then log out again."
 
 ```ts
 import { useCallback, useEffect, useState } from 'react';
@@ -311,6 +311,9 @@ export type Session =
   | { status: 'unavailable'; message: string };
 
 const EXPIRED = 'Your session ended. Log in again; unsaved scores are still in this browser.';
+
+/** The second logout needs no database once the cookie is gone, so it answers fast or not at all. */
+const LOGOUT_RETRY_MS = 5000;
 
 /** Who is logged in. Any 401 from any API call drops back to the login form. */
 export function useSession() {
@@ -346,8 +349,14 @@ export function useSession() {
     setSession({ status: 'signed-in', user });
   }, []);
 
+  /** Rejects, with the first failure, when this browser may still hold the session cookie. */
   const logout = useCallback(async () => {
-    await api('POST', '/auth/logout').catch(() => undefined);
+    try {
+      await api('POST', '/auth/logout');
+    } catch (reason) {
+      const retry = { wakeNotice: false, signal: AbortSignal.timeout(LOGOUT_RETRY_MS) };
+      await api('POST', '/auth/logout', undefined, retry).catch(() => Promise.reject(reason));
+    }
     setSession({ status: 'signed-out', notice: '' });
   }, []);
 
@@ -603,7 +612,7 @@ export function Unavailable({ message, onRetry }: UnavailableProps) {
 }
 ```
 
-- [ ] **Step 5: Create `src/account/ChangePasswordDialog.tsx`.**
+- [ ] **Step 5: Create `src/account/ChangePasswordDialog.tsx`.** Success ends the user's other sessions and keeps this one. A 400 "Your current password is wrong." can also mean an admin reset the password or disabled the account while the request ran. In that case nothing changed, and the admin's change already ended this session, so the next API call gets a 401 and `onSignedOut` sends the page to its login form. The dialog shows the message as is and needs no special case.
 
 ```tsx
 import { useEffect, useRef, useState, type FormEvent } from 'react';
@@ -1815,7 +1824,7 @@ export function NewRoundForm({ rounds, onCreated }: NewRoundFormProps) {
       <div className={styles.fields}>
         <label className={styles.field}>
           <span>Round id</span>
-          <input value={id} onChange={(event) => setId(event.target.value)} pattern="\d{4}-[A-Za-z0-9]{1,3}" required />
+          <input value={id} onChange={(event) => setId(event.target.value)} pattern="\d{4}-[A-Z0-9]{1,3}" required />
         </label>
         <label className={styles.field}>
           <span>Label</span>
@@ -1980,7 +1989,8 @@ export default defineConfig({
   base: '/',
   plugins: [react()],
   server: {
-    proxy: { '/api': 'http://localhost:7071' },
+    // FCR_API_TARGET points /api at a Functions host on another port; an empty value falls back to 7071.
+    proxy: { '/api': process.env.FCR_API_TARGET || 'http://localhost:7071' },
   },
   build: {
     rolldownOptions: {
@@ -1993,6 +2003,11 @@ export default defineConfig({
   },
 });
 ```
+
+The desk is gone, so the proxy takes all of `/api`. Set `FCR_API_TARGET` in the shell, not in `.env`: `process.env` in `vite.config.ts` holds only the shell's variables. Running a second checkout alongside this one:
+- The proxy keeps the browser's `Origin` (`changeOrigin` rewrites only `Host`). A Vite on any port other than 5173 needs that origin in its host's `ALLOWED_ORIGINS`, or every write, login included, gets 403.
+- Vite moves to 5174 on its own when 5173 is taken, with only a console line. Either put `"ALLOWED_ORIGINS": "http://localhost:5173,http://localhost:5174,http://localhost:5175"` in each checkout's `api/local.settings.json`, or start Vite with `--port <n> --strictPort`.
+- A second host starts with `cd api; npm run build; npx func start --port 7072`, and its Vite with `$env:FCR_API_TARGET = 'http://localhost:7072'; npm run dev`.
 
 - [ ] **Step 10: Remove the desk script.** In `package.json`, delete the `"desk": "vite --open /desk.html",` line.
 
@@ -2113,7 +2128,9 @@ export function RaterCardEditor({ review, rater, catalog, onSaved, onCancel }: R
 }
 ```
 
-- [ ] **Step 2: Create `src/admin/ReviewTab.tsx`.** Notes save per item through `PUT /admin/rounds/:id/notes/:artifactId`, 700 ms after typing stops. An item stays "unsaved" if its text changed while its save was in flight.
+- [ ] **Step 2: Create `src/admin/ReviewTab.tsx`.** Notes save per item through `PUT /admin/rounds/:id/notes/:artifactId`, 700 ms after typing stops. An item stays "unsaved" if its text changed while its save was in flight. The limit matches the server's: up to 2,000 characters after trimming are accepted. A longer note isn't sent; it stays unsaved, with the server's wording ("Keep the write-up to 2,000 characters or fewer.") under the box. The box has no `maxLength`, which would cut a paste short without saying so and would count the untrimmed text.
+
+Drafts are slow by nature, so they skip the wake notice (`{ wakeNotice: false }`, the `api()` option noted in Task 2 Step 1). The API answers every draft within about 200 s, with the text or a 502 whose message is shown as is. So a status 0 there means the network failed, not a draft that ran too long. "Draft all blank" drafts one item at a time. It stops at the first rate-limit or overload message ("Anthropic's rate limit for this key was reached. …", "Anthropic is overloaded right now. …"), because every later draft would get the same answer. It keeps going past "The model kept mentioning scores or grades. Write this one by hand." and other per-item errors.
 
 ```tsx
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -2126,6 +2143,11 @@ import { RaterCardEditor } from './RaterCardEditor';
 import styles from './Admin.module.css';
 
 const SAVE_DELAY = 700;
+/** The server's limit, counted on the trimmed text, with its wording. */
+const NOTE_MAX = 2000;
+const NOTE_TOO_LONG = 'Keep the write-up to 2,000 characters or fewer.';
+/** How the API's 502 starts when Anthropic refuses for the key or for everyone; every later draft would fail too. */
+const PROVIDER_LIMITS = ["Anthropic's rate limit for this key was reached.", 'Anthropic is overloaded right now.'];
 
 interface ReviewTabProps {
   rounds: readonly AdminRound[];
@@ -2207,7 +2229,13 @@ function RoundReviewPanel({ review, catalog, users, onReview }: RoundReviewPanel
 
   useEffect(() => {
     if (edits.dirty.size === 0) return;
-    const sent = Object.fromEntries([...edits.dirty].map((id) => [id, edits.notes[id] ?? '']));
+    // A note over the limit stays unsaved, with its full text in the box, until it's shortened.
+    const sent = Object.fromEntries(
+      [...edits.dirty]
+        .map((id) => [id, edits.notes[id] ?? ''] as const)
+        .filter(([, body]) => body.trim().length <= NOTE_MAX),
+    );
+    if (Object.keys(sent).length === 0) return;
     const timer = setTimeout(() => {
       setSaveState('saving');
       void (async () => {
@@ -2233,14 +2261,19 @@ function RoundReviewPanel({ review, catalog, users, onReview }: RoundReviewPanel
     setEdits((current) => ({ notes: { ...current.notes, [id]: text }, dirty: new Set(current.dirty).add(id) }));
   }, []);
 
-  const draftOne = async (id: string) => {
+  /** Resolves to the error message, or '' once the draft is in the box. */
+  const draftOne = async (id: string): Promise<string> => {
     setBusy(id);
     setDraftErrors(({ [id]: _, ...rest }) => rest);
     try {
-      const { text } = await api<{ text: string }>('POST', `/admin/rounds/${roundId}/draft/${id}`);
+      const path = `/admin/rounds/${roundId}/draft/${id}`;
+      const { text } = await api<{ text: string }>('POST', path, undefined, { wakeNotice: false });
       setNote(id, text);
+      return '';
     } catch (reason) {
-      setDraftErrors((current) => ({ ...current, [id]: errorMessage(reason) }));
+      const message = errorMessage(reason);
+      setDraftErrors((current) => ({ ...current, [id]: message }));
+      return message;
     } finally {
       setBusy(undefined);
     }
@@ -2254,8 +2287,9 @@ function RoundReviewPanel({ review, catalog, users, onReview }: RoundReviewPanel
     setProgress({ done: 0, total: queue.length });
     for (const [index, id] of queue.entries()) {
       if (cancelRef.current) break;
-      await draftOne(id);
+      const failure = await draftOne(id);
       setProgress({ done: index + 1, total: queue.length });
+      if (PROVIDER_LIMITS.some((start) => failure.startsWith(start))) break;
     }
     setProgress(undefined);
   };
@@ -2394,12 +2428,17 @@ function RoundReviewPanel({ review, catalog, users, onReview }: RoundReviewPanel
                   <textarea
                     className={styles.note}
                     rows={3}
-                    maxLength={2000}
                     value={note}
                     placeholder="Why this rating. Leave blank and use Draft with AI for a first pass."
                     aria-label={`Why this rating for ${artifact.name}`}
+                    aria-invalid={note.trim().length > NOTE_MAX || undefined}
                     onChange={(event) => setNote(artifact.id, event.target.value)}
                   />
+                  {note.trim().length > NOTE_MAX && (
+                    <p className={styles.error} role="alert">
+                      {NOTE_TOO_LONG}
+                    </p>
+                  )}
                   <div className={styles.cardActions}>
                     <button
                       type="button"
@@ -2564,7 +2603,7 @@ export function PublishTab({ rounds, catalogSize, onRounds }: PublishTabProps) {
             {site.lastSnapshotAt
               ? `The live site shows the database as of ${formatTimestamp(site.lastSnapshotAt)}.`
               : 'No deploy has confirmed a build from the database yet.'}
-            {site.behind && ' Published ratings, notes, or the catalog changed since then.'}
+            {site.lastSnapshotAt && site.behind && ' Published ratings, notes, or the catalog changed since then.'}
           </p>
           <div className={styles.fields}>
             {site.deployConfigured ? (
@@ -3901,6 +3940,7 @@ The script also tells the deploy which snapshot it fetched. Its timeout is 200 s
 - After a successful fetch, whether it wrote the file or found it unchanged, append `generatedAt=<value>` to `$GITHUB_OUTPUT` when that variable is set.
 - The value is the response's `generatedAt` string, byte for byte. It's not the committed file's, which is older when the write was skipped, so the admin page would stay behind. It's not a new `Date` either, which would mark changes made during the build as live.
 - On any failure, write nothing to `$GITHUB_OUTPUT`.
+- A 503 gets one retry. The database may still be waking, or the GET's clock read waited past mssql's 30 s request timeout behind a write transaction that stalled after stamping `changed_at`.
 - With `--confirm` (local runs), after a successful fetch, POST `{ generatedAt }` to `/api/build/snapshot/deployed` with the token and `Content-Type: application/json`. Expect 204. Vite serves the written file at once, so locally the fetch is the deploy. A failed confirm is a warning, like a failed fetch.
 
 Fetching the snapshot never marks the public site up to date. Only `POST /api/build/snapshot/deployed` moves `last_snapshot_at`: the deploy workflow's confirm step (Task 11), or `npm run snapshot -- --confirm` locally.
@@ -3943,10 +3983,17 @@ function sameContent(a: SnapshotShape, b: SnapshotShape): boolean {
 }
 
 async function refresh(base: string, token: string): Promise<{ message: string; generatedAt: string }> {
-  const response = await fetch(`${base}/api/build/snapshot`, {
-    headers: { Authorization: `Bearer ${token}` },
-    signal: AbortSignal.timeout(TIMEOUT_MS),
-  });
+  const get = () =>
+    fetch(`${base}/api/build/snapshot`, {
+      headers: { Authorization: `Bearer ${token}` },
+      signal: AbortSignal.timeout(TIMEOUT_MS),
+    });
+  let response = await get();
+  if (response.status === 503) {
+    // A database still waking, or a clock read that timed out behind a stalled write, answers 503.
+    await response.body?.cancel();
+    response = await get();
+  }
   if (!response.ok) throw new Error(`${base} answered HTTP ${response.status}.`);
   const snapshot: unknown = await response.json();
   if (!isSnapshot(snapshot)) throw new Error('The response is not a snapshot.');
@@ -4167,7 +4214,7 @@ Expected: `#publish` → Check again shows "behind". Run `npm run snapshot -- --
 Expected: the private window (after a reload) shows "Q1 2027 · 0 of N rated" and a "Start from my Q4 2026 scores" button that fills the matrix with Rater A's Q4 card.
 
 - [ ] **Step 8: Session end.** On `#users`, disable Rater A. In the private window, change a slider and click Save scores.
-Expected: the login form appears with "Your session ended…". Logging in as `rater-a` fails with "Wrong login or password." Enable Rater A again.
+Expected: the login form appears with "Your session ended…". Logging in as `rater-a` fails with "Wrong login or password." Enable Rater A again. That failed login leaves `login:rater-a` at `failures=1`. The integration test doesn't clean it, by design, so `fcr-dev` won't show 0 `login_attempts` after this task; that isn't a test leak.
 
 - [ ] **Step 9: Clean up.** Throw away the dev snapshot so production never ships test data:
 
@@ -4178,8 +4225,8 @@ git status --short
 
 Expected: a clean tree. `fcr-dev` keeps Q4 2026 (published) and Q1 2027 (open).
 
-- [ ] **Step 10: Re-run the API integration test** (Plan 1 Task 17 Step 4).
-Expected: 9 tests pass against the new open round, `2027-Q1`.
+- [ ] **Step 10: Re-run the API integration test** (Plan 1 Task 17 Step 4). First log out of or close the admin window and the private window, and don't log in through any local site while it runs. Run one copy of the suite per database at a time, because each copy's `beforeAll` deletes every `itest-` row. Never run `db:seed --force` during it. From a second checkout, set `FCR_API_URL` to that checkout's host port, and check that its `api/local.settings.json` points at `fcr-dev`. The suite connects for its own checks with the settings file of the checkout it runs from. It refuses a database whose name doesn't start with `fcr-dev`. In `beforeAll`, before any test writes, it fails if the host's database differs from its own.
+Expected: `Tests  12 passed (12)` against the new open round, `2027-Q1`. If `fcr-dev` has two or more active admins, the self-demotion check skips itself: `11 passed | 1 skipped (12)`. "12 skipped" means `FCR_API_URL` wasn't set. Leave `FCR_DB_TESTS` unset, and don't run the opt-in database tests in the same session, because both clean up `itest-` rows. After Steps 5 and 6, `site_state.changed_at` and `last_snapshot_at` are both set. The suite writes only to the open round, and its `afterAll` asserts the whole `site_state` row is unchanged. If a stamp moves, an open-round write stamped the site or something else wrote public data. Treat that as an API bug, and don't loosen the test.
 
 ---
 

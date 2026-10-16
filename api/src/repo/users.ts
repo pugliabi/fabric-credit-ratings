@@ -84,8 +84,23 @@ export async function updateUser(db: Db, id: number, changes: UserChanges): Prom
 }
 
 /**
- * Holds the users it reads until commit, so two admins demoting or deactivating each other take turns instead of both
- * seeing the other still active. Use inside a transaction, before reading the user being changed.
+ * Sets a new password hash only if the user is still active with the hash the caller just verified, and reports
+ * whether it did. A reset or disable that commits first wins, and this changes nothing.
+ */
+export async function replacePasswordHash(db: Db, id: number, verified: string, next: string): Promise<boolean> {
+  const rows = await db.query<{ id: number }>(
+    `UPDATE users SET password_hash = @next, password_changed_at = SYSUTCDATETIME()
+     OUTPUT inserted.id
+     WHERE id = @id AND active = 1 AND password_hash = @verified`,
+    { id, verified: varchar(verified), next: varchar(next) },
+  );
+  return rows.length === 1;
+}
+
+/**
+ * Locks every users row and blocks inserts until commit, so two admins demoting or deactivating each other take turns
+ * instead of both seeing the other still active. Use inside a transaction, before reading the user being changed, and
+ * keep the rest of it short: no hashing or network calls.
  */
 export async function countActiveAdminsLocked(tx: Db): Promise<number> {
   const [row] = await tx.query<{ n: number }>(

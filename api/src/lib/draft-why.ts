@@ -31,7 +31,7 @@ export interface DraftInput {
 // The bare one-letter grades (A, B, C, E) are ordinary words, so only their signed forms count. A sign followed by a
 // letter is a hyphenated word ("B-tree"), but "AA-rated" still names AA.
 const GRADE = /(?<![A-Za-z0-9+-])(?:AAA|AA[+-]?|A[+-]|BBB[+-]?|BB[+-]?|B[+-]|CCC|CC)(?![A-Za-z0-9+])/;
-const OUT_OF = /\bout of (?:7|seven|21)\b|\b\d{1,2}\s*of\s*(?:7|21)\b|\/\s*(?:7|21)\b/i;
+const OUT_OF = /\bout of (?:7|seven|21)\b|\b\d{1,2}\s*of\s*(?:7|21)\b|\b(?:[1-9]|1\d|2[01])\s*\/\s*(?:7|21)\b/i;
 
 /** True when a draft leaks a grade, a total, or arithmetic. */
 export function mentionsMath(text: string): boolean {
@@ -74,27 +74,55 @@ Rules:
 - Never mention scores, totals, letter grades, rater counts, or arithmetic. The reader must not be able to reconstruct the rating from the paragraph.`;
 }
 
-/** Turns the errors people actually hit into instructions. */
+/** Turns the errors people actually hit into instructions, keeping the provider's error as the cause for the log. */
 function explain(error: unknown): Error {
   const message = error instanceof Error ? error.message : String(error);
+  const friendly = (text: string) => new Error(text, { cause: error });
   if (message.includes('anthropic-workspace-id')) {
-    return new Error(
+    return friendly(
       'This Anthropic key is not scoped to a workspace. Set ANTHROPIC_WORKSPACE_ID in the Function App settings (Claude Console, Settings, Workspaces), or create the key inside a workspace.',
     );
   }
   if (error instanceof Anthropic.AuthenticationError) {
-    return new Error('Anthropic rejected ANTHROPIC_API_KEY. Check the key in the Function App settings.');
+    return friendly('Anthropic rejected ANTHROPIC_API_KEY. Check the key in the Function App settings.');
   }
   if (error instanceof Anthropic.NotFoundError) {
-    return new Error("ANTHROPIC_MODEL names a model this key can't use. Check the setting in the Function App.");
+    return friendly("ANTHROPIC_MODEL names a model this key can't use. Check the setting in the Function App.");
   }
-  if (error instanceof Anthropic.RateLimitError || (error instanceof Anthropic.APIError && error.status === 529)) {
-    return new Error('Anthropic is busy. Try again in a minute.');
+  if (error instanceof Anthropic.RateLimitError) {
+    return friendly("Anthropic's rate limit for this key was reached. Wait a minute, then try again.");
   }
-  if (error instanceof Anthropic.APIConnectionTimeoutError) {
-    return new Error('Anthropic did not answer in time. Try again.');
+  if (error instanceof Anthropic.APIError && (error.status === 529 || error.type === 'overloaded_error')) {
+    return friendly('Anthropic is overloaded right now. Try again in a minute.');
   }
+  if (timedOut(error)) return friendly('Anthropic did not answer in time. Try again.');
   return error instanceof Error ? error : new Error(message);
+}
+
+/** One attempt's own timeout, or the caller's deadline: the SDK reports that as a user abort. */
+function timedOut(error: unknown): boolean {
+  return (
+    error instanceof Anthropic.APIConnectionTimeoutError ||
+    error instanceof Anthropic.APIUserAbortError ||
+    (error instanceof DOMException && (error.name === 'TimeoutError' || error.name === 'AbortError'))
+  );
+}
+
+const modelFor = (settings: AnthropicSettings) => settings.model || DEFAULT_MODEL;
+
+/**
+ * What to log for a failed draft: the model asked, and the provider's status, request id, error type, and message
+ * from the error's cause. The key travels only in request headers and the prompt only in the request body, and an SDK
+ * error keeps neither.
+ */
+export function failureDetails(error: unknown, settings: AnthropicSettings): Record<string, unknown> {
+  const cause = error instanceof Error && error.cause !== undefined ? error.cause : error;
+  const details: Record<string, unknown> = { model: modelFor(settings) };
+  if (cause instanceof Anthropic.APIError && cause.status !== undefined) {
+    Object.assign(details, { status: cause.status, requestId: cause.requestID ?? null, type: cause.type });
+  }
+  details.error = cause instanceof Error ? `${cause.constructor.name}: ${cause.message}` : String(cause);
+  return details;
 }
 
 function textOf(message: Anthropic.Message): string {
@@ -108,34 +136,39 @@ function textOf(message: Anthropic.Message): string {
 /** Returns undefined when no API key is configured. */
 export function createDrafter(settings: AnthropicSettings) {
   if (!settings.apiKey) return undefined;
-  // Worst case, two drafts that both leak the math, each with its one retry: 4 x 40 s, still inside 230 s.
+  // Each attempt gives up after 40 s. The SDK's waits between retries follow Retry-After with no cap, so only the
+  // caller's signal bounds the whole draft.
   const client = new Anthropic({
     apiKey: settings.apiKey,
     timeout: REQUEST_TIMEOUT_MS,
     maxRetries: 1,
     ...(settings.workspaceId ? { defaultHeaders: { 'anthropic-workspace-id': settings.workspaceId } } : {}),
   });
-  const model = settings.model || DEFAULT_MODEL;
+  const model = modelFor(settings);
 
-  /** One retry if the first draft leaks the math. Throws on API errors. */
-  return async function draft(input: DraftInput): Promise<string> {
+  /** One retry if the first draft leaks the math. Throws on API errors, and once `signal` aborts. */
+  return async function draft(input: DraftInput, signal?: AbortSignal): Promise<string> {
     const prompt = promptFor(input);
     let rejected = '';
     for (let attempt = 0; attempt < 2; attempt += 1) {
+      if (signal?.aborted) throw explain(signal.reason);
       const message = await client.messages
-        .create({
-          model,
-          max_tokens: 400,
-          messages: [
-            {
-              role: 'user',
-              content:
-                attempt === 0
-                  ? prompt
-                  : `${prompt}\n\nThe draft below mentions a score, a total, or a letter grade. Rewrite it without any of those.\n\n${rejected}`,
-            },
-          ],
-        })
+        .create(
+          {
+            model,
+            max_tokens: 400,
+            messages: [
+              {
+                role: 'user',
+                content:
+                  attempt === 0
+                    ? prompt
+                    : `${prompt}\n\nThe draft below mentions a score, a total, or a letter grade. Rewrite it without any of those.\n\n${rejected}`,
+              },
+            ],
+          },
+          { signal },
+        )
         .catch((error: unknown) => {
           throw explain(error);
         });

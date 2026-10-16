@@ -66,9 +66,13 @@ function sqlError(number: number): sql.RequestError {
   return new sql.RequestError(Object.assign(new Error(`SQL Server error ${number}`), { info: { number } }));
 }
 
-/** When each mock was first called, for comparing with the order the calls should happen in. */
+/** When each mock was first called, for comparing with the order the calls should happen in. Each must be called. */
 function callOrder(...mocks: { mock: { invocationCallOrder: number[] } }[]): number[] {
-  return mocks.map((fn) => fn.mock.invocationCallOrder[0] ?? 0);
+  return mocks.map((fn) => {
+    const [first] = fn.mock.invocationCallOrder;
+    if (first === undefined) throw new Error('Expected every mock in the order check to have been called.');
+    return first;
+  });
 }
 
 function expectAscending(order: number[]): void {
@@ -106,8 +110,19 @@ describe('adminArtifactDelete', () => {
     expect(committed).not.toHaveBeenCalled();
   });
 
+  it('answers 503, asking to try again, when it loses a deadlock to a save that adds the item', async () => {
+    vi.mocked(deleteArtifact).mockRejectedValue(sqlError(1205));
+
+    await expect(call('adminArtifactDelete', { id: 'notebook' })).rejects.toMatchObject({
+      status: 503,
+      message: 'Someone was saving a score or note for Notebook at the same moment. Try again.',
+    });
+    expect(markChanged).not.toHaveBeenCalled();
+    expect(committed).not.toHaveBeenCalled();
+  });
+
   it('passes other database errors through', async () => {
-    const error = sqlError(1205);
+    const error = sqlError(2627);
     vi.mocked(deleteArtifact).mockRejectedValue(error);
     await expect(call('adminArtifactDelete', { id: 'notebook' })).rejects.toBe(error);
   });
@@ -187,5 +202,46 @@ describe('catalog writes', () => {
     });
     expect(markChanged).not.toHaveBeenCalled();
     expect(committed).not.toHaveBeenCalled();
+  });
+
+  it('refuses a bad id or an unknown workload with 400 before opening a transaction', async () => {
+    await expect(call('adminWorkloadCreate', {}, { ...newWorkload, id: 'Real Time' })).rejects.toMatchObject({
+      status: 400,
+      message: 'Workload id must be lowercase words joined by dashes, like copy-job.',
+    });
+    await expect(call('adminArtifactCreate', {}, { ...newArtifact, workload: 'nope' })).rejects.toMatchObject({
+      status: 400,
+      message: 'Workload nope does not exist.',
+    });
+    await expect(
+      call('adminArtifactUpdate', { id: notebook.id }, { name: 'Notebook', workload: 'nope', status: 'ga' }),
+    ).rejects.toMatchObject({ status: 400, message: 'Workload nope does not exist.' });
+    expect(transaction).not.toHaveBeenCalled();
+  });
+
+  it('refuses ids that are built-in object property names with 400, before opening a transaction', async () => {
+    for (const id of ['constructor', 'prototype', '__proto__', 'hasOwnProperty', 'toString']) {
+      await expect(call('adminWorkloadCreate', {}, { ...newWorkload, id })).rejects.toMatchObject({
+        status: 400,
+        message: `Workload id ${id} is reserved. Pick another id.`,
+      });
+      await expect(call('adminArtifactCreate', {}, { ...newArtifact, id })).rejects.toMatchObject({
+        status: 400,
+        message: `Item id ${id} is reserved. Pick another id.`,
+      });
+    }
+    expect(transaction).not.toHaveBeenCalled();
+  });
+
+  it('passes constraint errors from the update routes through unmapped', async () => {
+    const duplicate = sqlError(2627);
+    vi.mocked(updateWorkload).mockRejectedValue(duplicate);
+    const body = { name: 'Data Engineering', shortName: 'DE', blurb: 'Spark.' };
+    await expect(call('adminWorkloadUpdate', { id: workload.id }, body)).rejects.toBe(duplicate);
+
+    const refused = sqlError(547);
+    vi.mocked(updateArtifact).mockRejectedValue(refused);
+    const item = { name: 'Notebook', workload: workload.id, status: 'ga' };
+    await expect(call('adminArtifactUpdate', { id: notebook.id }, item)).rejects.toBe(refused);
   });
 });

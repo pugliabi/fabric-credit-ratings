@@ -19,7 +19,11 @@ export async function findOpenRound(db: Db): Promise<Round | undefined> {
   return round;
 }
 
-/** The newest published round, by publish date and then id, the order the public history uses. */
+/**
+ * The newest published round, by publish date and then id, the order the public history uses. Publishing on the same
+ * day as the latest round is allowed, and the tie falls back to id order: a lower-id round published that day doesn't
+ * become the latest. Accepted, because round ids are created in order.
+ */
 export async function findLatestPublishedRound(db: Db): Promise<Round | undefined> {
   const [round] = await db.query<Round>(
     `SELECT TOP 1 ${ROUND} FROM rounds r WHERE r.status = 'published' ORDER BY r.published_on DESC, r.id DESC`,

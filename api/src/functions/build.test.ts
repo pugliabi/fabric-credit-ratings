@@ -87,7 +87,8 @@ describe('GET build/snapshot', () => {
     const [load = 0] = vi.mocked(loadDataset).mock.invocationCallOrder;
     expect(fallback).toBeLessThan(load);
     expect(log.warn).toHaveBeenCalledWith(
-      'site_state has no row, so the admin page will show the site as behind until npm run db:apply adds it.',
+      'site_state has no row, so the admin page shows the site as behind until npm run db:apply adds it ' +
+        'and the next deploy is confirmed.',
     );
   });
 });

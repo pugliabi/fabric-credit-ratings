@@ -1,6 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { createDrafter, mentionsMath, promptFor, type DraftInput } from './draft-why.ts';
+import { createDrafter, failureDetails, mentionsMath, promptFor, type DraftInput } from './draft-why.ts';
 
 const clients = vi.hoisted(() => [] as { options: unknown; client: unknown }[]);
 
@@ -47,6 +47,13 @@ describe('mentionsMath', () => {
     expect(mentionsMath('ACCESS and CCA')).toBe(false);
     expect(mentionsMath('A B-tree index and an A-list feature.')).toBe(false);
     expect(mentionsMath('One of 7 workloads.')).toBe(false);
+  });
+
+  it('flags a score over 7 or 21 written with a slash, but not 24/7', () => {
+    for (const text of ['capability 6/7', 'rated 6 / 7', 'a total of 15/21', 'a perfect 21/21']) {
+      expect(mentionsMath(text)).toBe(true);
+    }
+    expect(mentionsMath('Support is 24/7.')).toBe(false);
   });
 });
 
@@ -106,10 +113,79 @@ describe('createDrafter', () => {
     expect(create).toHaveBeenCalledTimes(2);
   });
 
+  it('gives up when the rewrite leaks the math too', async () => {
+    const draft = createDrafter(settings);
+    const create = stubbedCreate().mockResolvedValue(reply('Rated AA+.'));
+
+    await expect(draft?.(input)).rejects.toThrow('The model kept mentioning scores or grades. Write this one by hand.');
+    expect(create).toHaveBeenCalledTimes(2);
+    const retry = JSON.stringify(create.mock.calls[1]?.[0]);
+    expect(retry).toContain('Rewrite it without any of those.');
+    expect(retry).toContain('Rated AA+.');
+  });
+
+  describe("the caller's deadline", () => {
+    const timedOut = () => new DOMException('The operation was aborted due to timeout', 'TimeoutError');
+
+    it('goes to every call, so it also cuts short the retry waits inside the SDK', async () => {
+      const deadline = new AbortController().signal;
+      const draft = createDrafter(settings);
+      const create = stubbedCreate()
+        .mockResolvedValueOnce(reply('Solid, at 6 of 7 for capability.'))
+        .mockResolvedValueOnce(reply('Solid and complete.'));
+
+      expect(await draft?.(input, deadline)).toBe('Solid and complete.');
+      expect(create).toHaveBeenNthCalledWith(1, expect.anything(), { signal: deadline });
+      expect(create).toHaveBeenNthCalledWith(2, expect.anything(), { signal: deadline });
+    });
+
+    it('ends a call that never answers with the timeout message', async () => {
+      const deadline = new AbortController();
+      const draft = createDrafter(settings);
+      // Like the SDK: nothing comes back until the signal aborts the request.
+      const create = stubbedCreate().mockImplementation(
+        (_body, options) =>
+          new Promise((_resolve, reject) => {
+            options?.signal?.addEventListener('abort', () => reject(new Anthropic.APIUserAbortError()));
+          }) as never,
+      );
+
+      const drafting = draft?.(input, deadline.signal);
+      await Promise.resolve();
+      deadline.abort(timedOut());
+
+      await expect(drafting).rejects.toThrow('Anthropic did not answer in time. Try again.');
+      expect(create).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not start the second attempt once it has passed', async () => {
+      const deadline = new AbortController();
+      const draft = createDrafter(settings);
+      const create = stubbedCreate().mockImplementation(() => {
+        deadline.abort(timedOut());
+        return Promise.resolve(reply('Solid, at 6 of 7 for capability.')) as never;
+      });
+
+      await expect(draft?.(input, deadline.signal)).rejects.toThrow('Anthropic did not answer in time. Try again.');
+      expect(create).toHaveBeenCalledTimes(1);
+    });
+  });
+
   it.each([
     [
       'a timeout',
       new Anthropic.APIConnectionTimeoutError(),
+      'Anthropic did not answer in time. Try again.',
+    ],
+    ['an aborted request', new Anthropic.APIUserAbortError(), 'Anthropic did not answer in time. Try again.'],
+    [
+      'a timed-out signal',
+      new DOMException('The operation was aborted due to timeout', 'TimeoutError'),
+      'Anthropic did not answer in time. Try again.',
+    ],
+    [
+      'an aborted signal',
+      new DOMException('This operation was aborted', 'AbortError'),
       'Anthropic did not answer in time. Try again.',
     ],
     [
@@ -118,18 +194,80 @@ describe('createDrafter', () => {
       "ANTHROPIC_MODEL names a model this key can't use. Check the setting in the Function App.",
     ],
     [
+      'a rejected key',
+      new Anthropic.AuthenticationError(401, { type: 'error' }, undefined, new Headers()),
+      'Anthropic rejected ANTHROPIC_API_KEY. Check the key in the Function App settings.',
+    ],
+    [
+      'a key with no workspace',
+      new Anthropic.BadRequestError(
+        400,
+        { error: { message: 'anthropic-workspace-id is required' } },
+        undefined,
+        new Headers(),
+      ),
+      'This Anthropic key is not scoped to a workspace.',
+    ],
+    [
       'a rate limit',
       new Anthropic.RateLimitError(429, { type: 'error' }, undefined, new Headers()),
-      'Anthropic is busy. Try again in a minute.',
+      "Anthropic's rate limit for this key was reached. Wait a minute, then try again.",
     ],
     [
       'an overload',
       new Anthropic.InternalServerError(529, { type: 'error' }, undefined, new Headers()),
-      'Anthropic is busy. Try again in a minute.',
+      'Anthropic is overloaded right now. Try again in a minute.',
     ],
-  ])('explains %s', async (_, error, message) => {
+    [
+      'an overloaded error with another status',
+      new Anthropic.InternalServerError(500, { type: 'error' }, undefined, new Headers(), 'overloaded_error'),
+      'Anthropic is overloaded right now. Try again in a minute.',
+    ],
+  ])('explains %s, keeping the provider error as the cause', async (_, error, message) => {
     const draft = createDrafter(settings);
     stubbedCreate().mockRejectedValueOnce(error);
-    await expect(draft?.(input)).rejects.toThrow(message);
+    const failure = await draft?.(input).catch((caught: unknown) => caught);
+    expect(failure).toBeInstanceOf(Error);
+    expect((failure as Error).message).toContain(message);
+    expect((failure as Error).cause).toBe(error);
+  });
+});
+
+describe('failureDetails', () => {
+  const settings = { apiKey: 'sk-ant-unit-test-secret', workspaceId: '', model: 'claude-test' };
+
+  it("logs the provider's status, request id, and error type, and the model asked, from the cause", () => {
+    const body = { type: 'error', error: { type: 'rate_limit_error', message: 'Too many requests.' } };
+    const provider = new Anthropic.RateLimitError(
+      429,
+      body,
+      undefined,
+      new Headers({ 'request-id': 'req_123' }),
+      'rate_limit_error',
+    );
+    const failure = new Error("Anthropic's rate limit for this key was reached.", { cause: provider });
+
+    expect(failureDetails(failure, settings)).toEqual({
+      model: 'claude-test',
+      status: 429,
+      requestId: 'req_123',
+      type: 'rate_limit_error',
+      error: `RateLimitError: 429 ${JSON.stringify(body)}`,
+    });
+  });
+
+  it('names the default model and the message for a failure the provider did not send', () => {
+    const failure = new Error('The model kept mentioning scores or grades. Write this one by hand.');
+    expect(failureDetails(failure, { ...settings, model: '' })).toEqual({
+      model: 'claude-sonnet-5-5',
+      error: 'Error: The model kept mentioning scores or grades. Write this one by hand.',
+    });
+  });
+
+  it('carries neither the key nor the prompt', () => {
+    const provider = new Anthropic.NotFoundError(404, { type: 'error' }, undefined, new Headers());
+    const logged = JSON.stringify(failureDetails(new Error('Not found.', { cause: provider }), settings));
+    expect(logged).not.toContain(settings.apiKey);
+    expect(logged).not.toContain('why this rating');
   });
 });

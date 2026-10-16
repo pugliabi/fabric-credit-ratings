@@ -2,7 +2,7 @@ import type { MyScores } from '../../../src/domain/api-types.ts';
 import type { Round } from '../../../src/domain/types.ts';
 import { db, transaction } from '../lib/db.ts';
 import { HttpError } from '../lib/errors.ts';
-import { route } from '../lib/http.ts';
+import { CONSTRAINT_CONFLICT, hasSqlNumber, route } from '../lib/http.ts';
 import { cardWriteProblem } from '../lib/permissions.ts';
 import { validateScores } from '../lib/validate.ts';
 import { listArtifacts, listWorkloads } from '../repo/catalog.ts';
@@ -50,10 +50,17 @@ route('myScoresPut', 'PUT', 'rounds/open/my-scores', 'user', async (ctx) => {
   const known = new Set((await listArtifacts(db)).map((artifact) => artifact.id));
   const { scores, errors } = validateScores(ctx.body.scores, known);
   if (errors.length > 0) throw new HttpError(400, errors.join(' '));
-  await transaction(async (tx) => {
-    const locked = await lockRound(tx, round.id);
-    if (locked?.status !== 'open') throw new HttpError(409, `${round.label} was just published. Reload the page.`);
-    await replaceScorecard(tx, round.id, ctx.user.id, scores);
-  });
+  try {
+    await transaction(async (tx) => {
+      const locked = await lockRound(tx, round.id);
+      if (locked?.status !== 'open') throw new HttpError(409, `${round.label} was just published. Reload the page.`);
+      await replaceScorecard(tx, round.id, ctx.user.id, scores);
+    });
+  } catch (error) {
+    if (hasSqlNumber(error, CONSTRAINT_CONFLICT)) {
+      throw new HttpError(409, 'An item on this card was just deleted. Reload the page to get the current list.');
+    }
+    throw error;
+  }
   return myScores(round, ctx.user.id);
 });

@@ -1,12 +1,26 @@
 import type { SessionUser } from '../../../src/domain/api-types.ts';
 import { varchar, type Db } from '../lib/db.ts';
 
-export async function createSession(db: Db, tokenHash: string, userId: number, expiresAt: Date): Promise<void> {
-  await db.query('INSERT INTO sessions (token_hash, user_id, expires_at) VALUES (@tokenHash, @userId, @expiresAt)', {
-    tokenHash: varchar(tokenHash),
-    userId,
-    expiresAt,
-  });
+/**
+ * Inserts only if the user is still active with the password hash that was just verified, and reports whether it did.
+ * HOLDLOCK reads the committed row, waiting for a reset or disable in flight, and takes the user row before sessions,
+ * the same order as admin-users.ts's transaction, so the two can't deadlock.
+ */
+export async function createSession(
+  db: Db,
+  tokenHash: string,
+  userId: number,
+  expiresAt: Date,
+  passwordHash: string,
+): Promise<boolean> {
+  const rows = await db.query<{ userId: number }>(
+    `INSERT INTO sessions (token_hash, user_id, expires_at)
+     OUTPUT inserted.user_id AS userId
+     SELECT @tokenHash, u.id, @expiresAt FROM users u WITH (HOLDLOCK)
+     WHERE u.id = @userId AND u.active = 1 AND u.password_hash = @passwordHash`,
+    { tokenHash: varchar(tokenHash), userId, expiresAt, passwordHash: varchar(passwordHash) },
+  );
+  return rows.length === 1;
 }
 
 /** Only live sessions of active users. */

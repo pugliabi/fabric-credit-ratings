@@ -111,7 +111,7 @@ git commit -m "Ignore the local Azure names file"
 npm run db:apply -- --server $sqlServer --database $sqlDatabase
 ```
 
-Expected: `Database: fcr-<guid> on <id>.database.fabric.microsoft.com`, then `Applied 12 schema batches.`
+Expected: `Database: fcr-<guid> on <id>.database.fabric.microsoft.com`, then `Applied 14 schema batches.`
 
 - [ ] **Step 3: Full seed.** This loads the catalog and the Q4 2026 round from the repo files that Task 3 deletes, so it must run first. Use the admin password you want in production.
 
@@ -269,7 +269,11 @@ if (!LOGIN.test(adminLogin)) throw new Error('Logins use 2 to 40 lowercase lette
 
 /** The first admin of an empty database. The catalog and rounds are then managed in /admin. */
 async function ensureAdmin(): Promise<string> {
-  if (await findUserByLogin(db, adminLogin)) return 'already exists, password unchanged';
+  const existing = await findUserByLogin(db, adminLogin);
+  if (existing) {
+    const state = `${existing.role}, ${existing.active ? 'active' : 'inactive'}`;
+    return `already exists (${state}), not changed. --name was not applied.`;
+  }
   const password = process.env.FCR_ADMIN_PASSWORD ?? '';
   const problem = passwordProblem(password);
   if (problem) throw new Error(`Set FCR_ADMIN_PASSWORD first. ${problem}`);
@@ -295,7 +299,7 @@ Run: `npm run typecheck; npm test; npm run build`
 Expected: all pass.
 
 Run: `npm run db:seed -- --admin pugliabi --name "<your display name>"`
-Expected: `Admin pugliabi: already exists, password unchanged` against `fcr-dev`.
+Expected: `Admin pugliabi: already exists (admin, active), not changed. --name was not applied.` against `fcr-dev`.
 
 - [ ] **Step 4: Commit.**
 
@@ -570,6 +574,8 @@ Expected:
 - login returns your user with `role: admin`;
 - rounds lists `2026-Q4`, open, with 0 scorecards.
 
+The rounds call is the first proof on Azure that the host accepted the `admin/...` route templates. If it returns 404, the Function App logs `The specified route conflicts with one or more built in routes`. Check that the deployed `host.json` has `routePrefix: ""`.
+
 If health returns 503 or the logs show a login failure for the identity, recheck Task 5. Live logs: `az webapp log tail --resource-group $rg --name $app`, or Application Insights, then Failures.
 
 ---
@@ -714,7 +720,7 @@ api.fabriccreditratings.com    Azure Functions, Flex Consumption, Node 24 (api/)
 SQL database "fcr" in Fabric   users, sessions, catalog, rounds, scores, notes
 ```
 
-- The public site never calls the API. Each site deploy fetches the published ratings once (`npm run snapshot`) and commits `src/data/snapshot.json` when it changed.
+- The public site never calls the API. Each site deploy fetches the published ratings once (`npm run snapshot`) and commits `src/data/snapshot.json` when it changed. Once Pages is live, the workflow tells the API which snapshot it deployed, and only that moves the Publish tab from "The public site is behind" to "The public site is up to date".
 - Publishing a round, or **Update public site** in the admin, starts the site deploy. The site updates about two minutes later.
 - The snapshot holds published rounds only, with no per-rater scores. Items nobody has rated don't appear.
 
@@ -741,6 +747,7 @@ Vite proxies `/api` to the local API, so the session cookie works on localhost.
 | `npm run typecheck` | TypeScript for the site, scripts, and API |
 | `npm test` | Unit tests. The API integration test also runs when `FCR_API_URL` is set |
 | `npm run snapshot` | Refresh `src/data/snapshot.json` from the API |
+| `npm run snapshot -- --confirm` | Refresh it, then tell the local API it's live, as a deploy does. Don't commit a snapshot built from `fcr-dev` |
 | `npm run db:apply` | Apply `db/schema.sql` (safe to re-run) |
 | `npm run db:seed` | Create the first admin in an empty database (`FCR_ADMIN_PASSWORD` must be set) |
 
@@ -776,7 +783,7 @@ See `api/src/domain/aggregate.ts`.
 
 ## Deploy
 
-- **Site:** `.github/workflows/deploy.yml` runs on every push to `main` and when the API starts it. It refreshes the snapshot (repo variable `API_URL`, secret `SNAPSHOT_TOKEN`), builds, and publishes to GitHub Pages.
+- **Site:** `.github/workflows/deploy.yml` runs on every push to `main` and when the API starts it. It refreshes the snapshot (repo variable `API_URL`, secret `SNAPSHOT_TOKEN`), builds, publishes to GitHub Pages, and then confirms the live snapshot to the API (`POST /api/build/snapshot/deployed`).
 - **API:** `.github/workflows/api-deploy.yml` deploys `api/` when `api/` or `src/domain/` changes on `main`. It signs in to Azure with OIDC through the `api` environment (variables `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`, `AZURE_FUNCTIONAPP_NAME`).
 
 Function App settings:

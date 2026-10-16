@@ -1,8 +1,8 @@
 import sql from 'mssql';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
-import { useTarget } from '../../../db/target.ts';
 import { closeDb, db, transaction, varchar, type Db, type Param, type Params } from '../lib/db.ts';
 import { LOCK_MS, MAX_FAILURES, afterFailure, type AttemptRow } from '../lib/lockout.ts';
+import { useDevTarget } from '../test-target.ts';
 import { clearAttempt, getAttempts, releaseAttempt, reserveAttempt } from './attempts.ts';
 
 vi.mock(import('../lib/db.ts'), async (importOriginal) => {
@@ -191,13 +191,19 @@ describe.skipIf(!process.env.FCR_DB_TESTS)('login attempts against the dev datab
   const tripIp = `ip:itest-trip-${stamp}`;
   const tripLogins = Array.from({ length: MAX_FAILURES }, (_, i) => `login:itest-trip-${i}-${stamp}`);
 
+  let onDevDatabase = false;
+
   beforeAll(() => {
-    useTarget([]);
+    useDevTarget();
+    onDevDatabase = true;
   });
 
   afterAll(async () => {
-    for (const key of [ip, login, tripIp, ...tripLogins]) await clearAttempt(db, key);
-    await closeDb();
+    try {
+      if (onDevDatabase) for (const key of [ip, login, tripIp, ...tripLogins]) await clearAttempt(db, key);
+    } finally {
+      await closeDb();
+    }
   });
 
   it('lets exactly the allowed number of parallel attempts through, then locks', { timeout: 120_000 }, async () => {

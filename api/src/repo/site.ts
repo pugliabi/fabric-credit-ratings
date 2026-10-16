@@ -14,7 +14,8 @@ export async function siteState(db: Db): Promise<SiteState> {
 
 export function isBehind(state: SiteState): boolean {
   if (!state.lastSnapshotAt) return true;
-  // Both come back truncated to milliseconds; a tie may hide a change made just after the snapshot's clock read.
+  // A tie may hide a change made just after the snapshot's clock read: both come back truncated to milliseconds, and
+  // two clock reads can be equal anyway.
   return state.changedAt !== null && state.changedAt >= state.lastSnapshotAt;
 }
 

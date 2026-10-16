@@ -84,6 +84,11 @@ CREATE TABLE dbo.scores (
 );
 GO
 
+-- An artifact delete's foreign-key check seeks this instead of scanning, and waiting on, every card being saved.
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ix_scores_artifact' AND object_id = OBJECT_ID('dbo.scores'))
+CREATE INDEX ix_scores_artifact ON dbo.scores (artifact_id);
+GO
+
 IF OBJECT_ID('dbo.notes') IS NULL
 CREATE TABLE dbo.notes (
   round_id varchar(8) NOT NULL CONSTRAINT fk_notes_round REFERENCES dbo.rounds (id),
@@ -93,6 +98,10 @@ CREATE TABLE dbo.notes (
   updated_by int NULL CONSTRAINT fk_notes_user REFERENCES dbo.users (id),
   CONSTRAINT pk_notes PRIMARY KEY (round_id, artifact_id)
 );
+GO
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ix_notes_artifact' AND object_id = OBJECT_ID('dbo.notes'))
+CREATE INDEX ix_notes_artifact ON dbo.notes (artifact_id);
 GO
 
 IF OBJECT_ID('dbo.site_state') IS NULL

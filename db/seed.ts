@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { closeDb, db, transaction } from '../api/src/lib/db.ts';
 import { hashPassword, passwordProblem } from '../api/src/lib/password.ts';
-import { LOGIN, validateScores } from '../api/src/lib/validate.ts';
+import { LOGIN, isReservedId, validateScores } from '../api/src/lib/validate.ts';
 import { listArtifacts, listWorkloads, upsertArtifact, upsertWorkload } from '../api/src/repo/catalog.ts';
 import { saveNote } from '../api/src/repo/notes.ts';
 import { listRounds, upsertRound } from '../api/src/repo/rounds.ts';
@@ -62,9 +62,16 @@ async function ensureAdmin(): Promise<string> {
   return 'created';
 }
 
+function refuseReservedIds(file: string, rows: readonly { id: string }[]): void {
+  const reserved = rows.find(({ id }) => isReservedId(id));
+  if (reserved) throw new Error(`src/data/${file}: the id ${reserved.id} is reserved. Rename it, then seed again.`);
+}
+
 async function seedCatalog(): Promise<string> {
   const { WORKLOADS } = await import('../src/data/workloads.ts');
   const { ARTIFACTS } = await import('../src/data/artifacts.ts');
+  refuseReservedIds('workloads.ts', WORKLOADS);
+  refuseReservedIds('artifacts.ts', ARTIFACTS);
   for (const [index, workload] of WORKLOADS.entries()) await upsertWorkload(db, workload, (index + 1) * 10);
   for (const workload of WORKLOADS) {
     const items = ARTIFACTS.filter((artifact) => artifact.workload === workload.id);

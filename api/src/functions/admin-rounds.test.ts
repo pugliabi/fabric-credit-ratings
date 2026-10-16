@@ -1,3 +1,5 @@
+import Anthropic from '@anthropic-ai/sdk';
+import sql from 'mssql';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AdminRound, DeployResult, SessionUser } from '../../../src/domain/api-types.ts';
 import type { Artifact, Round } from '../../../src/domain/types.ts';
@@ -30,7 +32,8 @@ type Handler = (ctx: UserCtx) => Promise<unknown>;
 
 const handlers = vi.hoisted(() => new Map<string, Handler>());
 
-vi.mock(import('../lib/http.ts'), () => ({
+vi.mock(import('../lib/http.ts'), async (importOriginal) => ({
+  ...(await importOriginal()),
   route: (name: string, _method: string, _path: string, _access: string, handler: Handler) => {
     handlers.set(name, handler);
   },
@@ -40,7 +43,10 @@ vi.mock(import('../lib/db.ts'), async (importOriginal) => ({
   db: { query: () => Promise.reject(new Error('The repo functions are mocked.')) },
   transaction: vi.fn(),
 }));
-vi.mock(import('../lib/draft-why.ts'), () => ({ createDrafter: vi.fn() }));
+vi.mock(import('../lib/draft-why.ts'), async (importOriginal) => ({
+  ...(await importOriginal()),
+  createDrafter: vi.fn(),
+}));
 vi.mock(import('../lib/github.ts'), () => ({ startDeploy: vi.fn() }));
 vi.mock(import('../repo/catalog.ts'), () => ({ listArtifacts: vi.fn() }));
 vi.mock(import('../repo/dataset.ts'), () => ({ loadDataset: vi.fn() }));
@@ -90,13 +96,22 @@ function call(
   return handler({ params, body, user, config, log } as unknown as UserCtx);
 }
 
-/** When each mock was first called, for comparing with the order the calls should happen in. */
+/** When each mock was first called, for comparing with the order the calls should happen in. Each must be called. */
 function callOrder(...mocks: { mock: { invocationCallOrder: number[] } }[]): number[] {
-  return mocks.map((fn) => fn.mock.invocationCallOrder[0] ?? 0);
+  return mocks.map((fn) => {
+    const [first] = fn.mock.invocationCallOrder;
+    if (first === undefined) throw new Error('Expected every mock in the order check to have been called.');
+    return first;
+  });
 }
 
 function expectAscending(order: number[]): void {
   expect(order).toEqual([...order].sort((a, b) => a - b));
+}
+
+/** What mssql rejects with when the server refuses a statement. */
+function sqlError(number: number): sql.RequestError {
+  return new sql.RequestError(Object.assign(new Error(`SQL Server error ${number}`), { info: { number } }));
 }
 
 beforeEach(() => {
@@ -126,6 +141,7 @@ describe('adminRoundUpdate: publish', () => {
     expect(transaction).toHaveBeenCalledTimes(1);
     expect(lockRound).toHaveBeenCalledWith(tx, open.id);
     expect(countScorecards).toHaveBeenCalledWith(tx, open.id);
+    expect(findLatestPublishedRound).toHaveBeenCalledWith(tx);
     expect(publishRound).toHaveBeenCalledWith(tx, open.id, '2026-10-15');
     expect(markChanged).toHaveBeenCalledWith(tx);
     expect(startDeploy).toHaveBeenCalledWith(config);
@@ -133,6 +149,7 @@ describe('adminRoundUpdate: publish', () => {
       callOrder(
         vi.mocked(lockRound),
         vi.mocked(countScorecards),
+        vi.mocked(findLatestPublishedRound),
         vi.mocked(publishRound),
         vi.mocked(markChanged),
         committed,
@@ -176,6 +193,40 @@ describe('adminRoundUpdate: publish', () => {
     expect(publishRound).not.toHaveBeenCalled();
     expect(markChanged).not.toHaveBeenCalled();
     expect(startDeploy).not.toHaveBeenCalled();
+  });
+
+  it("refuses with 400, changing nothing, a date earlier than the latest published round's", async () => {
+    const q3: Round = { id: '2026-Q3', label: 'Q3 2026', status: 'published', publishedOn: '2026-07-15' };
+    vi.mocked(countScorecards).mockResolvedValue(2);
+    vi.mocked(findLatestPublishedRound).mockResolvedValue(q3);
+
+    await expect(
+      call('adminRoundUpdate', { id: open.id }, { status: 'published', publishedOn: '2026-07-14' }),
+    ).rejects.toMatchObject({ status: 400, message: "Publish dates can't be earlier than Q3 2026's (2026-07-15)." });
+    expect(findLatestPublishedRound).toHaveBeenCalledWith(tx);
+    expect(publishRound).not.toHaveBeenCalled();
+    expect(markChanged).not.toHaveBeenCalled();
+    expect(startDeploy).not.toHaveBeenCalled();
+  });
+
+  it('publishes on any date when the latest published round has none', async () => {
+    const undated: Round = { id: '2026-Q3', label: 'Q3 2026', status: 'published', publishedOn: null };
+    vi.mocked(countScorecards).mockResolvedValue(2);
+    vi.mocked(findLatestPublishedRound).mockResolvedValue(undated);
+
+    await call('adminRoundUpdate', { id: open.id }, { status: 'published', publishedOn: '2026-01-01' });
+    expect(publishRound).toHaveBeenCalledWith(tx, open.id, '2026-01-01');
+  });
+
+  it("accepts the latest published round's own date and future dates", async () => {
+    const q3: Round = { id: '2026-Q3', label: 'Q3 2026', status: 'published', publishedOn: '2026-07-15' };
+    vi.mocked(countScorecards).mockResolvedValue(2);
+    vi.mocked(findLatestPublishedRound).mockResolvedValue(q3);
+
+    for (const publishedOn of ['2026-07-15', '2099-01-01']) {
+      await call('adminRoundUpdate', { id: open.id }, { status: 'published', publishedOn });
+      expect(publishRound).toHaveBeenLastCalledWith(tx, open.id, publishedOn);
+    }
   });
 
   it('refuses an impossible publish date before opening a transaction', async () => {
@@ -368,6 +419,20 @@ describe('adminScoresPut', () => {
     ).rejects.toMatchObject({ status: 400, message: '"notebook" needs three whole scores from 1 to 7.' });
     expect(transaction).not.toHaveBeenCalled();
   });
+
+  it('answers 409 when an item on the card was deleted after the check, and passes other errors through', async () => {
+    vi.mocked(replaceScorecard).mockRejectedValueOnce(sqlError(547));
+    await expect(call('adminScoresPut', { id: open.id, userId: '7' }, body)).rejects.toMatchObject({
+      status: 409,
+      message: 'An item on this card was just deleted. Reload the page to get the current list.',
+    });
+
+    const error = sqlError(2627);
+    vi.mocked(replaceScorecard).mockRejectedValueOnce(error);
+    await expect(call('adminScoresPut', { id: open.id, userId: '7' }, body)).rejects.toBe(error);
+    expect(markChanged).not.toHaveBeenCalled();
+    expect(committed).not.toHaveBeenCalled();
+  });
 });
 
 describe('adminNotePut', () => {
@@ -426,6 +491,21 @@ describe('adminNotePut', () => {
     });
     expect(transaction).not.toHaveBeenCalled();
   });
+
+  it('answers 409 when the item was deleted after the check, and passes other errors through', async () => {
+    vi.mocked(saveNote).mockRejectedValueOnce(sqlError(547));
+    await expect(
+      call('adminNotePut', { id: open.id, artifactId: 'notebook' }, { body: 'Solid.' }),
+    ).rejects.toMatchObject({
+      status: 409,
+      message: 'That item was just deleted. Reload the page to get the current list.',
+    });
+
+    const error = sqlError(2627);
+    vi.mocked(saveNote).mockRejectedValueOnce(error);
+    await expect(call('adminNotePut', { id: open.id, artifactId: 'notebook' }, { body: 'Solid.' })).rejects.toBe(error);
+    expect(committed).not.toHaveBeenCalled();
+  });
 });
 
 describe('adminDraft', () => {
@@ -457,6 +537,22 @@ describe('adminDraft', () => {
     expect(loadDataset).not.toHaveBeenCalled();
   });
 
+  it('gives the whole draft one 200 s deadline, set before the dataset load and passed to the drafter', async () => {
+    const deadline = new AbortController().signal;
+    const timeout = vi.spyOn(AbortSignal, 'timeout').mockReturnValue(deadline);
+    drafter.mockResolvedValue('Solid and complete.');
+
+    try {
+      await call('adminDraft', { id: open.id, artifactId: 'notebook' });
+
+      expect(timeout).toHaveBeenCalledWith(200_000);
+      expect(drafter).toHaveBeenCalledWith(expect.objectContaining({ artifact: notebook }), deadline);
+      expectAscending(callOrder(timeout, vi.mocked(loadDataset), drafter));
+    } finally {
+      timeout.mockRestore();
+    }
+  });
+
   it("drafts from the round's scores and returns the text", async () => {
     drafter.mockResolvedValue('Solid and complete.');
 
@@ -468,6 +564,7 @@ describe('adminDraft', () => {
         scores: { capability: 6, ux: 5, cost: 4 },
         raters: 1,
       }),
+      expect.any(AbortSignal),
     );
   });
 
@@ -488,14 +585,28 @@ describe('adminDraft', () => {
     expect(drafter).not.toHaveBeenCalled();
   });
 
-  it("answers 502 with the drafter's message, and logs the failure", async () => {
-    const failure = new Error('Anthropic is busy. Try again in a minute.');
-    drafter.mockRejectedValue(failure);
+  it("answers 502 with the drafter's message, and logs the provider's answer behind it", async () => {
+    const body = { type: 'error', error: { type: 'overloaded_error', message: 'Overloaded' } };
+    const provider = new Anthropic.InternalServerError(
+      529,
+      body,
+      undefined,
+      new Headers({ 'request-id': 'req_529' }),
+      'overloaded_error',
+    );
+    const overloaded = 'Anthropic is overloaded right now. Try again in a minute.';
+    drafter.mockRejectedValue(new Error(overloaded, { cause: provider }));
 
     await expect(call('adminDraft', { id: open.id, artifactId: 'notebook' })).rejects.toMatchObject({
       status: 502,
-      message: 'Anthropic is busy. Try again in a minute.',
+      message: overloaded,
     });
-    expect(log.warn).toHaveBeenCalledWith('AI draft failed', failure);
+    expect(log.warn).toHaveBeenCalledWith('AI draft failed', {
+      model: 'claude-sonnet-5-5',
+      status: 529,
+      requestId: 'req_529',
+      type: 'overloaded_error',
+      error: `InternalServerError: 529 ${JSON.stringify(body)}`,
+    });
   });
 });

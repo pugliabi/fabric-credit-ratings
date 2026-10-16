@@ -3,13 +3,13 @@ import { pointFor, previousPoint } from '../../../src/domain/aggregate.ts';
 import type { Round } from '../../../src/domain/types.ts';
 import { buildReview } from '../domain/review.ts';
 import type { Config } from '../lib/config.ts';
-import { db, transaction } from '../lib/db.ts';
-import { createDrafter } from '../lib/draft-why.ts';
+import { db, transaction, type Db } from '../lib/db.ts';
+import { createDrafter, failureDetails } from '../lib/draft-why.ts';
 import { HttpError } from '../lib/errors.ts';
 import { startDeploy } from '../lib/github.ts';
-import { route } from '../lib/http.ts';
+import { CONSTRAINT_CONFLICT, hasSqlNumber, route } from '../lib/http.ts';
 import { cardWriteProblem } from '../lib/permissions.ts';
-import { ROUND_ID, isIsoDate, oneOf, text, today, validateScores } from '../lib/validate.ts';
+import { ROUND_ID, USER_ID, isIsoDate, oneOf, text, today, validateScores } from '../lib/validate.ts';
 import { listArtifacts } from '../repo/catalog.ts';
 import { loadDataset } from '../repo/dataset.ts';
 import { saveNote } from '../repo/notes.ts';
@@ -32,6 +32,8 @@ import { findUserById } from '../repo/users.ts';
 // decides on the locked row's status rather than an earlier read.
 
 const NOTE_MAX = 2000;
+/** Azure cuts HTTP functions off at about 230 seconds; this leaves time to answer. */
+const DRAFT_DEADLINE_MS = 200_000;
 
 const noSuchRound = (id: string) => new HttpError(404, `Round ${id} does not exist.`);
 
@@ -49,6 +51,16 @@ async function reviewFor(roundId: string, config: Config): Promise<RoundReview> 
 
 async function knownArtifactIds(): Promise<Set<string>> {
   return new Set((await listArtifacts(db)).map((artifact) => artifact.id));
+}
+
+/** Runs a card or note save; a foreign key refusing it means the item was deleted after the route checked it. */
+async function saveForItems(deleted: string, work: (tx: Db) => Promise<void>): Promise<void> {
+  try {
+    await transaction(work);
+  } catch (error) {
+    if (hasSqlNumber(error, CONSTRAINT_CONFLICT)) throw new HttpError(409, deleted);
+    throw error;
+  }
 }
 
 route('adminRounds', 'GET', 'admin/rounds', 'admin', async () => listRoundsWithCounts(db));
@@ -76,6 +88,11 @@ route('adminRoundUpdate', 'PUT', 'admin/rounds/{id}', 'admin', async (ctx): Prom
       if (current.status === 'published') throw new HttpError(409, `${current.label} is already published.`);
       if ((await countScorecards(tx, current.id)) === 0) {
         throw new HttpError(400, `Nobody has scored ${current.label} yet.`);
+      }
+      // Unlocked is enough: only an open round can be published, only one round can be open, and this one holds it.
+      const latest = await findLatestPublishedRound(tx);
+      if (latest?.publishedOn && publishedOn < latest.publishedOn) {
+        throw new HttpError(400, `Publish dates can't be earlier than ${latest.label}'s (${latest.publishedOn}).`);
       }
       await publishRound(tx, current.id, publishedOn);
       await markChanged(tx);
@@ -108,11 +125,11 @@ route('adminReview', 'GET', 'admin/rounds/{id}/review', 'admin', async (ctx) =>
 route('adminScoresPut', 'PUT', 'admin/rounds/{id}/scores/{userId}', 'admin', async (ctx) => {
   const round = await requireRound(ctx.params.id);
   const userId = ctx.params.userId ?? '';
-  const owner = /^\d{1,9}$/.test(userId) ? await findUserById(db, Number(userId)) : undefined;
+  const owner = USER_ID.test(userId) ? await findUserById(db, Number(userId)) : undefined;
   if (!owner) throw new HttpError(404, 'That user does not exist.');
   const { scores, errors } = validateScores(ctx.body.scores, await knownArtifactIds());
   if (errors.length > 0) throw new HttpError(400, errors.join(' '));
-  await transaction(async (tx) => {
+  await saveForItems('An item on this card was just deleted. Reload the page to get the current list.', async (tx) => {
     const current = await lockRound(tx, round.id);
     if (!current) throw noSuchRound(round.id);
     const problem = cardWriteProblem(ctx.user, current, owner.id);
@@ -130,7 +147,7 @@ route('adminNotePut', 'PUT', 'admin/rounds/{id}/notes/{artifactId}', 'admin', as
   if (typeof ctx.body.body !== 'string') throw new HttpError(400, 'Send the write-up as text.');
   const body = ctx.body.body.trim();
   if (body.length > NOTE_MAX) throw new HttpError(400, 'Keep the write-up to 2,000 characters or fewer.');
-  await transaction(async (tx) => {
+  await saveForItems('That item was just deleted. Reload the page to get the current list.', async (tx) => {
     const current = await lockRound(tx, round.id);
     if (!current) throw noSuchRound(round.id);
     await saveNote(tx, round.id, artifactId, body, ctx.user.id);
@@ -140,6 +157,8 @@ route('adminNotePut', 'PUT', 'admin/rounds/{id}/notes/{artifactId}', 'admin', as
 });
 
 route('adminDraft', 'POST', 'admin/rounds/{id}/draft/{artifactId}', 'admin', async (ctx) => {
+  // Started first, so a slow dataset load (a paused database can take 150 s) counts against it too.
+  const deadline = AbortSignal.timeout(DRAFT_DEADLINE_MS);
   const drafter = createDrafter(ctx.config.anthropic);
   if (!drafter) throw new HttpError(400, 'Set ANTHROPIC_API_KEY in the Function App settings to draft with AI.');
   const data = await loadDataset(db);
@@ -151,19 +170,22 @@ route('adminDraft', 'POST', 'admin/rounds/{id}/draft/{artifactId}', 'admin', asy
   if (!point) throw new HttpError(400, `${artifact.name} has no scores in ${target.round.label} yet.`);
   const previous = previousPoint(artifact, data.rounds, target.round.id);
   try {
-    const draft = await drafter({
-      artifact,
-      workload: data.workloads.find((workload) => workload.id === artifact.workload),
-      roundLabel: target.round.label,
-      scores: point.scores,
-      raters: point.raters,
-      ...(previous
-        ? { previous: { roundLabel: previous.roundLabel, scores: previous.scores, note: previous.note } }
-        : {}),
-    });
+    const draft = await drafter(
+      {
+        artifact,
+        workload: data.workloads.find((workload) => workload.id === artifact.workload),
+        roundLabel: target.round.label,
+        scores: point.scores,
+        raters: point.raters,
+        ...(previous
+          ? { previous: { roundLabel: previous.roundLabel, scores: previous.scores, note: previous.note } }
+          : {}),
+      },
+      deadline,
+    );
     return { text: draft };
   } catch (error) {
-    ctx.log.warn('AI draft failed', error);
+    ctx.log.warn('AI draft failed', failureDetails(error, ctx.config.anthropic));
     throw new HttpError(502, error instanceof Error ? error.message : String(error));
   }
 });

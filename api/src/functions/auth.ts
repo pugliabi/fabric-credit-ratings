@@ -1,5 +1,5 @@
 import { sessionToken } from '../lib/current-user.ts';
-import { db } from '../lib/db.ts';
+import { db, transaction } from '../lib/db.ts';
 import { HttpError } from '../lib/errors.ts';
 import { route } from '../lib/http.ts';
 import { isLocked } from '../lib/lockout.ts';
@@ -8,13 +8,14 @@ import { clearedCookie, expiryFrom, hashToken, newToken, sessionCookie } from '.
 import { LOGIN, rawString, text } from '../lib/validate.ts';
 import { clearAttempt, getAttempts, releaseAttempt, reserveAttempt } from '../repo/attempts.ts';
 import { createSession, deleteSession, deleteUserSessions, pruneExpiredSessions } from '../repo/sessions.ts';
-import { findUserById, findUserByLogin, toSessionUser, updateUser } from '../repo/users.ts';
+import { findUserById, findUserByLogin, replacePasswordHash, toSessionUser } from '../repo/users.ts';
 
 const LOCKED = 'Too many failed tries. Wait 15 minutes, then try again.';
+const WRONG = 'Wrong login or password.';
 
 route('login', 'POST', 'auth/login', 'public', async (ctx) => {
   const login = text(ctx.body, 'login', 'Login', 40).toLowerCase();
-  if (!LOGIN.test(login)) throw new HttpError(401, 'Wrong login or password.');
+  if (!LOGIN.test(login)) throw new HttpError(401, WRONG);
   const password = rawString(ctx.body, 'password');
   const now = new Date();
   const loginKey = `login:${login}`;
@@ -28,7 +29,7 @@ route('login', 'POST', 'auth/login', 'public', async (ctx) => {
   if (reservation.locked) throw new HttpError(429, LOCKED);
   const user = await findUserByLogin(db, login);
   const matches = await verifyPassword(password, user?.passwordHash ?? (await dummyHash()));
-  if (!user || !user.active || !matches) throw new HttpError(401, 'Wrong login or password.');
+  if (!user || !user.active || !matches) throw new HttpError(401, WRONG);
   await clearAttempt(db, loginKey);
   const ipRow = reservation.rows.get(ipKey);
   if (ipRow) {
@@ -38,7 +39,10 @@ route('login', 'POST', 'auth/login', 'public', async (ctx) => {
   }
   await pruneExpiredSessions(db);
   const token = newToken();
-  await createSession(db, hashToken(token), user.id, expiryFrom(now));
+  // False when an admin reset the password or disabled the user after the check above.
+  if (!(await createSession(db, hashToken(token), user.id, expiryFrom(now), user.passwordHash))) {
+    throw new HttpError(401, WRONG);
+  }
   ctx.cookies.push(sessionCookie(ctx.config.cookieSecure, token));
   return toSessionUser(user);
 });
@@ -62,8 +66,14 @@ route('changePassword', 'PUT', 'me/password', 'user', async (ctx) => {
   }
   const problem = passwordProblem(next);
   if (problem) throw new HttpError(400, problem);
-  await updateUser(db, record.id, { passwordHash: await hashPassword(next) });
+  const passwordHash = await hashPassword(next);
   const token = sessionToken(ctx.request.headers.get('cookie'), ctx.config);
-  await deleteUserSessions(db, record.id, token ? hashToken(token) : '');
+  await transaction(async (tx) => {
+    // False when an admin reset the password or disabled the user after the check above.
+    if (!(await replacePasswordHash(tx, record.id, record.passwordHash, passwordHash))) {
+      throw new HttpError(400, 'Your current password is wrong.');
+    }
+    await deleteUserSessions(tx, record.id, token ? hashToken(token) : '');
+  });
   return undefined;
 });
