@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useState } from 'react';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import type { AdminRound, DeployResult, PublishResult, RoundReview, SiteStatus } from '../domain/api-types';
 import { useFocusIfLost } from '../hooks/useFocusIfLost';
 import { api, errorMessage } from '../lib/api';
@@ -20,21 +20,38 @@ export function PublishTab({ rounds, catalogSize, onRounds }: PublishTabProps) {
     .filter((round) => round.status === 'published')
     .sort((a, b) => (b.publishedOn ?? '').localeCompare(a.publishedOn ?? '') || b.id.localeCompare(a.id));
   const [site, setSite] = useState<SiteStatus>();
+  const [siteError, setSiteError] = useState('');
+  const [siteFailures, setSiteFailures] = useState(0);
+  const siteRun = useRef(0);
   const [notice, setNotice] = useState<{ title: string; text: string }>();
   const [error, setError] = useState('');
-  /** Remounts the alert and the notice, so each result is announced (or focused) again. */
+  /** Remounts the notice, so each publish or reopen result takes focus again. */
   const [attempt, setAttempt] = useState(0);
+  /** Remounts the alert, so each failure is announced again. */
+  const [failures, setFailures] = useState(0);
+  const [busy, setBusy] = useState(false);
 
+  // Only the latest read lands, so a slow older answer can't overwrite a newer one.
   const loadSite = useCallback(() => {
-    api<SiteStatus>('GET', '/admin/site').then(setSite, (reason: unknown) => {
-      setError(errorMessage(reason));
-      setAttempt((count) => count + 1);
-    });
+    const mine = ++siteRun.current;
+    api<SiteStatus>('GET', '/admin/site').then(
+      (next) => {
+        if (mine !== siteRun.current) return;
+        setSite(next);
+        setSiteError('');
+      },
+      (reason: unknown) => {
+        if (mine !== siteRun.current) return;
+        setSiteError(errorMessage(reason));
+        setSiteFailures((count) => count + 1);
+      },
+    );
   }, []);
 
   useEffect(loadSite, [loadSite]);
 
   const setStatus = async (round: AdminRound, body: Record<string, string>, title: string, text?: string) => {
+    setBusy(true);
     setError('');
     setNotice(undefined);
     setAttempt((count) => count + 1);
@@ -47,10 +64,14 @@ export function PublishTab({ rounds, catalogSize, onRounds }: PublishTabProps) {
       loadSite();
     } catch (reason) {
       setError(errorMessage(reason));
+      setFailures((count) => count + 1);
+    } finally {
+      setBusy(false);
     }
   };
 
   const reopen = (round: AdminRound) => {
+    if (busy) return;
     if (!confirm(`Reopen ${round.label}? Raters can change their cards again until you publish it again.`)) return;
     void setStatus(
       round,
@@ -63,9 +84,9 @@ export function PublishTab({ rounds, catalogSize, onRounds }: PublishTabProps) {
   return (
     <div className={styles.publishTab}>
       {/* Before NewRoundForm: after a publish both mount, and the notice's focus effect runs first. */}
-      {notice && <Notice key={attempt} title={notice.title} text={notice.text} />}
+      {notice && <Notice key={`notice-${attempt}`} title={notice.title} text={notice.text} />}
       {error && (
-        <p key={attempt} className={styles.error} role="alert">
+        <p key={`error-${failures}`} className={styles.error} role="alert">
           {error}
         </p>
       )}
@@ -84,7 +105,9 @@ export function PublishTab({ rounds, catalogSize, onRounds }: PublishTabProps) {
         <NewRoundForm rounds={rounds} onCreated={onRounds} />
       )}
 
-      {site && <SitePanel site={site} onCheck={loadSite} />}
+      {(site || siteError) && (
+        <SitePanel site={site} readError={siteError} readFailures={siteFailures} onCheck={loadSite} />
+      )}
 
       {published.length > 0 && (
         <section className={styles.panel}>
@@ -97,8 +120,13 @@ export function PublishTab({ rounds, catalogSize, onRounds }: PublishTabProps) {
                   {round.scorecards} {round.scorecards === 1 ? 'card' : 'cards'}
                 </span>
                 {index === 0 && !open && (
-                  <button type="button" className={styles.secondary} onClick={() => reopen(round)}>
-                    Reopen
+                  <button
+                    type="button"
+                    className={styles.secondary}
+                    aria-disabled={busy}
+                    onClick={() => reopen(round)}
+                  >
+                    {busy ? 'Reopening…' : 'Reopen'}
                   </button>
                 )}
               </li>
@@ -129,7 +157,12 @@ function Notice({ title, text }: { title: string; text: string }) {
 }
 
 interface SitePanelProps {
-  site: SiteStatus;
+  /** Undefined until a read has worked: the panel then shows only the failure and Check again. */
+  site: SiteStatus | undefined;
+  /** The latest read's failure. The last status that did load stays on screen beside it. */
+  readError?: string;
+  /** Remounts the read failure's alert, so each failure is announced again. */
+  readFailures?: number;
   onCheck: () => void;
 }
 
@@ -137,7 +170,7 @@ interface SitePanelProps {
  * "Behind" stays true until the deploy workflow confirms its build, about two minutes after an update starts.
  * Exported for markup tests.
  */
-export function SitePanel({ site, onCheck }: SitePanelProps) {
+export function SitePanel({ site, readError = '', readFailures = 0, onCheck }: SitePanelProps) {
   const [updating, setUpdating] = useState(false);
   const [result, setResult] = useState('');
   const [failure, setFailure] = useState('');
@@ -163,30 +196,34 @@ export function SitePanel({ site, onCheck }: SitePanelProps) {
   return (
     <section className={styles.panel}>
       <h2 className={styles.panelTitle}>
-        {site.behind ? 'The public site is behind' : 'The public site is up to date'}
+        {!site ? 'Public site status' : site.behind ? 'The public site is behind' : 'The public site is up to date'}
       </h2>
       <p className={styles.muted}>
-        {site.lastSnapshotAt
-          ? `The live site shows the database as of ${formatTimestamp(site.lastSnapshotAt)}.`
-          : 'No deploy has confirmed a build from the database yet.'}
-        {site.lastSnapshotAt && site.behind && ' Published ratings, notes, or the catalog changed since then.'}
+        {!site
+          ? "The site status didn't load."
+          : site.lastSnapshotAt
+            ? `The live site shows the database as of ${formatTimestamp(site.lastSnapshotAt)}.`
+            : 'No deploy has confirmed a build from the database yet.'}
+        {site?.lastSnapshotAt && site.behind && ' Published ratings, notes, or the catalog changed since then.'}
       </p>
+      {/* Check again keeps its place with or without a status, so it keeps focus when a retry works. */}
       <div className={styles.fields}>
-        {site.deployConfigured ? (
-          <button
-            type="button"
-            className={site.behind ? styles.primary : styles.secondary}
-            aria-disabled={updating}
-            onClick={() => void updateSite()}
-          >
-            {updating ? 'Starting the update…' : 'Update public site'}
-          </button>
-        ) : (
-          <p className={styles.warn}>
-            Automatic site updates are not set up. Set GITHUB_DISPATCH_TOKEN and GITHUB_REPO in the Function App
-            settings.
-          </p>
-        )}
+        {site &&
+          (site.deployConfigured ? (
+            <button
+              type="button"
+              className={site.behind ? styles.primary : styles.secondary}
+              aria-disabled={updating}
+              onClick={() => void updateSite()}
+            >
+              {updating ? 'Starting the update…' : 'Update public site'}
+            </button>
+          ) : (
+            <p className={styles.warn}>
+              Automatic site updates are not set up. Set GITHUB_DISPATCH_TOKEN and GITHUB_REPO in the Function App
+              settings.
+            </p>
+          ))}
         <button type="button" className={styles.secondary} onClick={onCheck}>
           Check again
         </button>
@@ -194,8 +231,13 @@ export function SitePanel({ site, onCheck }: SitePanelProps) {
           {result}
         </span>
         {failure && (
-          <span key={attempt} className={styles.error} role="alert">
+          <span key={`update-${attempt}`} className={styles.error} role="alert">
             {failure}
+          </span>
+        )}
+        {readError && (
+          <span key={`read-${readFailures}`} className={styles.error} role="alert">
+            {readError}
           </span>
         )}
       </div>
@@ -214,23 +256,36 @@ interface OpenRoundProps {
 function OpenRound({ round, catalogSize, earliestDate, onPublish }: OpenRoundProps) {
   const [review, setReview] = useState<RoundReview>();
   const [error, setError] = useState('');
+  const [failures, setFailures] = useState(0);
+  const [run, setRun] = useState(0);
+  const [retrying, setRetrying] = useState(false);
 
   useEffect(() => {
     const controller = new AbortController();
     api<RoundReview>('GET', `/admin/rounds/${round.id}/review`, undefined, { signal: controller.signal }).then(
       setReview,
       (reason: unknown) => {
-        if (!controller.signal.aborted) setError(errorMessage(reason));
+        if (controller.signal.aborted) return;
+        setError(errorMessage(reason));
+        setFailures((count) => count + 1);
+        setRetrying(false);
       },
     );
     return () => controller.abort();
-  }, [round.id]);
+  }, [round.id, run]);
 
-  if (error) {
+  if (!review && error) {
     return (
-      <p className={styles.error} role="alert">
-        {error}
-      </p>
+      <ReadFailed
+        title={`Could not check ${round.label}`}
+        message={error}
+        attempt={failures}
+        busy={retrying}
+        onRetry={() => {
+          setRetrying(true);
+          setRun((count) => count + 1);
+        }}
+      />
     );
   }
   if (!review) return <p className={styles.muted}>Checking {round.label}…</p>;
@@ -242,6 +297,40 @@ function OpenRound({ round, catalogSize, earliestDate, onPublish }: OpenRoundPro
       earliestDate={earliestDate}
       onPublish={onPublish}
     />
+  );
+}
+
+interface ReadFailedProps {
+  title: string;
+  message: string;
+  /** Remounts the alert, so the same message is announced again after another failed try. */
+  attempt: number;
+  busy: boolean;
+  onRetry: () => void;
+}
+
+/** A failed read with Try again, which stays mounted and focusable while the retry runs. */
+function ReadFailed({ title, message, attempt, busy, onRetry }: ReadFailedProps) {
+  const heading = useFocusIfLost<HTMLHeadingElement>();
+  return (
+    <section className={styles.panel}>
+      <h2 ref={heading} tabIndex={-1} className={styles.panelTitle}>
+        {title}
+      </h2>
+      <p key={attempt} className={styles.error} role="alert">
+        {message}
+      </p>
+      <button
+        type="button"
+        className={styles.secondary}
+        aria-disabled={busy}
+        onClick={() => {
+          if (!busy) onRetry();
+        }}
+      >
+        {busy ? 'Trying again…' : 'Try again'}
+      </button>
+    </section>
   );
 }
 
