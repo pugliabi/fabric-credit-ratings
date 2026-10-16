@@ -5,7 +5,7 @@ import type { AdminRound, DeployResult, SessionUser } from '../../../src/domain/
 import type { Artifact, Round } from '../../../src/domain/types.ts';
 import type { Dataset } from '../domain/dataset.ts';
 import type { Config } from '../lib/config.ts';
-import { transaction, type Db } from '../lib/db.ts';
+import { DatabaseUnavailableError, transaction, type Db } from '../lib/db.ts';
 import { createDrafter, type Drafter } from '../lib/draft-why.ts';
 import { startDeploy } from '../lib/github.ts';
 import type { UserCtx } from '../lib/http.ts';
@@ -553,6 +553,24 @@ describe('adminDraft', () => {
     }
   });
 
+  it('answers the database 503, calling no drafter, when the dataset load used up the deadline', async () => {
+    const deadline = new AbortController();
+    const timeout = vi.spyOn(AbortSignal, 'timeout').mockReturnValue(deadline.signal);
+    vi.mocked(loadDataset).mockImplementation(async () => {
+      deadline.abort(new DOMException('The operation was aborted due to timeout', 'TimeoutError'));
+      return scored;
+    });
+
+    try {
+      const drafting = call('adminDraft', { id: open.id, artifactId: 'notebook' });
+      await expect(drafting).rejects.toBeInstanceOf(DatabaseUnavailableError);
+      await expect(drafting).rejects.toThrow(/^Loading the dataset for an AI draft took \d+ ms\.$/);
+      expect(drafter).not.toHaveBeenCalled();
+    } finally {
+      timeout.mockRestore();
+    }
+  });
+
   it("drafts from the round's scores and returns the text", async () => {
     drafter.mockResolvedValue('Solid and complete.');
 
@@ -607,6 +625,8 @@ describe('adminDraft', () => {
       requestId: 'req_529',
       type: 'overloaded_error',
       error: `InternalServerError: 529 ${JSON.stringify(body)}`,
+      loadMs: expect.any(Number),
+      elapsedMs: expect.any(Number),
     });
   });
 });

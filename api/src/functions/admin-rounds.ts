@@ -3,7 +3,7 @@ import { pointFor, previousPoint } from '../../../src/domain/aggregate.ts';
 import type { Round } from '../../../src/domain/types.ts';
 import { buildReview } from '../domain/review.ts';
 import type { Config } from '../lib/config.ts';
-import { db, transaction, type Db } from '../lib/db.ts';
+import { DatabaseUnavailableError, db, transaction, type Db } from '../lib/db.ts';
 import { createDrafter, failureDetails } from '../lib/draft-why.ts';
 import { HttpError } from '../lib/errors.ts';
 import { startDeploy } from '../lib/github.ts';
@@ -158,10 +158,14 @@ route('adminNotePut', 'PUT', 'admin/rounds/{id}/notes/{artifactId}', 'admin', as
 
 route('adminDraft', 'POST', 'admin/rounds/{id}/draft/{artifactId}', 'admin', async (ctx) => {
   // Started first, so a slow dataset load (a paused database can take 150 s) counts against it too.
+  const started = Date.now();
   const deadline = AbortSignal.timeout(DRAFT_DEADLINE_MS);
   const drafter = createDrafter(ctx.config.anthropic);
   if (!drafter) throw new HttpError(400, 'Set ANTHROPIC_API_KEY in the Function App settings to draft with AI.');
   const data = await loadDataset(db);
+  const loadMs = Date.now() - started;
+  // The load can't be interrupted, so it may have used up the deadline; that's the database's time, not Anthropic's.
+  if (deadline.aborted) throw new DatabaseUnavailableError(`Loading the dataset for an AI draft took ${loadMs} ms.`);
   const target = data.rounds.find((item) => item.round.id === ctx.params.id);
   if (!target) throw noSuchRound(ctx.params.id ?? '');
   const artifact = data.artifacts.find((item) => item.id === ctx.params.artifactId);
@@ -185,7 +189,8 @@ route('adminDraft', 'POST', 'admin/rounds/{id}/draft/{artifactId}', 'admin', asy
     );
     return { text: draft };
   } catch (error) {
-    ctx.log.warn('AI draft failed', failureDetails(error, ctx.config.anthropic));
+    const timing = { loadMs, elapsedMs: Date.now() - started };
+    ctx.log.warn('AI draft failed', { ...failureDetails(error, ctx.config.anthropic), ...timing });
     throw new HttpError(502, error instanceof Error ? error.message : String(error));
   }
 });
