@@ -166,3 +166,14 @@ export function redact(text: string, secrets: readonly string[]): string {
 export function commandData(text: string): string {
   return text.replace(/%/g, '%25').replace(/\r/g, '%0D').replace(/\n/g, '%0A');
 }
+
+/**
+ * On Actions the token travels in a request header to a public host, so the base URL must be https. Locally, plain
+ * http to a Functions host on localhost is the normal case.
+ */
+export function baseProblem(base: string, onActions: boolean): string | undefined {
+  if (onActions && !/^https:\/\//i.test(base)) {
+    return 'FCR_API_URL must start with https:// on Actions, because the snapshot token travels in a header.';
+  }
+  return undefined;
+}

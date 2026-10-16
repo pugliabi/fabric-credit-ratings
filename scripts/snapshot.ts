@@ -1,6 +1,7 @@
 import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
 import type { Snapshot } from '../src/domain/api-types.ts';
 import {
+  baseProblem,
   commandData,
   failureReason,
   headerToken,
@@ -90,6 +91,11 @@ async function confirm(base: string, token: string, generatedAt: string): Promis
 }
 
 const base = (process.env.FCR_API_URL || 'http://localhost:7071').replace(/\/+$/, '');
+const baseIssue = baseProblem(base, Boolean(process.env.GITHUB_ACTIONS));
+if (baseIssue) {
+  console.error(`::error::${commandData(baseIssue)}`);
+  process.exit(1);
+}
 const rawToken = configuredToken();
 const token = headerToken(rawToken);
 // Node's errors can quote a header value or a whole URL, so warnings never show the token or the URL's secrets.

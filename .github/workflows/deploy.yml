@@ -17,11 +17,16 @@ concurrency:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+          # The token is not left in .git/config for build-time code to find; the commit step adds it per command.
+          persist-credentials: false
 
       - uses: actions/setup-node@v4
         with:
@@ -46,14 +51,20 @@ jobs:
         run: npm run snapshot
 
       - name: Commit the snapshot if it changed
+        if: github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           if git diff --quiet -- src/data/snapshot.json; then exit 0; fi
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add src/data/snapshot.json
           git commit -m "Snapshot $(node -p "require('./src/data/snapshot.json').asOf || 'empty'")"
+          # The same header actions/checkout would have persisted, scoped to these two commands.
+          auth="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)"
           for _ in 1 2 3; do
-            if git pull --rebase origin "$GITHUB_REF_NAME" && git push origin "HEAD:$GITHUB_REF_NAME"; then exit 0; fi
+            if git -c http.extraheader="$auth" pull --rebase origin "$GITHUB_REF_NAME" \
+                && git -c http.extraheader="$auth" push origin "HEAD:$GITHUB_REF_NAME"; then exit 0; fi
             git rebase --abort 2>/dev/null || true
             sleep 5
           done
@@ -78,8 +89,9 @@ jobs:
           GENERATED_AT: ${{ steps.snapshot.outputs.generatedAt }}
         run: |
           body=$(jq -cn --arg at "$GENERATED_AT" '{generatedAt: $at}')
-          if ! curl -sS --fail-with-body --max-time 200 --retry 2 -X POST \
-              "${FCR_API_URL%/}/api/build/snapshot/deployed" \
-              -H "Authorization: Bearer $SNAPSHOT_TOKEN" -H 'Content-Type: application/json' --data "$body"; then
+          # The token reaches curl through stdin (-H @-), never the command line.
+          if ! printf 'Authorization: Bearer %s\n' "$SNAPSHOT_TOKEN" | curl -sS --fail-with-body --max-time 200 --retry 2 \
+              -X POST "${FCR_API_URL%/}/api/build/snapshot/deployed" \
+              -H @- -H 'Content-Type: application/json' --data "$body"; then
             echo "::warning::The site is live, but the API wasn't told. The admin page shows it as behind until the next deploy."
           fi

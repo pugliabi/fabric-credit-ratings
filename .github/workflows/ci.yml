@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches-ignore: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            api/package-lock.json
+
+      - run: npm ci
+
+      # Core Tools' postinstall downloads a ~585 MB zip that the build never uses (and fails on Node 24).
+      - run: npm ci --prefix api --ignore-scripts
+
+      - run: npm run typecheck
+
+      # Network-free: vitest.setup.ts refuses sockets, fetch and child processes unless FCR_API_URL or FCR_DB_TESTS is set.
+      - run: npm test
+
+      - run: npx vite build
+
+      - name: Check the site bundle for secrets and the grade formula
+        run: |
+          if grep -rEl 'sk-ant-|ghp_[A-Za-z0-9]|gho_[A-Za-z0-9]|github_pat_|21:"AAA"' dist; then
+            echo "::error::dist/ contains a token shape or the grade formula."
+            exit 1
+          fi
+          echo "dist/ is clean."

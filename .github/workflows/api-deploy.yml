@@ -1,0 +1,88 @@
+name: Deploy the API
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'api/**'
+      - 'src/domain/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/api-deploy.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+  actions: write
+
+concurrency:
+  group: api-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: api
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            api/package-lock.json
+
+      - run: npm ci
+
+      # Core Tools' postinstall downloads a ~585 MB zip that the build never uses (and fails on Node 24).
+      - run: npm ci --ignore-scripts
+        working-directory: api
+
+      - run: npm run typecheck
+
+      # Network-free: vitest.setup.ts refuses sockets, fetch and child processes unless FCR_API_URL or FCR_DB_TESTS is set.
+      - run: npm test
+
+      - name: Build and package
+        working-directory: api
+        run: |
+          npm run build
+          mkdir -p ../.deploy
+          cp host.json package.json package-lock.json ../.deploy/
+          cp -r dist ../.deploy/dist
+          npm ci --omit=dev --ignore-scripts --prefix ../.deploy
+
+      - uses: azure/login@v3
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - uses: Azure/functions-action@v1
+        with:
+          app-name: ${{ vars.AZURE_FUNCTIONAPP_NAME }}
+          package: .deploy
+
+      - name: Check the API answers
+        if: ${{ vars.API_URL != '' }}
+        run: |
+          for attempt in 1 2 3 4 5 6; do
+            if curl -fsS --max-time 60 "${{ vars.API_URL }}/api/health"; then exit 0; fi
+            sleep 10
+          done
+          echo "::error::${{ vars.API_URL }}/api/health did not answer after the deploy."
+          exit 1
+
+      # A push that touches the site too already started deploy.yml, possibly against the old API. This run
+      # rebuilds the site against the new one; a snapshot that didn't change costs nothing.
+      - name: Rebuild the site against the new API
+        if: ${{ github.event_name == 'push' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run deploy.yml --ref main

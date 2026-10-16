@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
+  baseProblem,
   commandData,
   failureReason,
   headerToken,
@@ -206,5 +207,18 @@ describe('tokenSecrets', () => {
 describe('commandData', () => {
   it('escapes a workflow command message so it stays on one line', () => {
     expect(commandData('50% done\r\n::error::x')).toBe('50%25 done%0D%0A::error::x');
+  });
+});
+
+describe('baseProblem', () => {
+  it('refuses a non-https base on Actions', () => {
+    expect(baseProblem('http://fcr-api.azurewebsites.net', true)).toMatch(/must start with https:\/\//);
+    expect(baseProblem('ftp://example.test', true)).toBeDefined();
+  });
+
+  it('accepts https on Actions, and anything locally', () => {
+    expect(baseProblem('https://api.fabriccreditratings.com', true)).toBeUndefined();
+    expect(baseProblem('HTTPS://api.fabriccreditratings.com', true)).toBeUndefined();
+    expect(baseProblem('http://localhost:7071', false)).toBeUndefined();
   });
 });
