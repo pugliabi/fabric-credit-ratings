@@ -3,8 +3,8 @@ import type { Catalog, MyScores, SessionUser } from '../domain/api-types';
 import type { FactorValues } from '../domain/types';
 import { useFocusIfLost } from '../hooks/useFocusIfLost';
 import { api, ApiError, errorMessage } from '../lib/api';
-import { draftFromScores, draftFromValues, hasChanges, rebase, summarize, type Draft, type DraftTriple } from './draft';
-import { CHANGED_ELSEWHERE, saveCard, saveFailureMessage, saveStateText, type SaveStatus } from './save';
+import { draftFromScores, draftFromValues, hasChanges, summarize, type Draft, type DraftTriple } from './draft';
+import { pressSave, saveBlocked, saveStateText, type SaveStatus } from './save';
 import { ScoreMatrix } from './ScoreMatrix';
 import { cardDraftPrefix, usePersistentDraft } from './usePersistentDraft';
 import styles from './Editor.module.css';
@@ -119,17 +119,21 @@ interface CardFormProps {
 export function CardForm({ user, catalog, card, reference, onSaved }: CardFormProps) {
   const { round, previous } = card;
   const saved = useMemo(() => draftFromScores(card.scores), [card.scores]);
-  const { draft, setTriple, replace, restored } = usePersistentDraft(`${cardDraftPrefix(user.id)}${round.id}`, saved);
+  const ids = useMemo(() => new Set(catalog.artifacts.map((artifact) => artifact.id)), [catalog.artifacts]);
+  const { draft, setTriple, replace, restored } = usePersistentDraft(
+    `${cardDraftPrefix(user.id)}${round.id}`,
+    saved,
+    ids,
+  );
   const [status, setStatus] = useState<SaveStatus>({ kind: 'idle' });
   const [attempt, setAttempt] = useState(0);
   const toolbar = useFocusIfLost<HTMLDivElement>();
 
-  const ids = useMemo(() => new Set(catalog.artifacts.map((artifact) => artifact.id)), [catalog.artifacts]);
   const summary = summarize(draft, catalog.artifacts);
   const dirty = hasChanges(draft, saved, ids);
   const touched = summary.rated + summary.partial.length > 0;
   const hasReference = Object.keys(reference).length > 0;
-  const blocked = !dirty || summary.partial.length > 0 || status.kind === 'saving';
+  const blocked = saveBlocked(dirty, summary.partial.length, status.kind === 'saving');
 
   // An old error no longer describes the card once the user changes it.
   const dropError = useCallback(
@@ -149,30 +153,23 @@ export function CardForm({ user, catalog, card, reference, onSaved }: CardFormPr
     dropError();
   };
 
-  const save = async () => {
-    const sent = draft;
-    setAttempt((count) => count + 1);
-    setStatus({ kind: 'saving' });
-    try {
-      const outcome = await saveCard(round.id, saved, summary.scores);
-      const next = draftFromScores(outcome.card.scores);
-      // Rebased, not replaced: slider moves made while the request was out must survive its answer.
-      if (outcome.kind === 'changed') {
-        replace((current) => rebase(saved, current, next));
-        onSaved(outcome.card);
-        const nothingLeft = !hasChanges(rebase(saved, sent, next), next, ids);
-        setStatus(nothingLeft ? { kind: 'idle' } : { kind: 'error', message: CHANGED_ELSEWHERE, reload: false });
-        return;
-      }
-      replace((current) => rebase(sent, current, next));
-      onSaved(outcome.card);
-      setStatus({ kind: 'idle' });
-    } catch (reason) {
-      // The stored draft stays put on every failure; a 401 unmounts this form and the login notice says so.
-      const reload = reason instanceof ApiError && reason.status === 409;
-      setStatus({ kind: 'error', message: saveFailureMessage(reason), reload });
-    }
-  };
+  // The stored draft stays put on every failure; a 401 unmounts this form and the login notice says so.
+  const save = () =>
+    pressSave(
+      { blocked, roundId: round.id, saved, sent: draft, scores: summary.scores, ids },
+      {
+        saving: () => {
+          setAttempt((count) => count + 1);
+          setStatus({ kind: 'saving' });
+        },
+        saved: (next, settled) => {
+          replace(settled.draft);
+          onSaved(next);
+          setStatus(settled.status);
+        },
+        failed: setStatus,
+      },
+    );
 
   const prefill = (next: Draft, what: string) => {
     if (touched && !confirm(`Replace your sliders with ${what}?`)) return;
@@ -224,7 +221,14 @@ export function CardForm({ user, catalog, card, reference, onSaved }: CardFormPr
             </button>
           )}
           {dirty && (
-            <button type="button" className={styles.secondary} onClick={() => change(saved)}>
+            <button
+              type="button"
+              className={styles.secondary}
+              onClick={() => {
+                change(saved);
+                toolbar.current?.focus();
+              }}
+            >
               Discard changes
             </button>
           )}
@@ -233,21 +237,16 @@ export function CardForm({ user, catalog, card, reference, onSaved }: CardFormPr
               type="button"
               className={styles.secondary}
               onClick={() => {
-                if (confirm('Clear every slider?')) change(EMPTY);
+                if (!confirm('Clear every slider?')) return;
+                change(EMPTY);
+                toolbar.current?.focus();
               }}
             >
               Clear all
             </button>
           )}
           {/* aria-disabled, not disabled: a disabled button drops keyboard focus to the page when a save starts. */}
-          <button
-            type="button"
-            className={styles.primary}
-            aria-disabled={blocked}
-            onClick={() => {
-              if (!blocked) void save();
-            }}
-          >
+          <button type="button" className={styles.primary} aria-disabled={blocked} onClick={() => void save()}>
             Save scores
           </button>
         </div>

@@ -2,7 +2,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { MyScores } from '../domain/api-types';
 import type { Round } from '../domain/types';
 import { ApiError } from '../lib/api';
-import { saveCard, saveFailureMessage, saveStateText } from './save';
+import type { Draft } from './draft';
+import {
+  CHANGED_ELSEWHERE,
+  pressSave,
+  saveBlocked,
+  saveCard,
+  saveFailureMessage,
+  saveStateText,
+  settleSave,
+} from './save';
 
 const round: Round = { id: '2026-Q4', label: 'Q4 2026', status: 'open', publishedOn: null };
 const loaded = { notebook: [5, 5, 5] } as const;
@@ -70,6 +79,95 @@ describe('saveCard', () => {
       status: 409,
       message: error,
     });
+  });
+
+  it('sends no PUT when the check itself fails', async () => {
+    const fetchMock = vi.fn(async () => reply(503, { error: 'The ratings database is not responding.' }));
+    vi.stubGlobal('fetch', fetchMock);
+    await expect(saveCard(round.id, loaded, { notebook: [6, 5, 5] })).rejects.toMatchObject({ status: 503 });
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
+});
+
+describe('settleSave', () => {
+  const ids = new Set(['notebook', 'lakehouse']);
+  const base: Draft = { notebook: [5, 5, 5] };
+  const sent: Draft = { notebook: [6, 5, 5] };
+
+  it('keeps a slider moved while the save was out', () => {
+    const after = settleSave({ kind: 'saved', card: card({ notebook: [6, 5, 5] }) }, base, sent, ids);
+    expect(after.draft({ ...sent, lakehouse: [2, 2, 2] })).toEqual({ ...sent, lakehouse: [2, 2, 2] });
+    expect(after.status).toEqual({ kind: 'idle' });
+  });
+
+  it('puts the edits on top of a card changed elsewhere, keeps later moves, and asks for a check', () => {
+    const newer = card({ notebook: [5, 5, 5], lakehouse: [4, 4, 4] });
+    const after = settleSave({ kind: 'changed', card: newer }, base, sent, ids);
+    expect(after.draft({ notebook: [7, 5, 5] })).toEqual({ notebook: [7, 5, 5], lakehouse: [4, 4, 4] });
+    expect(after.status).toMatchObject({ kind: 'error', message: CHANGED_ELSEWHERE });
+  });
+
+  it('says nothing when the other save already holds these edits', () => {
+    const newer = card({ notebook: [6, 5, 5], lakehouse: [4, 4, 4] });
+    expect(settleSave({ kind: 'changed', card: newer }, base, sent, ids).status).toEqual({ kind: 'idle' });
+  });
+});
+
+describe('saveBlocked', () => {
+  it('blocks a clean card, an incomplete row, and a second save while one is out', () => {
+    expect(saveBlocked(true, 0, false)).toBe(false);
+    expect(saveBlocked(false, 0, false)).toBe(true);
+    expect(saveBlocked(true, 1, false)).toBe(true);
+    expect(saveBlocked(true, 0, true)).toBe(true);
+  });
+});
+
+describe('pressSave', () => {
+  const ids = new Set(['notebook', 'lakehouse']);
+  const sent: Draft = { notebook: [6, 5, 5] };
+
+  function page() {
+    return { saving: vi.fn(), saved: vi.fn(), failed: vi.fn() };
+  }
+
+  function form(blocked: boolean) {
+    return { blocked, roundId: round.id, saved: loaded, sent, scores: { notebook: [6, 5, 5] } as const, ids };
+  }
+
+  it('does nothing while Save is blocked, so an incomplete row never reaches the server', async () => {
+    const fetchMock = vi.fn(async () => reply(200, card(loaded)));
+    vi.stubGlobal('fetch', fetchMock);
+    const handlers = page();
+    await pressSave(form(true), handlers);
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(handlers.saving).not.toHaveBeenCalled();
+    expect(handlers.saved).not.toHaveBeenCalled();
+  });
+
+  it('saves, then hands back the card and a rebase that keeps sliders moved meanwhile', async () => {
+    const after = card({ notebook: [6, 5, 5] }, '2026-10-15T23:05:00.000Z');
+    const api = server(card(loaded), () => reply(200, after));
+    const handlers = page();
+    await pressSave(form(false), handlers);
+    expect(api.calls()).toEqual(['GET /api/rounds/open/my-scores', 'PUT /api/rounds/open/my-scores']);
+    expect(handlers.saving).toHaveBeenCalledOnce();
+    const [savedCard, settled] = handlers.saved.mock.calls[0] ?? [];
+    expect(savedCard).toEqual(after);
+    expect(settled.draft({ ...sent, lakehouse: [2, 2, 2] })).toEqual({ ...sent, lakehouse: [2, 2, 2] });
+    expect(handlers.failed).not.toHaveBeenCalled();
+  });
+
+  it("reports a failed save in the server's words, with Reload after a 409, and leaves the draft alone", async () => {
+    const error = 'No round is open for scoring right now.';
+    vi.stubGlobal('fetch', vi.fn(async () => reply(409, { error })));
+    const handlers = page();
+    await pressSave(form(false), handlers);
+    expect(handlers.failed).toHaveBeenCalledWith({
+      kind: 'error',
+      message: `${error} Your draft is kept in this browser.`,
+      reload: true,
+    });
+    expect(handlers.saved).not.toHaveBeenCalled();
   });
 });
 
