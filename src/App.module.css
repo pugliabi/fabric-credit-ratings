@@ -80,3 +80,12 @@
     align-items: flex-start;
   }
 }
+
+.empty {
+  padding: 28px 24px;
+  border: 1px dashed var(--rule-strong);
+  border-radius: var(--radius-lg);
+  background: var(--white);
+  color: var(--ink-muted);
+  text-align: center;
+}

@@ -7,11 +7,10 @@ import styles from './SiteHeader.module.css';
 
 interface SiteHeaderProps {
   ratings: Rating[];
-  itemCount: number;
   asOf: string;
 }
 
-export function SiteHeader({ ratings, itemCount, asOf }: SiteHeaderProps) {
+export function SiteHeader({ ratings, asOf }: SiteHeaderProps) {
   const grades = ratings.map((r) => r.current.grade);
   const investment = grades.filter(isInvestmentGrade).length;
   const median = medianGrade(grades);
@@ -28,10 +27,7 @@ export function SiteHeader({ ratings, itemCount, asOf }: SiteHeaderProps) {
         <dl className={styles.stats}>
           <div className={styles.stat}>
             <dt>Items rated</dt>
-            <dd>
-              {ratings.length}
-              <span className={styles.statSub}> of {itemCount}</span>
-            </dd>
+            <dd>{ratings.length}</dd>
           </div>
           <div className={styles.stat}>
             <dt>Investment grade</dt>

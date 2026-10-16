@@ -1,8 +1,8 @@
 import { useRef, type KeyboardEvent } from 'react';
 import { gradeIndex, isInvestmentGrade, medianGrade } from '../domain/grades';
-import type { Artifact, Rating, Workload } from '../domain/types';
+import type { Rating, Workload } from '../domain/types';
 import { pluralize } from '../lib/format';
-import { ArtifactRow, UnratedRow } from './ArtifactRow';
+import { ArtifactRow } from './ArtifactRow';
 import { Chevron } from './Chevron';
 import { Collapsible } from './Collapsible';
 import { DistributionBar } from './DistributionBar';
@@ -12,7 +12,6 @@ import styles from './WorkloadSection.module.css';
 interface WorkloadSectionProps {
   workload: Workload;
   ratings: Rating[];
-  unrated: Artifact[];
   open: boolean;
   openRowId: string | undefined;
   asOf: string;
@@ -24,7 +23,6 @@ interface WorkloadSectionProps {
 export function WorkloadSection({
   workload,
   ratings,
-  unrated,
   open,
   openRowId,
   asOf,
@@ -39,7 +37,6 @@ export function WorkloadSection({
   const grades = sorted.map((r) => r.current.grade);
   const median = medianGrade(grades);
   const investment = grades.filter(isInvestmentGrade).length;
-  const itemCount = sorted.length + unrated.length;
   const headingId = `${workload.id}-heading`;
   const panelId = `${workload.id}-panel`;
 
@@ -71,7 +68,7 @@ export function WorkloadSection({
           <span className={styles.titleBlock}>
             <span className={styles.name}>{workload.name}</span>
             <span className={styles.meta}>
-              {pluralize(itemCount, 'item')} · {workload.blurb}
+              {pluralize(sorted.length, 'item')} · {workload.blurb}
             </span>
           </span>
           <span className={styles.summary}>
@@ -84,9 +81,6 @@ export function WorkloadSection({
               </>
             ) : (
               <span className={styles.summaryText}>Not yet rated</span>
-            )}
-            {sorted.length > 0 && unrated.length > 0 && (
-              <span className={styles.summaryText}>{unrated.length} not rated</span>
             )}
           </span>
           <span className={styles.median}>
@@ -107,11 +101,6 @@ export function WorkloadSection({
                 open={openRowId === rating.artifact.id}
                 onToggle={() => onToggleRow(rating.artifact.id)}
               />
-            </li>
-          ))}
-          {unrated.map((artifact) => (
-            <li key={artifact.id}>
-              <UnratedRow artifact={artifact} />
             </li>
           ))}
         </ul>
