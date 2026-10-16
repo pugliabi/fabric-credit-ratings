@@ -1,7 +1,14 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { holdUnsaved } from '../hooks/useUnsavedWork';
 import { ApiError } from '../lib/api';
 import { memoryStorage } from '../rating-ui/memory-storage';
-import { logOutClearingDrafts, UNSAVED_ON_LOGOUT, type LogoutState } from './logout';
+import {
+  logOutClearingDrafts,
+  UNSAVED_BOTH_ON_LOGOUT,
+  UNSAVED_ON_LOGOUT,
+  UNSAVED_WORK_ON_LOGOUT,
+  type LogoutState,
+} from './logout';
 
 const WAKING = 'The ratings database is not responding. Try again in a minute.';
 const clean = JSON.stringify({ base: { notebook: [5, 5, 5] }, draft: { notebook: [5, 5, 5] } });
@@ -22,7 +29,10 @@ function setup(entries: Record<string, string>, logout: () => Promise<void> = as
   };
 }
 
+let release = () => {};
+
 afterEach(() => {
+  release();
   vi.unstubAllGlobals();
 });
 
@@ -49,6 +59,23 @@ describe('logOutClearingDrafts', () => {
     const page = setup({ 'fcr-card:7:2026-Q4': unsaved });
     await page.run();
     expect(page.ask).toHaveBeenCalledOnce();
+    expect(page.end).toHaveBeenCalledOnce();
+    expect(page.keys()).toEqual([]);
+  });
+
+  it('asks before unsaved whys or card edits on the page are lost; Cancel keeps the user logged in', async () => {
+    release = holdUnsaved();
+    const page = setup({}, undefined, false);
+    await page.run();
+    expect(page.ask).toHaveBeenCalledExactlyOnceWith(UNSAVED_WORK_ON_LOGOUT);
+    expect(page.end).not.toHaveBeenCalled();
+  });
+
+  it('asks once, about both, when stored scores and unsaved page work would go', async () => {
+    release = holdUnsaved();
+    const page = setup({ 'fcr-card:7:2026-Q4': unsaved });
+    await page.run();
+    expect(page.ask).toHaveBeenCalledExactlyOnceWith(UNSAVED_BOTH_ON_LOGOUT);
     expect(page.end).toHaveBeenCalledOnce();
     expect(page.keys()).toEqual([]);
   });

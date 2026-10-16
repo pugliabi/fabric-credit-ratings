@@ -1,8 +1,10 @@
 // @vitest-environment happy-dom
 import { act } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { UNSAVED_WORK_ON_LOGOUT } from '../account/logout';
+import { ADMIN_EXPIRED } from '../account/useSession';
 import type { AdminCatalog, MyScores, RoundReview } from '../domain/api-types';
-import { holdUnsaved } from '../hooks/useUnsavedWork';
+import { holdUnsaved, LEAVE_UNSAVED } from '../hooks/useUnsavedWork';
 import { cleanup, click, fakeApi, find, render, settle, type } from '../test/dom';
 import { AdminPage } from './AdminPage';
 
@@ -42,6 +44,7 @@ const card: MyScores = {
   updatedAt: '2026-10-15T23:00:00Z',
   previous: null,
 };
+const WAKING = 'The ratings database is not responding. Try again in a minute.';
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status });
 
 function server(overrides: Record<string, unknown> = {}) {
@@ -61,6 +64,7 @@ function server(overrides: Record<string, unknown> = {}) {
 }
 
 const current = (root: ParentNode) => root.querySelector('nav [aria-current="page"]')?.textContent;
+const why = (root: ParentNode) => root.querySelector('textarea[aria-label="Why this rating for Notebook"]');
 const count = (api: ReturnType<typeof server>, path: string) => api.calls.filter((call) => call.path === path).length;
 
 async function goTo(hash: string) {
@@ -129,6 +133,39 @@ describe('AdminPage tabs', () => {
     expect(ask).toHaveBeenCalledTimes(3);
   });
 
+  it('asks before a tab switch drops a why typed moments ago, still waiting for its autosave', async () => {
+    history.replaceState(null, '', '#review');
+    const api = server();
+    vi.stubGlobal('fetch', api.fetchMock);
+    const ask = vi.fn(() => false);
+    vi.stubGlobal('confirm', ask);
+    const { container } = await render(AdminPage, {});
+    await settleAll();
+    await type(why(container), 'Typed just now.');
+    await click(find(container, 'nav button', 'Publish'));
+    expect(ask).toHaveBeenCalledExactlyOnceWith(LEAVE_UNSAVED);
+    expect(current(container)).toBe('Review & why');
+    expect(count(api, '/api/admin/rounds/2026-Q4/notes/notebook')).toBe(0);
+  });
+
+  it('asks before a tab switch drops a why whose save failed and waits for Retry', async () => {
+    history.replaceState(null, '', '#review');
+    const failing = server({ 'PUT /api/admin/rounds/2026-Q4/notes/notebook': () => json({ error: WAKING }, 503) });
+    vi.stubGlobal('fetch', failing.fetchMock);
+    const ask = vi.fn(() => false);
+    vi.stubGlobal('confirm', ask);
+    const { container } = await render(AdminPage, {});
+    await settleAll();
+    await type(why(container), 'Not saved.');
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 800));
+    });
+    await settle();
+    expect(find(container, 'button', 'Retry')).not.toBeNull();
+    await click(find(container, 'nav button', 'Publish'));
+    expect(ask).toHaveBeenCalledExactlyOnceWith(LEAVE_UNSAVED);
+    expect(current(container)).toBe('Review & why');
+  });
 });
 
 describe('AdminPage session and loads', () => {
@@ -184,5 +221,45 @@ describe('AdminPage session and loads', () => {
     expect(container.querySelector('[role="group"][aria-label="Your scorecard"]')?.textContent).toContain(
       'Unsaved draft restored',
     );
+  });
+
+  it('asks before Log out drops unsaved whys, once', async () => {
+    history.replaceState(null, '', '#review');
+    const api = server();
+    vi.stubGlobal('fetch', api.fetchMock);
+    const answers = [false, true];
+    const ask = vi.fn(() => answers.shift());
+    vi.stubGlobal('confirm', ask);
+    const { container } = await render(AdminPage, {});
+    await settleAll();
+    await type(why(container), 'Typed just now.');
+    await click(find(container, 'button', 'Log out'));
+    expect(ask).toHaveBeenLastCalledWith(UNSAVED_WORK_ON_LOGOUT);
+    expect(count(api, '/api/auth/logout')).toBe(0);
+    expect(current(container)).toBe('Review & why');
+    await click(find(container, 'button', 'Log out'));
+    await settleAll();
+    expect(ask).toHaveBeenCalledTimes(2);
+    expect(count(api, '/api/auth/logout')).toBe(1);
+    expect(find(container, 'h2', 'Admin login')).not.toBeNull();
+  });
+
+  it('asks nothing when the session ends on its own, and says what was lost', async () => {
+    history.replaceState(null, '', '#review');
+    const expired = () => json({ error: 'Log in first.' }, 401);
+    const expiring = server({ 'PUT /api/admin/rounds/2026-Q4/notes/notebook': expired });
+    vi.stubGlobal('fetch', expiring.fetchMock);
+    const ask = vi.fn(() => true);
+    vi.stubGlobal('confirm', ask);
+    const { container } = await render(AdminPage, {});
+    await settleAll();
+    await type(why(container), 'Typed before the session ran out.');
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 800));
+    });
+    await settleAll();
+    expect(find(container, 'h2', 'Admin login')).not.toBeNull();
+    expect(container.textContent).toContain(ADMIN_EXPIRED);
+    expect(ask).not.toHaveBeenCalled();
   });
 });

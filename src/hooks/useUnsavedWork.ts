@@ -13,9 +13,14 @@ export function holdUnsaved(): () => void {
   };
 }
 
+/** True while anything on the page holds unsaved work. */
+export function hasUnsavedWork(): boolean {
+  return holds.size > 0;
+}
+
 /** True when nothing on the page is unsaved, or the user agrees to lose it. Ask before switching a tab or a round. */
 export function mayLeave(ask: (message: string) => boolean = (message) => confirm(message)): boolean {
-  return holds.size === 0 || ask(LEAVE_UNSAVED);
+  return !hasUnsavedWork() || ask(LEAVE_UNSAVED);
 }
 
 /** While `active`, leaving or reloading the page asks first, and so does mayLeave(). */
