@@ -71,7 +71,7 @@ export function App() {
       <main id="ratings" className={styles.main}>
         {WORKLOADS.length === 0 ? (
           <p className={styles.empty}>
-            No ratings are published yet. The first review round is being scored now; check back once it is published.
+            No ratings are published right now. Check back once the next review round is published.
           </p>
         ) : (
           <>

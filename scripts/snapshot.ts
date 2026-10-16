@@ -1,17 +1,20 @@
 import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
+import type { Snapshot } from '../src/domain/api-types.ts';
+import {
+  commandData,
+  failureReason,
+  isIsoTimestamp,
+  isSnapshot,
+  redact,
+  snapshotProblem,
+  urlSecrets,
+} from './snapshot-checks.ts';
 
 const OUT = new URL('../src/data/snapshot.json', import.meta.url);
 const SETTINGS = new URL('../api/local.settings.json', import.meta.url);
 
 /** The GET can wait about 150 s for a paused database; Functions cut a request off at 230 s. */
 const TIMEOUT_MS = 200_000;
-
-interface SnapshotShape {
-  generatedAt: string;
-  asOf: string;
-  workloads: unknown[];
-  ratings: unknown[];
-}
 
 function localToken(): string {
   if (!existsSync(SETTINGS)) return '';
@@ -25,18 +28,7 @@ function localToken(): string {
   }
 }
 
-function isSnapshot(value: unknown): value is SnapshotShape {
-  if (typeof value !== 'object' || value === null) return false;
-  const record = value as Record<string, unknown>;
-  return (
-    typeof record.generatedAt === 'string' &&
-    typeof record.asOf === 'string' &&
-    Array.isArray(record.workloads) &&
-    Array.isArray(record.ratings)
-  );
-}
-
-function sameContent(a: SnapshotShape, b: SnapshotShape): boolean {
+function sameContent(a: Snapshot, b: Snapshot): boolean {
   return JSON.stringify({ ...a, generatedAt: '' }) === JSON.stringify({ ...b, generatedAt: '' });
 }
 
@@ -54,8 +46,10 @@ async function refresh(base: string, token: string): Promise<{ message: string; 
   }
   if (!response.ok) throw new Error(`${base} answered HTTP ${response.status}.`);
   const snapshot: unknown = await response.json();
-  if (!isSnapshot(snapshot)) throw new Error('The response is not a snapshot.');
+  if (!isSnapshot(snapshot)) throw new Error(`The response is not a valid snapshot: ${snapshotProblem(snapshot)}.`);
   const { generatedAt } = snapshot;
+  // Also keeps anything but one timestamp out of $GITHUB_OUTPUT.
+  if (!isIsoTimestamp(generatedAt)) throw new Error("The snapshot's generatedAt is not an ISO timestamp.");
   const current: unknown = existsSync(OUT) ? JSON.parse(readFileSync(OUT, 'utf8')) : undefined;
   if (isSnapshot(current) && sameContent(current, snapshot)) return { message: 'Snapshot unchanged.', generatedAt };
   writeFileSync(OUT, `${JSON.stringify(snapshot, null, 2)}\n`);
@@ -76,9 +70,14 @@ async function confirm(base: string, token: string, generatedAt: string): Promis
   if (response.status !== 204) throw new Error(`${base} answered the confirmation with HTTP ${response.status}.`);
 }
 
-const warn = (message: string) => console.warn(process.env.GITHUB_ACTIONS ? `::warning::${message}` : message);
 const base = (process.env.FCR_API_URL || 'http://localhost:7071').replace(/\/+$/, '');
 const token = process.env.SNAPSHOT_TOKEN || localToken();
+// Node's errors can quote a header value or a whole URL, so warnings never show the token or the URL's secrets.
+const secrets = [token, ...urlSecrets(base)];
+const warn = (message: string) => {
+  const safe = redact(message, secrets);
+  console.warn(process.env.GITHUB_ACTIONS ? `::warning::${commandData(safe)}` : safe);
+};
 
 let fetched: { message: string; generatedAt: string } | undefined;
 try {
@@ -86,14 +85,13 @@ try {
   console.log(fetched.message);
   if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, `generatedAt=${fetched.generatedAt}\n`);
 } catch (error) {
-  const reason = error instanceof Error ? error.message : String(error);
-  warn(`Snapshot not refreshed: ${reason} Keeping the committed src/data/snapshot.json.`);
+  warn(`Snapshot not refreshed: ${failureReason(error)} Keeping the committed src/data/snapshot.json.`);
 }
 if (fetched && process.argv.includes('--confirm')) {
   try {
     await confirm(base, token, fetched.generatedAt);
     console.log(`Confirmed the snapshot of ${fetched.generatedAt}.`);
   } catch (error) {
-    warn(`Snapshot not confirmed: ${error instanceof Error ? error.message : String(error)}`);
+    warn(`Snapshot not confirmed: ${failureReason(error)}`);
   }
 }

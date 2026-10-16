@@ -29,13 +29,15 @@ export function SiteHeader({ ratings, asOf }: SiteHeaderProps) {
             <dt>Items rated</dt>
             <dd>{ratings.length}</dd>
           </div>
-          <div className={styles.stat}>
-            <dt>Investment grade</dt>
-            <dd>
-              {investment}
-              <span className={styles.statSub}> of {ratings.length}</span>
-            </dd>
-          </div>
+          {ratings.length > 0 && (
+            <div className={styles.stat}>
+              <dt>Investment grade</dt>
+              <dd>
+                {investment}
+                <span className={styles.statSub}> of {ratings.length}</span>
+              </dd>
+            </div>
+          )}
           {median && (
             <div className={styles.stat}>
               <dt>Median rating</dt>

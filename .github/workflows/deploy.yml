@@ -54,6 +54,7 @@ jobs:
           git commit -m "Snapshot $(node -p "require('./src/data/snapshot.json').asOf || 'empty'")"
           for _ in 1 2 3; do
             if git pull --rebase origin "$GITHUB_REF_NAME" && git push origin "HEAD:$GITHUB_REF_NAME"; then exit 0; fi
+            git rebase --abort 2>/dev/null || true
             sleep 5
           done
           echo "::warning::Could not push the snapshot commit. This deploy still uses it."
