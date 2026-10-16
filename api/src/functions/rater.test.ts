@@ -117,7 +117,7 @@ describe('myScoresPut', () => {
     });
   });
 
-  it('answers 503 asking to try again, and logs it, when it loses a deadlock to an item delete', async () => {
+  it('answers 503 asking to try again, logging each loss, when its one retry loses a deadlock too', async () => {
     vi.mocked(lockRound).mockResolvedValue(round);
     const deadlock = sqlError(1205);
     vi.mocked(replaceScorecard).mockRejectedValue(deadlock);
@@ -126,6 +126,20 @@ describe('myScoresPut', () => {
       status: 503,
       message: 'Someone was changing the catalog at the same moment. Try again.',
     });
+    expect(transaction).toHaveBeenCalledTimes(2);
+    expect(log.warn).toHaveBeenCalledTimes(2);
+    expect(log.warn).toHaveBeenCalledWith('Deadlock victim', deadlock);
+  });
+
+  it('saves on its one retry after losing a deadlock, logging the loss once', async () => {
+    vi.mocked(lockRound).mockResolvedValue(round);
+    const deadlock = sqlError(1205);
+    vi.mocked(replaceScorecard).mockRejectedValueOnce(deadlock).mockResolvedValueOnce(undefined);
+
+    expect(await save({ round: round.id, scores: { notebook: [6, 5, 4] } })).toMatchObject({ round });
+    expect(transaction).toHaveBeenCalledTimes(2);
+    expect(replaceScorecard).toHaveBeenCalledTimes(2);
+    expect(log.warn).toHaveBeenCalledTimes(1);
     expect(log.warn).toHaveBeenCalledWith('Deadlock victim', deadlock);
   });
 

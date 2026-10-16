@@ -6,22 +6,23 @@ export const CARD_ITEM_DELETED = 'An item on this card was just deleted. Reload 
 
 /**
  * Runs a card or note save. Its CHECKs are validated first, so a foreign key refusing it means an item was deleted
- * after the route checked it, answered with `deleted`. Card saves take the round lock in turn, so the only deadlock
- * one can lose is to that same item delete.
+ * after the route checked it, answered with `deleted`. A save that loses a deadlock runs once more: `work` re-reads
+ * everything it decides on under its own locks, and the server rolled the lost attempt back whole.
  */
 export async function saveForItems(
   log: Pick<InvocationContext, 'warn'>,
   deleted: string,
   work: (tx: Db) => Promise<void>,
 ): Promise<void> {
-  try {
-    await transaction(work);
-  } catch (error) {
-    if (hasSqlNumber(error, CONSTRAINT_CONFLICT)) throw new HttpError(409, deleted);
-    if (hasSqlNumber(error, DEADLOCK_VICTIM)) {
+  for (let retries = 0; ; retries += 1) {
+    try {
+      await transaction(work);
+      return;
+    } catch (error) {
+      if (hasSqlNumber(error, CONSTRAINT_CONFLICT)) throw new HttpError(409, deleted);
+      if (!hasSqlNumber(error, DEADLOCK_VICTIM)) throw error;
       log.warn('Deadlock victim', error);
-      throw new HttpError(503, 'Someone was changing the catalog at the same moment. Try again.');
+      if (retries >= 1) throw new HttpError(503, 'Someone was changing the catalog at the same moment. Try again.');
     }
-    throw error;
   }
 }

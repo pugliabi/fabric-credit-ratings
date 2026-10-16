@@ -435,19 +435,31 @@ describe('adminScoresPut', () => {
     expect(committed).not.toHaveBeenCalled();
   });
 
-  it('answers 503 asking to try again, and logs it, when a card or note save loses a deadlock', async () => {
+  it('answers 503 asking to try again when a card or note save loses a deadlock twice', async () => {
     const raced = { status: 503, message: 'Someone was changing the catalog at the same moment. Try again.' };
     const deadlock = sqlError(1205);
-    vi.mocked(replaceScorecard).mockRejectedValueOnce(deadlock);
+    vi.mocked(replaceScorecard).mockRejectedValueOnce(deadlock).mockRejectedValueOnce(deadlock);
     await expect(call('adminScoresPut', { id: open.id, userId: '7' }, body)).rejects.toMatchObject(raced);
+    expect(transaction).toHaveBeenCalledTimes(2);
     expect(log.warn).toHaveBeenCalledWith('Deadlock victim', deadlock);
 
+    vi.mocked(transaction).mockClear();
     const noteDeadlock = sqlError(1205);
-    vi.mocked(saveNote).mockRejectedValueOnce(noteDeadlock);
+    vi.mocked(saveNote).mockRejectedValueOnce(noteDeadlock).mockRejectedValueOnce(noteDeadlock);
     await expect(
       call('adminNotePut', { id: open.id, artifactId: 'notebook' }, { body: 'Solid.' }),
     ).rejects.toMatchObject(raced);
+    expect(transaction).toHaveBeenCalledTimes(2);
     expect(log.warn).toHaveBeenCalledWith('Deadlock victim', noteDeadlock);
+  });
+
+  it('saves a card on its one retry after losing a deadlock', async () => {
+    vi.mocked(replaceScorecard).mockRejectedValueOnce(sqlError(1205));
+
+    await call('adminScoresPut', { id: open.id, userId: '7' }, body);
+    expect(replaceScorecard).toHaveBeenCalledTimes(2);
+    expect(committed).toHaveBeenCalledTimes(1);
+    expect(log.warn).toHaveBeenCalledTimes(1);
   });
 });
 
