@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AdminArtifact, AdminCatalog } from '../domain/api-types';
 import { api } from '../lib/api';
 import { reorder } from './catalog-order';
-import { saveOrders, writeCatalog } from './catalog-write';
+import { catalogActions, createCatalogWrites, saveOrders, writeCatalog } from './catalog-write';
 
 const CONFLICT = 'That conflicts with a change someone just made. Reload the page and try again.';
 
@@ -35,6 +35,10 @@ function server(...replies: Response[]) {
     bodies: () =>
       fetchMock.mock.calls
         .filter(([, init]) => init?.method === 'PUT')
+        .map(([, init]) => JSON.parse(String(init?.body))),
+    posts: () =>
+      fetchMock.mock.calls
+        .filter(([, init]) => init?.method === 'POST')
         .map(([, init]) => JSON.parse(String(init?.body))),
   };
 }
@@ -151,5 +155,174 @@ describe('writeCatalog', () => {
     expect(api.calls()).toEqual(['PUT /api/admin/artifacts/a', 'GET /api/admin/catalog']);
     expect(onError.mock.calls).toEqual([[CONFLICT]]);
     expect(onCatalog).not.toHaveBeenCalled();
+  });
+});
+
+/** A fetch that answers only when the test says so, and rejects on abort like the real one. */
+function heldServer() {
+  const held: { path: string; method: string; answer: (response: Response) => void }[] = [];
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(
+      (url: string, init?: RequestInit) =>
+        new Promise<Response>((resolve, reject) => {
+          init?.signal?.addEventListener('abort', () => reject(init.signal?.reason));
+          held.push({ path: url, method: init?.method ?? 'GET', answer: resolve });
+        }),
+    ),
+  );
+  return held;
+}
+
+function hooks() {
+  const events: string[] = [];
+  return {
+    events,
+    onCatalog: vi.fn((catalog: AdminCatalog) => void events.push(`catalog ${catalog.artifacts.map(({ id }) => id)}`)),
+    onError: vi.fn((message: string) => void events.push(`error ${message}`)),
+    onStart: vi.fn(() => void events.push('start')),
+    onSettled: vi.fn(() => void events.push('settled')),
+  };
+}
+
+describe('createCatalogWrites', () => {
+  it('runs one write at a time: a second press while one runs sends nothing', async () => {
+    const held = heldServer();
+    const writes = createCatalogWrites(hooks());
+    const first = writes.run(catalogActions.deleteArtifact(artifact('a', 10)));
+    expect(writes.running).toBe(true);
+    await expect(writes.run(catalogActions.deleteArtifact(artifact('b', 20)))).resolves.toBe(false);
+    expect(held.map(({ method, path }) => `${method} ${path}`)).toEqual(['DELETE /api/admin/artifacts/a']);
+    held[0]!.answer(reply(200, catalog()));
+    await expect(first).resolves.toBe(true);
+    expect(writes.running).toBe(false);
+  });
+
+  it('shows a refusal the server answered and reads the catalog again before settling', async () => {
+    const fresh = catalog(artifact('a', 10));
+    const calls = server(reply(409, { error: CONFLICT }), reply(200, fresh));
+    const watch = hooks();
+    const writes = createCatalogWrites(watch);
+    const a = artifact('a', 10);
+    await expect(writes.run(catalogActions.updateArtifact(a, { status: 'retired' }, [a]))).resolves.toBe(false);
+    expect(calls.calls()).toEqual(['PUT /api/admin/artifacts/a', 'GET /api/admin/catalog']);
+    expect(watch.events).toEqual(['start', `error ${CONFLICT}`, 'catalog a', 'settled']);
+  });
+
+  it('applies the read made as the tab opens when nothing newer arrived', async () => {
+    const held = heldServer();
+    const watch = hooks();
+    const read = createCatalogWrites(watch).readOnOpen(new AbortController().signal);
+    expect(held.map(({ path }) => path)).toEqual(['/api/admin/catalog']);
+    held[0]!.answer(reply(200, catalog(artifact('a', 10))));
+    await read;
+    expect(watch.events).toEqual(['catalog a']);
+  });
+
+  it("drops that read when it lands after a write's answer, which is newer", async () => {
+    const held = heldServer();
+    const watch = hooks();
+    const writes = createCatalogWrites(watch);
+    const read = writes.readOnOpen(new AbortController().signal);
+    const write = writes.run(catalogActions.deleteArtifact(artifact('a', 10)));
+    held[1]!.answer(reply(200, catalog(artifact('b', 20))));
+    await write;
+    held[0]!.answer(reply(200, catalog(artifact('a', 10), artifact('b', 20))));
+    await read;
+    expect(watch.events).toEqual(['start', 'catalog b', 'settled']);
+  });
+
+  it('keeps that read after a refusal made in the browser, which changed nothing', async () => {
+    const held = heldServer();
+    const watch = hooks();
+    const writes = createCatalogWrites(watch);
+    const read = writes.readOnOpen(new AbortController().signal);
+    const add = catalogActions.addArtifact({
+      id: 'constructor',
+      name: 'Constructor',
+      workload: 'data-factory',
+      status: 'ga',
+    });
+    await expect(writes.run(add)).resolves.toBe(false);
+    held[0]!.answer(reply(200, catalog(artifact('a', 10))));
+    await read;
+    expect(held).toHaveLength(1);
+    expect(watch.events).toEqual([
+      'start',
+      'error Item id constructor is reserved. Pick another id.',
+      'settled',
+      'catalog a',
+    ]);
+  });
+
+  it('drops that read once the tab closes (aborted)', async () => {
+    const held = heldServer();
+    const watch = hooks();
+    const controller = new AbortController();
+    const read = createCatalogWrites(watch).readOnOpen(controller.signal);
+    controller.abort();
+    held[0]!.answer(reply(200, catalog(artifact('a', 10))));
+    await read;
+    expect(watch.onCatalog).not.toHaveBeenCalled();
+  });
+});
+
+describe('catalogActions', () => {
+  it('updates an item with its whole row, keeping its place, or at the end of the workload it moves to', async () => {
+    const pipeline = { ...artifact('pipeline', 10), referenced: true };
+    const report = { ...artifact('report', 30), workload: 'power-bi' };
+    const calls = server(reply(200, catalog()), reply(200, catalog()));
+    await catalogActions.updateArtifact(pipeline, { status: 'preview' }, [pipeline, report])();
+    await catalogActions.updateArtifact(pipeline, { workload: 'power-bi' }, [pipeline, report])();
+    expect(calls.calls()).toEqual(['PUT /api/admin/artifacts/pipeline', 'PUT /api/admin/artifacts/pipeline']);
+    expect(calls.bodies()).toEqual([
+      { name: 'pipeline', workload: 'data-factory', status: 'preview', sortOrder: 10 },
+      { name: 'pipeline', workload: 'power-bi', status: 'ga', sortOrder: 40 },
+    ]);
+  });
+
+  it('refuses a reserved item or workload id in the browser, trimmed as the server does, sending nothing', async () => {
+    const calls = server();
+    const item = { name: 'Constructor', workload: 'data-factory', status: 'ga' } as const;
+    await expect(catalogActions.addArtifact({ ...item, id: 'constructor' })()).rejects.toThrow(
+      'Item id constructor is reserved. Pick another id.',
+    );
+    await expect(catalogActions.addArtifact({ ...item, id: ' constructor ' })()).rejects.toThrow(
+      'Item id constructor is reserved. Pick another id.',
+    );
+    const workload = { id: ' prototype', name: 'Prototype', shortName: 'Proto', blurb: 'Tests.' };
+    await expect(catalogActions.addWorkload(workload)()).rejects.toThrow(
+      'Workload id prototype is reserved. Pick another id.',
+    );
+    expect(calls.calls()).toEqual([]);
+  });
+
+  it('adds items and workloads with trimmed ids and names', async () => {
+    const calls = server(reply(200, catalog()), reply(200, catalog()));
+    const item = { id: ' copy-job ', name: ' Copy job ', workload: 'data-factory', status: 'preview' } as const;
+    await catalogActions.addArtifact(item)();
+    await catalogActions.addWorkload({ id: 'fabric-iq ', name: ' Fabric IQ', shortName: 'IQ ', blurb: ' Agents. ' })();
+    expect(calls.calls()).toEqual(['POST /api/admin/artifacts', 'POST /api/admin/workloads']);
+    expect(calls.posts()).toEqual([
+      { id: 'copy-job', name: 'Copy job', workload: 'data-factory', status: 'preview' },
+      { id: 'fabric-iq', name: 'Fabric IQ', shortName: 'IQ', blurb: 'Agents.' },
+    ]);
+  });
+
+  it('saves a workload trimmed, in place, and deletes an item by its server id', async () => {
+    const calls = server(reply(200, catalog()), reply(200, catalog()));
+    const [workload] = catalog().workloads;
+    await catalogActions.saveWorkload(workload!, { name: 'Data Factory ', shortName: ' Factory', blurb: 'Pipes.' })();
+    await catalogActions.deleteArtifact(artifact('copy-job', 20))();
+    expect(calls.calls()).toEqual(['PUT /api/admin/workloads/data-factory', 'DELETE /api/admin/artifacts/copy-job']);
+    expect(calls.bodies()).toEqual([{ name: 'Data Factory', shortName: 'Factory', blurb: 'Pipes.', sortOrder: 10 }]);
+  });
+
+  it('moves items with one whole-row PUT per row that changes', async () => {
+    const items = [artifact('a', 10), artifact('b', 20)];
+    const calls = server(reply(200, catalog()), reply(200, catalog()));
+    await catalogActions.moveArtifacts(items, 1, 0, catalog(...items))();
+    expect(calls.calls()).toEqual(['PUT /api/admin/artifacts/b', 'PUT /api/admin/artifacts/a']);
+    expect(calls.bodies().map(({ sortOrder }) => sortOrder)).toEqual([10, 20]);
   });
 });

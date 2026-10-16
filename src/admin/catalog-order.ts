@@ -1,3 +1,34 @@
+import type { AdminArtifact, AdminWorkload } from '../domain/api-types';
+
+/** The fields a workload PUT replaces; `sortOrder` goes alongside. */
+export function workloadBody(workload: Pick<AdminWorkload, 'name' | 'shortName' | 'blurb'>) {
+  return { name: workload.name, shortName: workload.shortName, blurb: workload.blurb };
+}
+
+export type WorkloadFields = ReturnType<typeof workloadBody>;
+
+/** The fields an item PUT replaces; `sortOrder` goes alongside. */
+export function artifactBody(artifact: AdminArtifact) {
+  return { name: artifact.name, workload: artifact.workload, status: artifact.status };
+}
+
+export type ArtifactChanges = Partial<ReturnType<typeof artifactBody>>;
+
+/** The whole-row PUT body for an item edit. An item moved to another workload goes to its end. */
+export function artifactUpdate(artifact: AdminArtifact, changes: ArtifactChanges, artifacts: readonly AdminArtifact[]) {
+  const body = { ...artifactBody(artifact), ...changes };
+  const sortOrder = body.workload === artifact.workload ? artifact.sortOrder : endOfWorkload(artifacts, body.workload);
+  return { ...body, sortOrder };
+}
+
+/**
+ * What a field shows once the server's value goes from `before` to `after`: an untouched field takes the new value,
+ * so its Save can't offer to undo another admin's change; a field being edited keeps what was typed.
+ */
+export function followServer(field: string, before: string, after: string): string {
+  return field.trim() === before ? after : field;
+}
+
 /** New sort orders (10, 20, 30, ...) after moving the item at `from` to `to`. Unchanged items are left out. */
 export function reorder<T extends { sortOrder: number }>(
   items: readonly T[],

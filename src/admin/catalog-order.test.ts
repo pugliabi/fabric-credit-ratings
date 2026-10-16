@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { endOfWorkload, reorder, reservedIdProblem, slugify } from './catalog-order';
+import type { AdminArtifact } from '../domain/api-types';
+import { artifactUpdate, endOfWorkload, followServer, reorder, reservedIdProblem, slugify } from './catalog-order';
 
 describe('reorder', () => {
   const items = [
@@ -72,5 +73,51 @@ describe('endOfWorkload', () => {
 
   it('starts an empty workload at 10', () => {
     expect(endOfWorkload([{ workload: 'power-bi', sortOrder: 990 }], 'data-factory')).toBe(10);
+  });
+});
+
+describe('artifactUpdate', () => {
+  const item = (id: string, workload: string, sortOrder: number): AdminArtifact => ({
+    id,
+    name: id,
+    workload,
+    status: 'ga',
+    sortOrder,
+    referenced: false,
+  });
+  const artifacts = [
+    item('pipeline', 'data-factory', 10),
+    item('report', 'power-bi', 10),
+    item('model', 'power-bi', 30),
+  ];
+
+  it('sends the whole row and keeps its place for a rename or a status change', () => {
+    expect(artifactUpdate(artifacts[0]!, { status: 'retired' }, artifacts)).toEqual({
+      name: 'pipeline',
+      workload: 'data-factory',
+      status: 'retired',
+      sortOrder: 10,
+    });
+    expect(artifactUpdate(artifacts[0]!, { name: 'Pipelines' }, artifacts).sortOrder).toBe(10);
+  });
+
+  it('puts an item moved to another workload at its end, past every item there', () => {
+    expect(artifactUpdate(artifacts[0]!, { workload: 'power-bi' }, artifacts)).toEqual({
+      name: 'pipeline',
+      workload: 'power-bi',
+      status: 'ga',
+      sortOrder: 40,
+    });
+  });
+});
+
+describe('followServer', () => {
+  it('lets an untouched field take a change made elsewhere', () => {
+    expect(followServer('Copy job', 'Copy job', 'Copy job (GA)')).toBe('Copy job (GA)');
+    expect(followServer('Copy job ', 'Copy job', 'Copy job (GA)')).toBe('Copy job (GA)');
+  });
+
+  it('keeps what the user typed', () => {
+    expect(followServer('Copy jobs', 'Copy job', 'Copy job (GA)')).toBe('Copy jobs');
   });
 });
