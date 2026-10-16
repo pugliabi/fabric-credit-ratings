@@ -1,6 +1,16 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createDrafter, failureDetails, mentionsMath, promptFor, redactKey, type DraftInput } from './draft-why.ts';
+import {
+  EXAMPLES,
+  SYSTEM_PROMPT,
+  createDrafter,
+  failureDetails,
+  mentionsMath,
+  promptFor,
+  redactKey,
+  shortenDraft,
+  type DraftInput,
+} from './draft-why.ts';
 
 const clients = vi.hoisted(() => [] as { options: unknown; client: unknown }[]);
 
@@ -69,12 +79,77 @@ describe('mentionsMath', () => {
   });
 });
 
+describe('SYSTEM_PROMPT', () => {
+  it('asks for two or three short sentences in at most 350 characters', () => {
+    expect(SYSTEM_PROMPT).toContain('2 or 3 short sentences');
+    expect(SYSTEM_PROMPT).toContain('350 characters');
+  });
+
+  it('keeps the ban on anything that would let a reader rebuild the rating', () => {
+    expect(SYSTEM_PROMPT).toContain('Never mention scores');
+  });
+});
+
+describe('shortenDraft', () => {
+  it('keeps the first three sentences of a longer draft', () => {
+    expect(shortenDraft('One is short. Two is short! Three is short? Four is dropped.')).toBe(
+      'One is short. Two is short! Three is short?',
+    );
+  });
+
+  it('drops trailing sentences while the rest runs over 350 characters', () => {
+    const long = `${'a'.repeat(150)}. ${'b'.repeat(150)}. ${'c'.repeat(100)}.`;
+    expect(long.length).toBeGreaterThan(350);
+    expect(shortenDraft(long)).toBe(`${'a'.repeat(150)}. ${'b'.repeat(150)}.`);
+  });
+
+  it('leaves a draft of two or three sentences within 350 characters alone', () => {
+    expect(shortenDraft('Solid and complete. Rough at the edges.')).toBe('Solid and complete. Rough at the edges.');
+    expect(shortenDraft('One. Two. Three.')).toBe('One. Two. Three.');
+  });
+
+  it('never cuts below one sentence, even a 400-character one', () => {
+    const sentence = `${'x'.repeat(399)}.`;
+    expect(shortenDraft(sentence)).toBe(sentence);
+    expect(shortenDraft(`${sentence} A second one.`)).toBe(sentence);
+  });
+
+  it('trims surrounding whitespace', () => {
+    expect(shortenDraft('  \n Solid and complete.  Rough edges.\n')).toBe('Solid and complete. Rough edges.');
+  });
+});
+
 describe('promptFor', () => {
-  it('names the workload and forbids the math', () => {
+  it('names the workload and the raters, and leaves the rules to the system prompt', () => {
     const prompt = promptFor(input);
     expect(prompt).toContain('Workload: Data Engineering (Notebooks and Spark)');
     expect(prompt).toContain('average of 2 raters');
-    expect(prompt).toContain('Never mention scores');
+    expect(prompt).not.toContain('Rules:');
+    expect(prompt).not.toContain('Never mention scores');
+  });
+
+  it('gives the item description on the line after the workload', () => {
+    const prompt = promptFor({ ...input, description: 'A Spark notebook for data engineering.' });
+    expect(prompt).toContain(
+      'Workload: Data Engineering (Notebooks and Spark)\n' +
+        'What it is: A Spark notebook for data engineering.\n' +
+        'Release status:',
+    );
+  });
+
+  it.each([
+    ['no description', undefined],
+    ['an empty description', ''],
+  ])('says there is no description yet for %s', (_, description) => {
+    const prompt = promptFor({ ...input, ...(description === undefined ? {} : { description }) });
+    expect(prompt).toContain('What it is: (no description yet; rely on the name and workload)');
+  });
+
+  it('shows the five voice examples from the original site', () => {
+    const prompt = promptFor(input);
+    expect(EXAMPLES).toHaveLength(5);
+    expect(prompt).toContain('Voice examples from earlier notes:');
+    for (const example of EXAMPLES) expect(prompt).toContain(`- ${example}`);
   });
 
   it('lists only applicable factors and says which one does not apply', () => {
@@ -128,6 +203,39 @@ describe('createDrafter', () => {
       maxRetries: 1,
       defaultHeaders: { 'anthropic-workspace-id': 'ws' },
     });
+  });
+
+  it('sends the system prompt and a 200-token cap, with the item facts in the user message', async () => {
+    const draft = createDrafter(settings);
+    const create = stubbedCreate().mockResolvedValue(reply('Solid and complete.'));
+
+    await draft?.({ ...input, description: 'A Spark notebook for data engineering.' });
+
+    expect(create).toHaveBeenCalledTimes(1);
+    const [body] = create.mock.calls[0] ?? [];
+    expect(body).toMatchObject({ system: SYSTEM_PROMPT, max_tokens: 200 });
+    const [message] = body?.messages ?? [];
+    expect(message?.role).toBe('user');
+    expect(message?.content).toContain('What it is: A Spark notebook for data engineering.');
+    expect(message?.content).not.toContain('Rules:');
+  });
+
+  it('cuts a long draft to three sentences, after the math check', async () => {
+    const draft = createDrafter(settings);
+    const create = stubbedCreate().mockResolvedValue(
+      reply('One is short. Two is short. Three is short. Four is dropped.'),
+    );
+
+    expect(await draft?.(input)).toBe('One is short. Two is short. Three is short.');
+    expect(create).toHaveBeenCalledTimes(1);
+  });
+
+  it('still rejects a draft whose dropped fourth sentence leaks the math', async () => {
+    const draft = createDrafter(settings);
+    const create = stubbedCreate().mockResolvedValue(reply('One is short. Two is short. Three is short. Rated AA+.'));
+
+    await expect(draft?.(input)).rejects.toThrow('The model kept mentioning scores or grades. Write this one by hand.');
+    expect(create).toHaveBeenCalledTimes(2);
   });
 
   it('asks once more when the first draft leaks the math', async () => {

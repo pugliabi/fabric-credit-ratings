@@ -11,7 +11,7 @@ import { route } from '../lib/http.ts';
 import { CARD_ITEM_DELETED, saveForItems } from '../lib/item-saves.ts';
 import { cardWriteProblem } from '../lib/permissions.ts';
 import { ROUND_ID, USER_ID, isIsoDate, oneOf, text, today, validateScores } from '../lib/validate.ts';
-import { listArtifacts } from '../repo/catalog.ts';
+import { findArtifactDescription, listArtifacts } from '../repo/catalog.ts';
 import { loadDataset } from '../repo/dataset.ts';
 import { saveNote } from '../repo/notes.ts';
 import {
@@ -189,12 +189,16 @@ route('adminDraft', 'POST', 'admin/rounds/{id}/draft/{artifactId}', 'admin', asy
   const point = pointFor(artifact, target, target.round.publishedOn ?? today());
   if (!point) throw new HttpError(400, `${artifact.name} has no scores in ${target.round.label} yet.`);
   const previous = previousPoint(artifact, data.rounds, target.round.id);
+  // Outside the try below: a database failure here is not an AI failure. The description is admin-only, so it isn't
+  // part of the public dataset.
+  const description = await findArtifactDescription(db, artifact.id);
   try {
     const draft = await drafter(
       {
         artifact,
         workload: data.workloads.find((workload) => workload.id === artifact.workload),
         roundLabel: target.round.label,
+        description,
         scores: point.scores,
         raters: point.raters,
         ...(previous

@@ -7,11 +7,30 @@ const DEFAULT_MODEL = 'claude-sonnet-5-5';
 const REQUEST_TIMEOUT_MS = 40_000;
 const STATUS_LABEL = { ga: 'general availability', preview: 'preview', retired: 'retired' } as const;
 
-const EXAMPLES = [
+// The prose lines below run past 120 characters on purpose: the prompt is sent as written, with no wrapping.
+export const SYSTEM_PROMPT = `You write the "Why this rating" note on Microsoft Fabric Credit Ratings, a site that grades each Microsoft Fabric item the way a credit agency grades a bond. Readers are data engineers, analysts, and architects deciding what to build on.
+
+Write 2 or 3 short sentences, at most 350 characters in total, as plain prose with no heading, list, or quotation marks. Say what the item is good at and what holds it back. Use the item description for facts and the scores only to judge what to emphasise. If there is a previous review, say in words whether things improved or slipped. If the item is retired, say so and name the replacement when there is an obvious one. Do not mention factors that do not apply to the item.
+
+Never mention scores, numbers out of seven, totals, letter grades, rater counts, weights, or arithmetic: the reader must not be able to reconstruct the rating. Do not invent features, dates, or prices that are not in the description and are not widely known about the item. Match the length and tone of the examples without copying them.`;
+
+/** Notes from the original site, as the voice to match. */
+export const EXAMPLES = [
   'The most complete authoring surface in Fabric: Spark, pure Python, T-SQL cells, Copilot, and Git integration. Session start-up and idle compute still cost more capacity than they should.',
   'Incremental copy and CDC turned a convenience item into a real ingestion tool. A guided setup with no pipeline to maintain makes it the default answer for bulk and incremental loads.',
+  'The orchestration workhorse, with the widest set of activities and connectors. The authoring canvas is dated, and debugging nested pipelines still takes too many clicks.',
+  'Excellent for logs and time series with very fast KQL. The experience is improving but still assumes you already know Kusto.',
   'Superseded by Dataflow Gen2. No CI/CD, no Fabric destinations, and a higher cost per row than any alternative.',
 ];
+
+const MAX_DRAFT_CHARS = 350;
+
+/** At most three sentences, dropping trailing ones while over 350 characters; never fewer than one. */
+export function shortenDraft(text: string): string {
+  const sentences = text.trim().split(/(?<=[.!?])\s+/).filter(Boolean).slice(0, 3);
+  while (sentences.length > 1 && sentences.join(' ').length > MAX_DRAFT_CHARS) sentences.pop();
+  return sentences.join(' ');
+}
 
 export interface AnthropicSettings {
   apiKey: string;
@@ -23,6 +42,8 @@ export interface DraftInput {
   artifact: Artifact;
   workload?: Workload;
   roundLabel: string;
+  /** The item's admin-only description: facts for the draft, never shown on the public site. */
+  description?: string;
   scores: FactorValues;
   raters: number;
   previous?: { roundLabel: string; scores: FactorValues; note: string };
@@ -44,7 +65,7 @@ function scoreLine(scores: FactorValues): string {
 }
 
 export function promptFor(input: DraftInput): string {
-  const { artifact, workload, roundLabel, scores, raters, previous } = input;
+  const { artifact, workload, roundLabel, description, scores, raters, previous } = input;
   const factors = [
     ...FACTORS.filter((factor) => !artifact.naFactors.includes(factor.id)).map(
       (factor) =>
@@ -62,6 +83,7 @@ export function promptFor(input: DraftInput): string {
 
 Item: ${artifact.name}
 Workload: ${workload ? `${workload.name}${workload.blurb ? ` (${workload.blurb})` : ''}` : artifact.workload}
+What it is: ${description || '(no description yet; rely on the name and workload)'}
 Release status: ${STATUS_LABEL[artifact.status]}
 Review: ${roundLabel}, ${raters === 1 ? 'one rater' : `average of ${raters} raters`}
 ${prior}
@@ -69,15 +91,8 @@ ${prior}
 Scores, for your judgment only:
 ${factors}
 
-Voice, from earlier writeups. Match the length and tone. Do not copy them:
-${EXAMPLES.map((example) => `- ${example}`).join('\n')}
-
-Rules:
-- 2 to 4 sentences, plain prose, no heading and no list.
-- Say what the item is good at and what holds it back.
-- If there is a previous review, describe the direction of change in words.
-- If the item is retired, say so plainly and point readers to the replacement if there is an obvious one.
-- Never mention scores, totals, letter grades, rater counts, or arithmetic. The reader must not be able to reconstruct the rating from the paragraph.`;
+Voice examples from earlier notes:
+${EXAMPLES.map((example) => `- ${example}`).join('\n')}`;
 }
 
 /** No real Anthropic key is shorter; real ones are about 100 characters. */
@@ -204,7 +219,8 @@ export function createDrafter(settings: AnthropicSettings) {
         .create(
           {
             model,
-            max_tokens: 400,
+            max_tokens: 200,
+            system: SYSTEM_PROMPT,
             messages: [
               {
                 role: 'user',
@@ -221,7 +237,7 @@ export function createDrafter(settings: AnthropicSettings) {
           throw explain(error, settings.apiKey);
         });
       const text = textOf(message);
-      if (text && !mentionsMath(text)) return text;
+      if (text && !mentionsMath(text)) return shortenDraft(text);
       rejected = text;
     }
     throw new Error('The model kept mentioning scores or grades. Write this one by hand.');

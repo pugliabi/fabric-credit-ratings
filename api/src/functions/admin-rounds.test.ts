@@ -9,7 +9,7 @@ import { DatabaseUnavailableError, transaction, type Db } from '../lib/db.ts';
 import { createDrafter, type Drafter } from '../lib/draft-why.ts';
 import { startDeploy } from '../lib/github.ts';
 import type { UserCtx } from '../lib/http.ts';
-import { listArtifacts } from '../repo/catalog.ts';
+import { findArtifactDescription, listArtifacts } from '../repo/catalog.ts';
 import { loadDataset } from '../repo/dataset.ts';
 import { saveNote } from '../repo/notes.ts';
 import {
@@ -49,7 +49,7 @@ vi.mock(import('../lib/draft-why.ts'), async (importOriginal) => ({
   createDrafter: vi.fn(),
 }));
 vi.mock(import('../lib/github.ts'), () => ({ startDeploy: vi.fn() }));
-vi.mock(import('../repo/catalog.ts'), () => ({ listArtifacts: vi.fn() }));
+vi.mock(import('../repo/catalog.ts'), () => ({ findArtifactDescription: vi.fn(), listArtifacts: vi.fn() }));
 vi.mock(import('../repo/dataset.ts'), () => ({ loadDataset: vi.fn() }));
 vi.mock(import('../repo/notes.ts'), () => ({ saveNote: vi.fn() }));
 vi.mock(import('../repo/rounds.ts'), () => ({
@@ -601,6 +601,7 @@ describe('adminDraft', () => {
   beforeEach(() => {
     vi.mocked(createDrafter).mockReturnValue(drafter);
     vi.mocked(loadDataset).mockResolvedValue(scored);
+    vi.mocked(findArtifactDescription).mockResolvedValue('');
   });
 
   it('answers 400 without an Anthropic key, before loading any data', async () => {
@@ -687,6 +688,29 @@ describe('adminDraft', () => {
     );
   });
 
+  it("passes the item's admin-only description to the drafter", async () => {
+    vi.mocked(findArtifactDescription).mockResolvedValue('A Spark notebook for data engineering.');
+    drafter.mockResolvedValue('Solid and complete.');
+
+    await call('adminDraft', { id: open.id, artifactId: 'notebook' });
+
+    expect(findArtifactDescription).toHaveBeenCalledWith(expect.anything(), 'notebook');
+    expect(drafter).toHaveBeenCalledWith(
+      expect.objectContaining({ artifact: notebook, description: 'A Spark notebook for data engineering.' }),
+      expect.any(AbortSignal),
+    );
+  });
+
+  it('answers the database 503, not an AI failure, when the description lookup fails', async () => {
+    vi.mocked(findArtifactDescription).mockRejectedValue(new DatabaseUnavailableError('The database is paused.'));
+
+    await expect(call('adminDraft', { id: open.id, artifactId: 'notebook' })).rejects.toBeInstanceOf(
+      DatabaseUnavailableError,
+    );
+    expect(drafter).not.toHaveBeenCalled();
+    expect(log.warn).not.toHaveBeenCalled();
+  });
+
   it('answers 404 for an unknown round or item, and 400 for an item nobody has scored, without drafting', async () => {
     await expect(call('adminDraft', { id: '2027-Q1', artifactId: 'notebook' })).rejects.toMatchObject({
       status: 404,
@@ -701,6 +725,7 @@ describe('adminDraft', () => {
       status: 400,
       message: 'Notebook has no scores in Q4 2026 yet.',
     });
+    expect(findArtifactDescription).not.toHaveBeenCalled();
     expect(drafter).not.toHaveBeenCalled();
   });
 
