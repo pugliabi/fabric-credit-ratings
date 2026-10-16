@@ -167,8 +167,8 @@ describe('parseStoredDraft', () => {
 
 describe('four factors', () => {
   it('treats a card as complete only with all four factors set', () => {
-    expect(isComplete([5, 5, 5, null])).toBe(false);
-    expect(isComplete([5, 5, 5, 5])).toBe(true);
+    expect(isComplete([5, 5, 5, null], artifacts[0]!)).toBe(false);
+    expect(isComplete([5, 5, 5, 5], artifacts[0]!)).toBe(true);
     expect(isBlank(EMPTY_TUPLE)).toBe(true);
     expect(EMPTY_TUPLE).toHaveLength(4);
   });
@@ -189,7 +189,8 @@ describe('four factors', () => {
 
   it('pads a three-entry card from the API to a partial row', () => {
     expect(draftFromScores({ notebook: [6, 6, 5] as unknown as ScoreTuple })).toEqual({ notebook: [6, 6, 5, null] });
-    expect(isComplete(draftFromScores({ notebook: [6, 6, 5] as unknown as ScoreTuple }).notebook!)).toBe(false);
+    const padded = draftFromScores({ notebook: [6, 6, 5] as unknown as ScoreTuple });
+    expect(isComplete(padded.notebook!, artifacts[0]!)).toBe(false);
   });
 
   it('keeps four-entry cards and drops rows of other lengths', () => {
@@ -199,5 +200,29 @@ describe('four factors', () => {
   it('still rejects rows of any other length', () => {
     expect(parseStoredDraft(JSON.stringify({ base: { notebook: [5, 5] }, draft: {} }))).toBeUndefined();
     expect(parseStoredDraft(JSON.stringify({ base: {}, draft: { notebook: [5, 5, 5, 5, 5] } }))).toBeUndefined();
+  });
+});
+
+describe('not-applicable factors', () => {
+  const noCost = { naFactors: ['cost'] } as const;
+  const git: Artifact = { id: 'git', name: 'Git', workload: 'storage', status: 'ga', naFactors: ['cost'] };
+
+  it('is complete once every applicable position is set', () => {
+    expect(isComplete([5, 6, null, 3], noCost)).toBe(true);
+    expect(isComplete([5, 6, null, 3], { naFactors: [] })).toBe(false);
+    expect(isComplete([5, null, null, 3], noCost)).toBe(false);
+  });
+
+  it('summarizes a complete row, forcing the not-applicable position to null', () => {
+    expect(summarize({ git: [5, 6, null, 3] }, [git])).toEqual({
+      scores: { git: [5, 6, null, 3] },
+      rated: 1,
+      partial: [],
+    });
+    expect(summarize({ git: [5, 6, 4, 3] }, [git]).scores.git).toEqual([5, 6, null, 3]);
+  });
+
+  it('reports a row missing an applicable position as partial', () => {
+    expect(summarize({ git: [5, null, null, 3] }, [git])).toEqual({ scores: {}, rated: 0, partial: ['git'] });
   });
 });

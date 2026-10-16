@@ -262,9 +262,10 @@ export function CardForm({ user, catalog, card, reference, onSaved, onReload }: 
 
       <p className={styles.hint}>
         Drag or click a slider to set it; arrow keys adjust it and Enter sets an untouched one. Leave an item blank to skip
-        it, or clear everything and save to withdraw your card. Your four scores combine into the item's grade; the public
-        site shows the grade and the averaged factor scores, never a total. Only the admin sees individual cards; the site
-        shows averages once {round.label} is published.
+        it, or clear everything and save to withdraw your card. Your scores on the factors that apply combine into the
+        item's grade; the public site shows the grade and the averaged factor scores, never a total. Only the admin sees
+        individual cards; the site shows
+        averages once {round.label} is published.
       </p>
 
       <ScoreMatrix

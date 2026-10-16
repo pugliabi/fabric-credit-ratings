@@ -48,6 +48,26 @@ describe('CardForm', () => {
     expect(container.textContent).not.toContain('Set all four, or clear');
   });
 
+  it('shows three sliders and a Not applicable cell for an item without a cost factor', async () => {
+    const noCost: Catalog = {
+      ...catalog,
+      artifacts: [{ id: 'notebook', name: 'Notebook', workload: 'data-engineering', status: 'ga', naFactors: ['cost'] }],
+    };
+    const empty: MyScores = { ...card, scores: {}, updatedAt: null };
+    const { container } = await render(CardForm, { ...props, catalog: noCost, card: empty });
+    const input = (label: string) => container.querySelector(`input[aria-label="Notebook, ${label}"]`);
+    expect(container.querySelectorAll('input[type="range"]')).toHaveLength(3);
+    expect(container.querySelector('[aria-label="Notebook, CU / Token Cost: not applicable"]')?.textContent).toBe(
+      'Not applicable',
+    );
+    await type(input('Feature Capability'), '5');
+    await type(input('User Experience'), '5');
+    expect(container.textContent).toContain('Set all three, or clear');
+    await type(input('Outlook'), '5');
+    expect(container.textContent).not.toContain('Set all three, or clear');
+    expect(container.textContent).toContain('1/1 rated');
+  });
+
   it('moves focus to the toolbar when Clear all removes itself', async () => {
     vi.stubGlobal('confirm', () => true);
     const { container } = await render(CardForm, props);

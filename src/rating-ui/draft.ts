@@ -1,6 +1,7 @@
 import { FACTORS } from '../data/factors';
 import { MAX_SCORE, MIN_SCORE } from '../domain/grades';
-import type { Artifact, FactorValues, Score, ScoreTuple } from '../domain/types';
+import { applicableFactors } from '../domain/factors-applicable';
+import type { Artifact, FactorId, FactorValues, Score, ScoreTuple } from '../domain/types';
 
 /** null = slider not touched yet. */
 export type DraftScore = Score | null;
@@ -9,8 +10,10 @@ export type Draft = Readonly<Record<string, DraftTuple>>;
 
 export const EMPTY_TUPLE: DraftTuple = [null, null, null, null];
 
-export function isComplete(tuple: DraftTuple): tuple is ScoreTuple {
-  return tuple.every((score) => score !== null);
+/** Every position the item's factors apply to is set; a not-applicable position is null and not looked at. */
+export function isComplete(tuple: DraftTuple, artifact: { naFactors: readonly FactorId[] }): tuple is ScoreTuple {
+  const applicable = applicableFactors(artifact);
+  return FACTORS.every((factor, i) => (applicable.includes(factor.id) ? tuple[i] !== null : true));
 }
 
 export function isBlank(tuple: DraftTuple): boolean {
@@ -25,7 +28,7 @@ export interface DraftSummary {
   /** Complete tuples in catalog order, ready to save. */
   scores: Record<string, ScoreTuple>;
   rated: number;
-  /** Artifact ids with some but not all four factors set. */
+  /** Artifact ids with some but not all of their applicable factors set. */
   partial: string[];
 }
 
@@ -35,7 +38,13 @@ export function summarize(draft: Draft, artifacts: readonly Artifact[]): DraftSu
   for (const artifact of artifacts) {
     const tuple = draft[artifact.id];
     if (!tuple || isBlank(tuple)) continue;
-    if (isComplete(tuple)) scores[artifact.id] = tuple;
+    if (isComplete(tuple, artifact)) {
+      const applicable = applicableFactors(artifact);
+      // A not-applicable position goes out as null, whatever a stale draft holds there.
+      scores[artifact.id] = FACTORS.map((factor, i) =>
+        applicable.includes(factor.id) ? tuple[i] : null,
+      ) as unknown as ScoreTuple;
+    }
     else partial.push(artifact.id);
   }
   return { scores, rated: Object.keys(scores).length, partial };
@@ -141,7 +150,10 @@ export function draftFromScores(scores: Readonly<Record<string, ScoreTuple>>): D
 export function draftFromValues(values: Readonly<Record<string, FactorValues>>): Draft {
   const draft: Record<string, DraftTuple> = {};
   for (const [id, v] of Object.entries(values)) {
-    draft[id] = FACTORS.map((factor) => toScore(v[factor.id])) as [Score, Score, Score, Score];
+    draft[id] = FACTORS.map((factor) => {
+      const value = v[factor.id];
+      return value === null ? null : toScore(value);
+    }) as unknown as DraftTuple;
   }
   return draft;
 }

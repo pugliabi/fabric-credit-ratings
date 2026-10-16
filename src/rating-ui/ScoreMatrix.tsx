@@ -2,6 +2,7 @@ import { memo, useId, useState, type CSSProperties, type KeyboardEvent, type Syn
 import { Chevron } from '../components/Chevron';
 import { scoreColor } from '../components/FactorBars';
 import { FACTORS } from '../data/factors';
+import { applicableFactors } from '../domain/factors-applicable';
 import { MAX_SCORE, MIN_SCORE } from '../domain/grades';
 import type { Artifact, FactorValues, Score, Workload, WorkloadId } from '../domain/types';
 import { formatScore } from '../lib/format';
@@ -10,6 +11,11 @@ import styles from './ScoreMatrix.module.css';
 
 const STATUS_LABEL = { preview: 'Preview', retired: 'Retired' } as const;
 const UNSET_POSITION = 4;
+const COUNT_WORDS = ['none', 'one', 'two', 'three', 'four'] as const;
+
+function countWord(n: number): string {
+  return COUNT_WORDS[n] ?? String(n);
+}
 
 interface ScoreMatrixProps {
   workloads: readonly Workload[];
@@ -48,7 +54,7 @@ export function ScoreMatrix({
         if (items.length === 0) return null;
         const rated = items.filter((artifact) => {
           const triple = draft[artifact.id];
-          return triple !== undefined && isComplete(triple);
+          return triple !== undefined && isComplete(triple, artifact);
         }).length;
         const open = !collapsed.has(workload.id);
         const panelId = `${idPrefix}-${workload.id}`;
@@ -109,7 +115,8 @@ interface MatrixRowProps {
 
 const MatrixRow = memo(function MatrixRow({ artifact, triple, reference, referenceLabel, onChange }: MatrixRowProps) {
   const blank = isBlank(triple);
-  const complete = isComplete(triple);
+  const complete = isComplete(triple, artifact);
+  const applicable = applicableFactors(artifact);
 
   const setAt = (index: number, score: Score) => {
     const next = [...triple] as [DraftScore, DraftScore, DraftScore, DraftScore];
@@ -128,21 +135,37 @@ const MatrixRow = memo(function MatrixRow({ artifact, triple, reference, referen
         )}
         {reference && (
           <span className={styles.reference}>
-            {referenceLabel}: {FACTORS.map((factor) => formatScore(reference[factor.id])).join(' · ')}
+            {referenceLabel}:{' '}
+            {FACTORS.map((factor) => {
+              const value = reference[factor.id];
+              return value === null ? '–' : formatScore(value);
+            }).join(' · ')}
           </span>
         )}
-        {!blank && !complete && <span className={styles.partialNote}>Set all four, or clear</span>}
+        {!blank && !complete && (
+          <span className={styles.partialNote}>Set all {countWord(applicable.length)}, or clear</span>
+        )}
       </div>
 
-      {FACTORS.map((factor, index) => (
-        <ScoreSlider
-          key={factor.id}
-          label={`${artifact.name}, ${factor.label}`}
-          factorLabel={factor.label}
-          value={triple[index] ?? null}
-          onChange={(score) => setAt(index, score)}
-        />
-      ))}
+      {FACTORS.map((factor, index) =>
+        applicable.includes(factor.id) ? (
+          <ScoreSlider
+            key={factor.id}
+            label={`${artifact.name}, ${factor.label}`}
+            factorLabel={factor.label}
+            value={triple[index] ?? null}
+            onChange={(score) => setAt(index, score)}
+          />
+        ) : (
+          <span
+            key={factor.id}
+            className={styles.notApplicable}
+            aria-label={`${artifact.name}, ${factor.label}: not applicable`}
+          >
+            Not applicable
+          </span>
+        ),
+      )}
 
       <button
         type="button"
