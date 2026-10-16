@@ -114,6 +114,8 @@ export function PublishTab({ rounds, catalogSize, onRounds }: PublishTabProps) {
         </p>
       )}
 
+      <RoundsPanel open={open} published={published} />
+
       {open ? (
         <OpenRound
           key={open.id}
@@ -134,36 +136,89 @@ export function PublishTab({ rounds, catalogSize, onRounds }: PublishTabProps) {
         <SitePanel site={site} readError={siteError} readFailures={siteFailures} onCheck={loadSite} />
       )}
 
-      {published.length > 0 && (
-        <section className={styles.panel}>
-          <h2 className={styles.panelTitle}>Published rounds</h2>
-          <ul className={styles.roundList}>
-            {published.map((round, index) => (
-              <li key={round.id}>
-                <span>
-                  <strong>{round.label}</strong> · published {formatFullDate(round.publishedOn ?? '')} ·{' '}
-                  {round.scorecards} {round.scorecards === 1 ? 'card' : 'cards'}
-                </span>
-                {index === 0 && !open && (
-                  <button
-                    type="button"
-                    className={styles.secondary}
-                    aria-disabled={busy}
-                    onClick={() => reopen(round)}
-                  >
-                    {busy ? 'Reopening…' : 'Reopen'}
-                  </button>
-                )}
-              </li>
-            ))}
-          </ul>
-          <p className={styles.hint}>
-            To fix a published score or why without reopening, edit it on the Review tab. The change reaches the public
-            site at the next update.
-          </p>
-        </section>
-      )}
+      <section className={styles.panel}>
+        <h2 className={styles.panelTitle}>Published rounds</h2>
+        {published.length === 0 ? (
+          <p className={styles.muted}>No published rounds yet.</p>
+        ) : (
+          <>
+            <ul className={styles.roundList}>
+              {published.map((round, index) => (
+                <li key={round.id}>
+                  <span>
+                    <PublishedLine round={round} />
+                  </span>
+                  {index === 0 && !open && (
+                    <button
+                      type="button"
+                      className={styles.secondary}
+                      aria-disabled={busy}
+                      onClick={() => reopen(round)}
+                    >
+                      {busy ? 'Reopening…' : 'Reopen'}
+                    </button>
+                  )}
+                </li>
+              ))}
+            </ul>
+            <p className={styles.hint}>
+              To fix a published score or why without reopening, edit it on the Review tab. The change reaches the
+              public site at the next update.
+            </p>
+          </>
+        )}
+      </section>
     </div>
+  );
+}
+
+const cardCount = (count: number) => `${count} ${count === 1 ? 'card' : 'cards'}`;
+
+function PublishedLine({ round }: { round: AdminRound }) {
+  return (
+    <>
+      <strong>{round.label}</strong> · published {formatFullDate(round.publishedOn ?? '')} ·{' '}
+      {cardCount(round.scorecards)}
+    </>
+  );
+}
+
+/** Always on the page, open round or not, so round management can be found at any time. */
+function RoundsPanel({ open, published }: { open: AdminRound | undefined; published: readonly AdminRound[] }) {
+  const titleId = useId();
+  return (
+    <section className={styles.panel} aria-labelledby={titleId}>
+      <h2 id={titleId} className={styles.panelTitle}>
+        Rounds
+      </h2>
+      <ul className={styles.roundList}>
+        {open && (
+          <li>
+            <span>
+              <strong>{open.label}</strong> · open · {cardCount(open.scorecards)}
+              <span className={styles.muted}> · raters score this round; publish or delete it below</span>
+            </span>
+          </li>
+        )}
+        {published.map((round) => (
+          <li key={round.id}>
+            <span>
+              <PublishedLine round={round} />
+            </span>
+          </li>
+        ))}
+        {!open && published.length === 0 && (
+          <li>
+            <span className={styles.muted}>No rounds yet. Start one below.</span>
+          </li>
+        )}
+      </ul>
+      <p className={styles.muted}>
+        {open
+          ? `Only one round can be open. Publish or delete ${open.label} to start the next one.`
+          : 'Start the next round below. The form suggests the next month; the id and label can be changed.'}
+      </p>
+    </section>
   );
 }
 

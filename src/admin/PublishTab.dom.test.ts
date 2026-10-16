@@ -3,6 +3,7 @@ import { act, createElement, useState } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AdminRound, RoundReview, SiteStatus } from '../domain/api-types';
 import { onSlow, SLOW_MS } from '../lib/api';
+import { formatFullDate } from '../lib/format';
 import { cleanup, click, fakeApi, find, render, settle } from '../test/dom';
 import { PublishTab } from './PublishTab';
 
@@ -64,6 +65,11 @@ const sitePanel = (root: ParentNode) =>
   [...root.querySelectorAll('section')].find((section) =>
     section.querySelector('h2')?.textContent?.match(/public site/i),
   );
+
+const sectionTitled = (root: ParentNode, title: string) =>
+  [...root.querySelectorAll('section')].find((section) => section.querySelector('h2')?.textContent === title);
+const listed = (section: Element | undefined) =>
+  [...(section?.querySelectorAll('li') ?? [])].map((item) => item.textContent);
 
 /** Records whether the wake notice would show while `run` is in flight: fake timers jump past SLOW_MS. */
 async function slowWhile(run: () => Promise<void>, finish: () => void): Promise<boolean[]> {
@@ -372,5 +378,84 @@ describe('PublishTab', () => {
     );
     expect(states).toEqual([false]);
     expect(api.calls.filter((call) => call.method === 'POST')).toHaveLength(1);
+  });
+
+  describe('round management is always on the page', () => {
+    const OPEN_SENTENCE = 'Only one round can be open. Publish or delete Q4 2026 to start the next one.';
+    const NEXT_SENTENCE =
+      'Start the next round below. The form suggests the next month; the id and label can be changed.';
+
+    it('lists the open round first, says why there is no form, and shows an empty published list', async () => {
+      vi.stubGlobal(
+        'fetch',
+        fakeApi({ 'GET /api/admin/site': behind, 'GET /api/admin/rounds/2026-Q4/review': review }).fetchMock,
+      );
+      const { container } = await render(Host, { initial: [q4] });
+      await settle();
+      const panel = sectionTitled(container, 'Rounds');
+      expect(panel).toBeDefined();
+      expect(container.querySelector('section')).toBe(panel);
+      expect(panel?.getAttribute('aria-labelledby')).toBe(panel?.querySelector('h2')?.id);
+      expect(listed(panel)).toEqual([
+        'Q4 2026 · open · 2 cards · raters score this round; publish or delete it below',
+      ]);
+      expect(panel?.querySelector('p')?.textContent).toBe(OPEN_SENTENCE);
+      expect(listed(sectionTitled(container, 'Published rounds'))).toEqual([]);
+      expect(sectionTitled(container, 'Published rounds')?.textContent).toContain('No published rounds yet.');
+      expect(heading(container, 'Start a new round')).toBeNull();
+      expect(heading(container, 'Publish Q4 2026')).not.toBeNull();
+    });
+
+    it('counts one card in the singular', async () => {
+      vi.stubGlobal(
+        'fetch',
+        fakeApi({ 'GET /api/admin/site': behind, 'GET /api/admin/rounds/2026-Q4/review': review }).fetchMock,
+      );
+      const { container } = await render(Host, { initial: [{ ...q4, scorecards: 1 }] });
+      await settle();
+      expect(listed(sectionTitled(container, 'Rounds'))[0]).toContain('Q4 2026 · open · 1 card ·');
+    });
+
+    it('lists a published round and offers the new-round form when none is open', async () => {
+      vi.stubGlobal('fetch', fakeApi({ 'GET /api/admin/site': behind }).fetchMock);
+      const { container } = await render(Host, { initial: [q3] });
+      await settle();
+      const panel = sectionTitled(container, 'Rounds');
+      const line = `Q3 2026 · published ${formatFullDate('2026-09-30')} · 2 cards`;
+      expect(listed(panel)).toEqual([line]);
+      expect(panel?.querySelector('p')?.textContent).toBe(NEXT_SENTENCE);
+      expect(listed(sectionTitled(container, 'Published rounds'))).toEqual([`${line}Reopen`]);
+      expect(sectionTitled(container, 'Published rounds')?.textContent).not.toContain('No published rounds yet.');
+      expect(heading(container, 'Start a new round')).not.toBeNull();
+    });
+
+    it('says there are no rounds yet and offers the form', async () => {
+      vi.stubGlobal('fetch', fakeApi({ 'GET /api/admin/site': behind }).fetchMock);
+      const { container } = await render(Host, { initial: [] });
+      await settle();
+      const panel = sectionTitled(container, 'Rounds');
+      expect(listed(panel)).toEqual(['No rounds yet. Start one below.']);
+      expect(panel?.querySelector('p')?.textContent).toBe(NEXT_SENTENCE);
+      expect(sectionTitled(container, 'Published rounds')?.textContent).toContain('No published rounds yet.');
+      expect(heading(container, 'Start a new round')).not.toBeNull();
+    });
+
+    it('follows a publish: the round moves from open to published and the form appears', async () => {
+      vi.stubGlobal(
+        'fetch',
+        fakeApi({
+          'GET /api/admin/site': behind,
+          'GET /api/admin/rounds/2026-Q4/review': review,
+          'PUT /api/admin/rounds/2026-Q4': { rounds: [q4Published], deploy: null },
+        }).fetchMock,
+      );
+      const { container } = await render(Host, { initial: [q4] });
+      await settle();
+      await click(find(container, 'button', 'Publish Q4 2026'));
+      await settle();
+      const panel = sectionTitled(container, 'Rounds');
+      expect(listed(panel)).toEqual([`Q4 2026 · published ${formatFullDate('2026-10-15')} · 2 cards`]);
+      expect(panel?.querySelector('p')?.textContent).toBe(NEXT_SENTENCE);
+    });
   });
 });
