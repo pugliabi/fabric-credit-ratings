@@ -491,3 +491,9 @@
     grid-column: 1;
   }
 }
+
+/* Users tab (Plan 2 Task 9): row buttons stay focusable while busy, so they use aria-disabled instead of disabled. */
+.small[aria-disabled='true'] {
+  opacity: 0.45;
+  cursor: not-allowed;
+}

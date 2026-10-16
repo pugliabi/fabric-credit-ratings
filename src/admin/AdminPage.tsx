@@ -10,11 +10,15 @@ import { useFocusIfLost } from '../hooks/useFocusIfLost';
 import { api, ApiError, errorMessage } from '../lib/api';
 import { ScorecardEditor } from '../rating-ui/ScorecardEditor';
 import { NewRoundForm } from './NewRoundForm';
+import { UsersTab } from './UsersTab';
 import styles from './Admin.module.css';
 
 const CURRENT = currentValues();
 
-const TABS = [{ id: 'score', label: 'Score' }] as const;
+const TABS = [
+  { id: 'score', label: 'Score' },
+  { id: 'users', label: 'Users' },
+] as const;
 
 type Tab = (typeof TABS)[number]['id'];
 
@@ -114,6 +118,7 @@ function AdminShell({ user, onLogout, onForbidden }: AdminShellProps) {
 
   const reload = useCallback(() => void load(), [load]);
   const setRounds = useCallback((rounds: AdminRound[]) => setData((current) => current && { ...current, rounds }), []);
+  const setUsers = useCallback((users: AdminUser[]) => setData((current) => current && { ...current, users }), []);
 
   const choose = (next: Tab) => {
     setTab(next);
@@ -158,6 +163,9 @@ function AdminShell({ user, onLogout, onForbidden }: AdminShellProps) {
           ) : (
             <NewRoundForm rounds={data.rounds} onCreated={setRounds} />
           ))}
+        {data && tab === 'users' && (
+          <UsersTab users={data.users} me={user} onUsers={setUsers} onForbidden={onForbidden} />
+        )}
       </main>
     </div>
   );
