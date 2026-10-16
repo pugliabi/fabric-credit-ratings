@@ -446,11 +446,16 @@ IF COL_LENGTH('dbo.scores', 'outlook') IS NULL
 ALTER TABLE dbo.scores ADD outlook tinyint NOT NULL CONSTRAINT df_scores_outlook DEFAULT 4
   CONSTRAINT ck_scores_outlook CHECK (outlook BETWEEN 1 AND 7);
 GO
+
+-- A database migrated by an earlier draft of this batch dropped the default; put it back.
+IF OBJECT_ID('dbo.df_scores_outlook', 'D') IS NULL
+ALTER TABLE dbo.scores ADD CONSTRAINT df_scores_outlook DEFAULT 4 FOR outlook;
+GO
 ```
 
 The default is kept on purpose (cloud review of the plan): the schema is applied to production before the new API is deployed, and the old API's `INSERT` names no `outlook`, so dropping the default would make every save fail during the deploy window. The `CREATE TABLE` branch for a fresh database carries the same default for consistency: `outlook tinyint NOT NULL CONSTRAINT df_scores_outlook DEFAULT 4 CONSTRAINT ck_scores_outlook CHECK (outlook BETWEEN 1 AND 7),`.
 
-Run: `npm run db:apply` (against `fcr-dev` from `api/local.settings.json`). Expected: `Applied 15 schema batches.` Run it twice; the second run must also succeed (idempotent).
+Run: `npm run db:apply` (against `fcr-dev` from `api/local.settings.json`). Expected: `Applied 16 schema batches.` Run it twice; the second run must also succeed (idempotent).
 
 - [ ] **Step 6: Route and repo tests.** Apply the mechanical rule to `api/src/functions/rater.test.ts`, `api/src/functions/admin-rounds.test.ts`, `api/src/repo/rounds.test.ts` and `api/src/integration.test.ts` (`[5, 6, 7]` → `[5, 6, 7, 7]` in both places, and the breakdown expectation). Where a route test asserts a review `scores` object or a grade computed from the fixtures, use the Task 2 Step 5 values. Where a test asserts the 400 text, use "needs four whole scores from 1 to 7.".
 
@@ -712,7 +717,7 @@ git commit -m "Snapshot checks require outlook; docs for the weighted formula an
 
 **Files:** none
 
-- [ ] **Step 1: Production schema.** `. ./infra/names.ps1; npm run db:apply -- --server $sqlServer --database $sqlDatabase` → `Applied 15 schema batches.` `fcr` has no score rows; the default stays so the old API can still save during the deploy window. Read-only check: `node .superpowers/sdd/p3-fcr-state.ts --server $sqlServer --database $sqlDatabase` still shows 78 artifacts, 2026-Q4 open, 0 scorecards.
+- [ ] **Step 1: Production schema.** `. ./infra/names.ps1; npm run db:apply -- --server $sqlServer --database $sqlDatabase` → `Applied 16 schema batches.` `fcr` has no score rows; the default stays so the old API can still save during the deploy window. Read-only check: `node .superpowers/sdd/p3-fcr-state.ts --server $sqlServer --database $sqlDatabase` still shows 78 artifacts, 2026-Q4 open, 0 scorecards.
 
 - [ ] **Step 2: Push.** Both workflows start on the same push and the site usually lands minutes before the API, so for a few minutes the four-slider page talks to the three-entry API (saves get "needs three whole scores" until the API lands; a reload after the API deploy fixes it). Accepted for this release: production has no raters yet and the admin is the only user; push at a quiet moment and do not score during the window. `npm run typecheck; npx vitest run; npm run build; git status --short` clean; `git push origin main`. Watch `api-deploy.yml` (it runs first and then dispatches `deploy.yml`): `gh run watch (gh run list -R pugliabi/fabric-credit-ratings --workflow api-deploy.yml -L 1 --json databaseId --jq '.[0].databaseId') -R pugliabi/fabric-credit-ratings --exit-status`, then the same for `deploy.yml`. Expected: both green; the site run logs "Snapshot unchanged." (nothing published).
 
@@ -722,7 +727,7 @@ git commit -m "Snapshot checks require outlook; docs for the weighted formula an
 
 ## Done When
 
-- `fcr` and `fcr-dev` have `scores.outlook` (default 4 kept for the deploy window); `db:apply` is idempotent at 15 batches.
+- `fcr` and `fcr-dev` have `scores.outlook` (default 4 kept for the deploy window); `db:apply` is idempotent at 16 batches.
 - A card is four whole 1–7 scores; three- or five-entry cards get the 400 text "needs four whole scores from 1 to 7."
 - `totalOf` is the weighted 3-to-21 total; 7/1/1/7 grades BBB-, 7/7/1/1 grades A-; retired items grade D.
 - Bands: AAA–A- investment, BBB+–BBB- low investment, BB+–B- speculative, CCC–C distressed, D deprecated; the legend, the distribution bar, the sparkline and the badges use them.
