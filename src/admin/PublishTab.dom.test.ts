@@ -269,10 +269,40 @@ describe('PublishTab', () => {
     const { container } = await render(Host, { initial: [q4] });
     await settle();
     expect(container.querySelector('[role="alert"]')?.textContent).toBe(WAKING);
+    // The read failed on arrival (after a login on #publish, say), so its heading takes the focus the page lost.
+    expect(document.activeElement).toBe(heading(container, 'Could not check Q4 2026'));
     fails = false;
     await click(find(container, 'button', 'Try again'));
     await settle();
     expect(document.activeElement).toBe(heading(container, 'Publish Q4 2026'));
+  });
+
+  it('shows a failed update and a failed later read as two alerts, each in its own words', async () => {
+    const DEPLOY_FAILED =
+      'GitHub refused the deploy request. Check GITHUB_DISPATCH_TOKEN in the Function App settings.';
+    let reads = 0;
+    const api = fakeApi({
+      'GET /api/admin/site': () => (++reads === 1 ? json(behind) : json({ error: WAKING }, 503)),
+      'GET /api/admin/rounds/2026-Q4/review': review,
+      'POST /api/admin/site/update': () => json({ error: DEPLOY_FAILED }, 502),
+    });
+    vi.stubGlobal('fetch', api.fetchMock);
+    const { container } = await render(Host, { initial: [q4] });
+    await settle();
+    await click(find(container, 'button', 'Update public site'));
+    await settle();
+    await click(find(container, 'button', 'Check again'));
+    await settle();
+    const alerts = () => [...(sitePanel(container)?.querySelectorAll('[role="alert"]') ?? [])];
+    expect(alerts().map((node) => node.textContent)).toEqual([DEPLOY_FAILED, WAKING]);
+    expect(heading(container, 'The public site is behind')).not.toBeNull();
+
+    // Each failure is its own alert element, so the same words are announced again.
+    const [, readAlert] = alerts();
+    await click(find(container, 'button', 'Check again'));
+    await settle();
+    expect(alerts().map((node) => node.textContent)).toEqual([DEPLOY_FAILED, WAKING]);
+    expect(alerts()[1]).not.toBe(readAlert);
   });
 
   it('starts a site update once per press, without the wake notice', async () => {
