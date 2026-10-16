@@ -161,6 +161,22 @@ export function clashingRows(saved: Draft, sent: Draft, card: Draft): string[] {
   });
 }
 
+/**
+ * Each clashing row for raterCardChanged(), in the order of `names` (the editor's list) with unknown ids last, naming
+ * the newer card's value the admin's row would override, or "cleared" when the newer card has no row there.
+ */
+export function describeClashes(
+  clashes: readonly string[],
+  card: Draft,
+  names: Readonly<Record<string, string>>,
+): string[] {
+  const ordered = [...new Set([...Object.keys(names), ...clashes])].filter((id) => clashes.includes(id));
+  return ordered.map((id) => {
+    const newer = card[id];
+    return `${names[id] ?? id} (newer card: ${newer && !isBlank(newer) ? newer.join(' · ') : 'cleared'})`;
+  });
+}
+
 export type RaterSaveOutcome = { kind: 'saved' | 'changed'; review: RoundReview };
 
 /**
@@ -230,12 +246,7 @@ export async function pressRaterSave(form: RaterSaveForm, page: RaterSaveHandler
   }
   const card = cardFromReview(outcome.review, form.rater.userId);
   if (outcome.kind === 'changed') {
-    const clashes = clashingRows(form.saved, form.sent, card);
-    const ordered = [...new Set([...Object.keys(form.names), ...clashes])].filter((id) => clashes.includes(id));
-    const described = ordered.map((id) => {
-      const newer = card[id];
-      return `${form.names[id] ?? id} (newer card: ${newer && !isBlank(newer) ? newer.join(' · ') : 'cleared'})`;
-    });
+    const described = describeClashes(clashingRows(form.saved, form.sent, card), card, form.names);
     const message = { text: raterCardChanged(form.rater.name, described), saved: false };
     page.refreshed(outcome.review, (current) => rebase(form.saved, current, card), message);
   } else if (sameDraft(page.live(), form.sent)) {

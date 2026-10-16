@@ -4,7 +4,16 @@ import { useFocusIfLost } from '../hooks/useFocusIfLost';
 import { useUnsavedWork } from '../hooks/useUnsavedWork';
 import { api, errorMessage } from '../lib/api';
 import { hasChanges, rebase, sameDraft, summarize, type Draft, type DraftTriple } from '../rating-ui/draft';
-import { cardFromReview, pressRaterSave, raterCardArtifacts, raterCardWorkloads, saveBlocked } from '../rating-ui/save';
+import {
+  cardFromReview,
+  clashingRows,
+  describeClashes,
+  pressRaterSave,
+  raterCardArtifacts,
+  raterCardChanged,
+  raterCardWorkloads,
+  saveBlocked,
+} from '../rating-ui/save';
 import { ScoreMatrix } from '../rating-ui/ScoreMatrix';
 import styles from './Admin.module.css';
 
@@ -27,6 +36,9 @@ interface RaterCardEditorProps {
  * The admin edits any rater's card in any round. The card is rebuilt from the review's per-rater breakdown, so no extra
  * endpoint is needed, and nothing is stored in the browser. Key it by round and rater.
  */
+/** Back to review while a save is out: the PUT has no timeout, so the button must not wait for it. */
+export const SAVE_ON_ITS_WAY = 'Your save is already on its way and will go through. Go back without waiting?';
+
 export function RaterCardEditor({ review, rater, catalog, onSaved, onRefreshed, onCancel }: RaterCardEditorProps) {
   const { round } = review;
   const saved = useMemo(() => cardFromReview(review, rater.userId), [review, rater.userId]);
@@ -41,6 +53,7 @@ export function RaterCardEditor({ review, rater, catalog, onSaved, onRefreshed, 
     latestDraft.current = draft;
   }, [draft]);
   const opened = useRef(saved);
+  const latestNames = useRef<Readonly<Record<string, string>>>({});
   // A save still out after "Back to review" must not close, or announce over, whatever editor is open by then.
   const mounted = useRef(true);
   useEffect(() => {
@@ -58,6 +71,13 @@ export function RaterCardEditor({ review, rater, catalog, onSaved, onRefreshed, 
     api<RoundReview>('GET', `/admin/rounds/${round.id}/review`, undefined, { signal: controller.signal }).then(
       (latest) => {
         const card = cardFromReview(latest, rater.userId);
+        // A slider moved during the read, on a row the rater also changed: the admin's row wins, so name it, as a save
+        // held back by a newer card does. Otherwise the rater's value would be overwritten without a word.
+        const clashes = clashingRows(opened.current, latestDraft.current, card);
+        if (clashes.length > 0) {
+          const described = describeClashes(clashes, card, latestNames.current);
+          setMessage({ text: raterCardChanged(rater.name, described), tone: 'error' });
+        }
         setDraft((current) => rebase(opened.current, current, card));
         onRefreshed(latest);
         setFreshNote(sameDraft(card, opened.current) ? 'Card is up to date' : 'Newer scores loaded');
@@ -81,6 +101,10 @@ export function RaterCardEditor({ review, rater, catalog, onSaved, onRefreshed, 
     () => Object.fromEntries(artifacts.map((artifact) => [artifact.id, artifact.name])),
     [artifacts],
   );
+  // The open-time read's handler was made at mount, so it reads the names through this ref.
+  useEffect(() => {
+    latestNames.current = names;
+  }, [names]);
   const summary = summarize(draft, artifacts);
   const dirty = hasChanges(draft, saved, ids);
   const blocked = !fresh || saveBlocked(dirty, summary.partial.length, saving);
@@ -119,7 +143,8 @@ export function RaterCardEditor({ review, rater, catalog, onSaved, onRefreshed, 
     );
 
   const cancel = () => {
-    if (!dirty || confirm(`Discard your changes to ${rater.name}'s card?`)) onCancel();
+    const question = saving ? SAVE_ON_ITS_WAY : dirty ? `Discard your changes to ${rater.name}'s card?` : undefined;
+    if (!question || confirm(question)) onCancel();
   };
 
   const status = saving ? 'Saving…' : fresh ? freshNote : 'Checking for newer scores…';

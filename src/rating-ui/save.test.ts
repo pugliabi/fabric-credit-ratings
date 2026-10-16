@@ -8,6 +8,7 @@ import {
   CHANGED_ELSEWHERE,
   CHANGED_WHILE_SAVING,
   clashingRows,
+  describeClashes,
   pressRaterSave,
   pressSave,
   raterCardArtifacts,
@@ -261,6 +262,19 @@ describe('clashingRows', () => {
     const sent: Draft = { notebook: [3, 5, 4], environment: [3, 5, 7], lakehouse: [1, 1, 1], pipeline: [3, 3, 3] };
     const card: Draft = { notebook: [3, 5, 4], environment: [3, 4, 6], lakehouse: [2, 2, 2] };
     expect(clashingRows(saved, sent, card)).toEqual(['environment', 'pipeline']);
+  });
+});
+
+describe('describeClashes', () => {
+  it('names each clashing row in catalog order, with the newer value or "cleared", falling back to the id', () => {
+    const card: Draft = { environment: [3, 4, 6] };
+    const names = { notebook: 'Notebook', environment: 'Environment' };
+    expect(describeClashes(['environment', 'notebook', 'unknown'], card, names)).toEqual([
+      'Notebook (newer card: cleared)',
+      'Environment (newer card: 3 · 4 · 6)',
+      'unknown (newer card: cleared)',
+    ]);
+    expect(describeClashes([], card, names)).toEqual([]);
   });
 });
 

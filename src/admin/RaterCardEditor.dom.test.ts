@@ -6,7 +6,7 @@ import type { Artifact, Round, ScoreTriple } from '../domain/types';
 import { mayLeave } from '../hooks/useUnsavedWork';
 import { CHANGED_WHILE_SAVING } from '../rating-ui/save';
 import { cleanup, click, fakeApi, find, render, settle, type } from '../test/dom';
-import { RaterCardEditor } from './RaterCardEditor';
+import { RaterCardEditor, SAVE_ON_ITS_WAY } from './RaterCardEditor';
 
 const q4: Round = { id: '2026-Q4', label: 'Q4 2026', status: 'open', publishedOn: null };
 const rater = { userId: 9, name: 'P2 Rater A' };
@@ -54,7 +54,15 @@ function review(card: Record<string, ScoreTriple>): RoundReview {
 const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200 });
 
 /** Holds the review the way RoundReviewPanel does, so onRefreshed feeds back into the editor. */
-function Host({ initial, onSaved }: { initial: RoundReview; onSaved: (next: RoundReview) => void }) {
+function Host({
+  initial,
+  onSaved,
+  onCancel = () => {},
+}: {
+  initial: RoundReview;
+  onSaved: (next: RoundReview) => void;
+  onCancel?: () => void;
+}) {
   const [current, setCurrent] = useState(initial);
   return createElement(RaterCardEditor, {
     review: current,
@@ -62,7 +70,7 @@ function Host({ initial, onSaved }: { initial: RoundReview; onSaved: (next: Roun
     catalog,
     onSaved,
     onRefreshed: setCurrent,
-    onCancel: () => {},
+    onCancel,
   });
 }
 
@@ -117,6 +125,53 @@ describe('RaterCardEditor', () => {
     await settle();
     expect(routes.calls.at(-1)?.body).toEqual({ scores: { notebook: [3, 5, 4], environment: [3, 4, 6] } });
     expect(onSaved).toHaveBeenCalledOnce();
+  });
+
+  it('names a clash when a row moved during the open-time read is one the rater changed too', async () => {
+    let answer: (response: Response) => void = () => {};
+    const opened = review({ notebook: [2, 5, 4], environment: [3, 4, 7] });
+    const newer = review({ notebook: [2, 5, 4], environment: [3, 4, 6] });
+    const api = fakeApi({
+      'GET /api/admin/rounds/2026-Q4/review': () => new Promise<Response>((resolve) => (answer = resolve)),
+    });
+    vi.stubGlobal('fetch', api.fetchMock);
+    const { container } = await render(Host, { initial: opened, onSaved: vi.fn() });
+    await type(slider(container, 'Environment, User Experience'), '5');
+
+    answer(json(newer));
+    await settle();
+    const alert = container.querySelector('[role="alert"]');
+    expect(alert?.textContent).toContain('Environment (newer card: 3 · 4 · 6)');
+    expect(alert?.textContent).toMatch(/^\s*P2 Rater A's card changed after you opened it/);
+    expect(alert?.className).toMatch(/error/);
+    expect(value(container, 'Environment, User Experience')).toBe('5');
+    expect(value(container, 'Environment, CU / Token Cost')).toBe('7');
+  });
+
+  it('says a save in flight will still land when Back to review is pressed, and lets the admin go', async () => {
+    const opened = review({ notebook: [2, 5, 4] });
+    const routes = fakeApi({
+      'GET /api/admin/rounds/2026-Q4/review': opened,
+      'PUT /api/admin/rounds/2026-Q4/scores/9': () => new Promise<Response>(() => {}),
+    });
+    vi.stubGlobal('fetch', routes.fetchMock);
+    const answers = [false, true];
+    const ask = vi.fn(() => answers.shift());
+    vi.stubGlobal('confirm', ask);
+    const onCancel = vi.fn();
+    const { container } = await render(Host, { initial: opened, onSaved: vi.fn(), onCancel });
+    await settle();
+    await type(slider(container, 'Notebook, Feature Capability'), '3');
+    await click(find(container, 'button', 'Save card'));
+    await settle();
+    expect(status(container)).toContain('Saving…');
+
+    await click(find(container, 'button', 'Back to review'));
+    expect(ask).toHaveBeenLastCalledWith(SAVE_ON_ITS_WAY);
+    expect(onCancel).not.toHaveBeenCalled();
+    await click(find(container, 'button', 'Back to review'));
+    expect(onCancel).toHaveBeenCalledOnce();
+    expect(ask).toHaveBeenCalledTimes(2);
   });
 
   it('shows "Saved. You changed scores…" as a warning, not an error, and keeps the move made meanwhile', async () => {
