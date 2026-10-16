@@ -49,11 +49,13 @@ describe('mentionsMath', () => {
     expect(mentionsMath('One of 7 workloads.')).toBe(false);
   });
 
-  it('flags a score over 7 or 21 written with a slash, but not 24/7', () => {
-    for (const text of ['capability 6/7', 'rated 6 / 7', 'a total of 15/21', 'a perfect 21/21']) {
+  it('flags a score over 7 or 21 written with a slash, decimals included, but not 24/7', () => {
+    const scores = ['capability 6/7', 'rated 6 / 7', 'a total of 15/21', 'a perfect 21/21'];
+    for (const text of [...scores, 'about 5.67/7', 'a 17.0/21 total', 'a clean 6.0/7', 'roughly 16.67/21']) {
       expect(mentionsMath(text)).toBe(true);
     }
     expect(mentionsMath('Support is 24/7.')).toBe(false);
+    expect(mentionsMath('Support is 24 / 7.')).toBe(false);
   });
 });
 
