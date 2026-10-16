@@ -48,7 +48,7 @@ route('myScoresPut', 'PUT', 'rounds/open/my-scores', 'user', async (ctx) => {
   }
   const problem = cardWriteProblem(ctx.user, round, ctx.user.id);
   if (problem) throw new HttpError(403, problem);
-  const known = new Set((await listArtifacts(db)).map((artifact) => artifact.id));
+  const known = new Map((await listArtifacts(db)).map((artifact) => [artifact.id, artifact]));
   const { scores, errors } = validateScores(ctx.body.scores, known);
   if (errors.length > 0) throw new HttpError(400, errors.join(' '));
   await saveForItems(ctx.log, CARD_ITEM_DELETED, async (tx) => {

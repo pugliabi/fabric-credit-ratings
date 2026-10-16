@@ -37,14 +37,23 @@ export const FACTOR_WEIGHTS = Object.fromEntries(FACTOR_IDS.map((id) => [id, WEI
   Record<FactorId, number>
 >;
 
-/** 40·capability + 25·ux + 25·cost + 10·outlook: an integer for whole scores. */
-export function weightedUnits(scores: FactorValues): number {
-  return FACTOR_IDS.reduce((acc, id) => acc + WEIGHT_UNITS[id] * scores[id], 0);
+/** Weighted units over the applicable (non-null) factors, and the weight they carry. */
+export function weightedUnits(scores: FactorValues): { units: number; weight: number } {
+  let units = 0;
+  let weight = 0;
+  for (const id of FACTOR_IDS) {
+    const value = scores[id];
+    if (value === null) continue;
+    units += WEIGHT_UNITS[id] * value;
+    weight += WEIGHT_UNITS[id];
+  }
+  return { units, weight };
 }
 
-/** Weighted mean of the four factors, scaled by 3 so it runs 3 to 21 like the old three-factor sum. */
+/** Weighted mean of the applicable factors, scaled onto 3 to 21. An item with no applicable factor can't exist. */
 export function totalOf(scores: FactorValues): number {
-  return (3 * weightedUnits(scores)) / 100;
+  const { units, weight } = weightedUnits(scores);
+  return weight === 0 ? MIN_TOTAL : (3 * units) / weight;
 }
 
 /** Averaged totals can be fractional; they round to the nearest notch. */

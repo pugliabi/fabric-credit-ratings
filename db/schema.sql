@@ -81,10 +81,10 @@ CREATE TABLE dbo.scores (
   round_id varchar(8) NOT NULL CONSTRAINT fk_scores_round REFERENCES dbo.rounds (id),
   user_id int NOT NULL CONSTRAINT fk_scores_user REFERENCES dbo.users (id),
   artifact_id varchar(64) NOT NULL CONSTRAINT fk_scores_artifact REFERENCES dbo.artifacts (id),
-  capability tinyint NOT NULL CONSTRAINT ck_scores_capability CHECK (capability BETWEEN 1 AND 7),
-  ux tinyint NOT NULL CONSTRAINT ck_scores_ux CHECK (ux BETWEEN 1 AND 7),
-  cost tinyint NOT NULL CONSTRAINT ck_scores_cost CHECK (cost BETWEEN 1 AND 7),
-  outlook tinyint NOT NULL CONSTRAINT df_scores_outlook DEFAULT 4 CONSTRAINT ck_scores_outlook CHECK (outlook BETWEEN 1 AND 7),
+  capability tinyint NULL CONSTRAINT ck_scores_capability CHECK (capability BETWEEN 1 AND 7),
+  ux tinyint NULL CONSTRAINT ck_scores_ux CHECK (ux BETWEEN 1 AND 7),
+  cost tinyint NULL CONSTRAINT ck_scores_cost CHECK (cost BETWEEN 1 AND 7),
+  outlook tinyint NULL CONSTRAINT df_scores_outlook DEFAULT 4 CONSTRAINT ck_scores_outlook CHECK (outlook BETWEEN 1 AND 7),
   updated_at datetime2 NOT NULL CONSTRAINT df_scores_updated DEFAULT SYSUTCDATETIME(),
   CONSTRAINT pk_scores PRIMARY KEY (round_id, user_id, artifact_id)
 );
@@ -132,3 +132,14 @@ GO
 
 IF NOT EXISTS (SELECT 1 FROM dbo.site_state)
 INSERT INTO dbo.site_state (id) VALUES (1);
+GO
+
+-- Plan 5: a not-applicable factor is stored as NULL (the CHECK constraints already allow NULL).
+IF EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('dbo.scores') AND name = 'cost' AND is_nullable = 0)
+BEGIN
+  ALTER TABLE dbo.scores ALTER COLUMN capability tinyint NULL;
+  ALTER TABLE dbo.scores ALTER COLUMN ux tinyint NULL;
+  ALTER TABLE dbo.scores ALTER COLUMN cost tinyint NULL;
+  ALTER TABLE dbo.scores ALTER COLUMN outlook tinyint NULL;
+END
+GO

@@ -463,7 +463,10 @@ describe('adminScoresPut', () => {
   it('refuses bad scores with 400 before any transaction', async () => {
     await expect(
       call('adminScoresPut', { id: open.id, userId: '7' }, { scores: { notebook: [9, 5, 4] } }),
-    ).rejects.toMatchObject({ status: 400, message: '"notebook" needs four whole scores from 1 to 7.' });
+    ).rejects.toMatchObject({
+      status: 400,
+      message: '"notebook" needs whole scores from 1 to 7 for Feature Capability, User Experience, CU / Token Cost, Outlook.',
+    });
     expect(transaction).not.toHaveBeenCalled();
   });
 

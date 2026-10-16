@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DEPRECATED_GRADE, FACTOR_WEIGHTS, WEIGHT_UNITS, gradeForTotal, totalOf } from './formula.ts';
+import { DEPRECATED_GRADE, FACTOR_WEIGHTS, WEIGHT_UNITS, gradeForTotal, totalOf, weightedUnits } from './formula.ts';
 
 describe('gradeForTotal', () => {
   it('maps whole totals to notches', () => {
@@ -25,6 +25,15 @@ describe('totalOf', () => {
     expect(totalOf({ capability: 1, ux: 1, cost: 1, outlook: 1 })).toBe(3);
     expect(totalOf({ capability: 5.5, ux: 5, cost: 4, outlook: 5 })).toBeCloseTo(14.85, 10);
     expect(totalOf({ capability: 5, ux: 4, cost: 5, outlook: 5 })).toBe(14.25);
+  });
+
+  it('scales the weights over the applicable factors only', () => {
+    expect(totalOf({ capability: 7, ux: 7, cost: null, outlook: 7 })).toBe(21);
+    expect(totalOf({ capability: 4, ux: 4, cost: null, outlook: 4 })).toBe(12);
+    expect(totalOf({ capability: 7, ux: null, cost: null, outlook: 7 })).toBe(21);
+    expect(totalOf({ capability: 5.5, ux: 5, cost: null, outlook: 5 })).toBeCloseTo((3 * (220 + 125 + 50)) / 75, 10);
+    expect(weightedUnits({ capability: 5, ux: 4, cost: 5, outlook: 5 })).toEqual({ units: 475, weight: 100 });
+    expect(weightedUnits({ capability: 5, ux: 4, cost: null, outlook: 5 })).toEqual({ units: 350, weight: 75 });
   });
 
   it('lets the weights, not the sum, decide the notch', () => {

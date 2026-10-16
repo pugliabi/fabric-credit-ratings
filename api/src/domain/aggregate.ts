@@ -1,5 +1,5 @@
 import { FACTORS } from '../../../src/data/factors.ts';
-import { DEPRECATED_GRADE, gradeForTotal, weightedUnits } from './formula.ts';
+import { DEPRECATED_GRADE, MIN_TOTAL, gradeForTotal, weightedUnits } from './formula.ts';
 import type {
   Artifact,
   FactorId,
@@ -25,11 +25,19 @@ export function tuplesFor(artifactId: string, data: RoundData): ScoreTuple[] {
 }
 
 /** Mean per factor, rounded to one decimal for display. */
-export function averageScores(tuples: readonly ScoreTuple[]): FactorValues {
+export function averageScores(tuples: readonly ScoreTuple[], artifact: Pick<Artifact, 'naFactors'>): FactorValues {
   const values = {} as FactorValues;
   FACTOR_ORDER.forEach((id, i) => {
-    const sum = tuples.reduce((acc, tuple) => acc + (tuple[i] ?? 0), 0);
-    values[id] = roundTo1(sum / tuples.length);
+    if (artifact.naFactors.includes(id)) {
+      values[id] = null;
+      return;
+    }
+    // A null in an applicable position (a row written before the flag was cleared) is skipped.
+    const given = tuples.flatMap((tuple) => {
+      const value = tuple[i];
+      return value === null || value === undefined ? [] : [value];
+    });
+    values[id] = given.length === 0 ? null : roundTo1(given.reduce((acc, value) => acc + value, 0) / given.length);
   });
   return values;
 }
@@ -38,14 +46,18 @@ export function averageScores(tuples: readonly ScoreTuple[]): FactorValues {
 export function gradeForTuples(artifact: Artifact, tuples: readonly ScoreTuple[]): RatingPoint['grade'] {
   if (artifact.status === 'retired') return DEPRECATED_GRADE;
   // Integer units summed first, one division at the end: an exact x.5 mean stays exactly x.5.
-  const units = tuples.reduce((acc, tuple) => {
+  let units = 0;
+  let weight = 0;
+  for (const tuple of tuples) {
     const values = {} as FactorValues;
     FACTOR_ORDER.forEach((id, i) => {
-      values[id] = tuple[i] ?? 0;
+      values[id] = artifact.naFactors.includes(id) ? null : (tuple[i] ?? null);
     });
-    return acc + weightedUnits(values);
-  }, 0);
-  return gradeForTotal((3 * units) / (100 * tuples.length));
+    const part = weightedUnits(values);
+    units += part.units;
+    weight += part.weight;
+  }
+  return gradeForTotal(weight === 0 ? MIN_TOTAL : (3 * units) / weight);
 }
 
 export function pointFor(artifact: Artifact, data: RoundData, date: string): RatingPoint | undefined {
@@ -55,7 +67,7 @@ export function pointFor(artifact: Artifact, data: RoundData, date: string): Rat
     round: data.round.id,
     roundLabel: data.round.label,
     date,
-    scores: averageScores(tuples),
+    scores: averageScores(tuples, artifact),
     raters: tuples.length,
     grade: gradeForTuples(artifact, tuples),
     note: data.notes[artifact.id] ?? '',

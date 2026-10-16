@@ -5,10 +5,10 @@ export interface ScoreRow {
   userId: number;
   name: string;
   artifactId: string;
-  capability: number;
-  ux: number;
-  cost: number;
-  outlook: number;
+  capability: number | null;
+  ux: number | null;
+  cost: number | null;
+  outlook: number | null;
   updatedAt: Date;
 }
 
@@ -27,7 +27,12 @@ export interface Dataset {
 }
 
 export function tuple(row: Pick<ScoreRow, 'capability' | 'ux' | 'cost' | 'outlook'>): ScoreTuple {
-  return [row.capability as Score, row.ux as Score, row.cost as Score, row.outlook as Score];
+  return [
+    row.capability as Score | null,
+    row.ux as Score | null,
+    row.cost as Score | null,
+    row.outlook as Score | null,
+  ];
 }
 
 export function assembleDataset(

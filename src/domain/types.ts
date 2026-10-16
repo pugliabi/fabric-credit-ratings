@@ -27,10 +27,12 @@ export type FactorId = 'capability' | 'ux' | 'cost' | 'outlook';
 export type Score = 1 | 2 | 3 | 4 | 5 | 6 | 7;
 
 /** One rater's scores for one item, in FACTORS order: capability, UX, cost, outlook. */
-export type ScoreTuple = readonly [Score, Score, Score, Score];
+/** null = the factor is not applicable to the item. */
+export type ScoreTuple = readonly [Score | null, Score | null, Score | null, Score | null];
 
 /** Per-factor values, averaged across raters, so not always whole numbers. */
-export type FactorValues = Record<FactorId, number>;
+/** null = not applicable. */
+export type FactorValues = Record<FactorId, number | null>;
 
 export type ReleaseStatus = 'ga' | 'preview' | 'retired';
 

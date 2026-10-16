@@ -40,15 +40,20 @@ export function mentionsMath(text: string): boolean {
 }
 
 function scoreLine(scores: FactorValues): string {
-  return FACTORS.map((factor) => `${factor.label.toLowerCase()} ${scores[factor.id]}`).join(', ');
+  return FACTORS.map((factor) => `${factor.label.toLowerCase()} ${scores[factor.id] ?? 'n/a'}`).join(', ');
 }
 
 export function promptFor(input: DraftInput): string {
   const { artifact, workload, roundLabel, scores, raters, previous } = input;
-  const factors = FACTORS.map(
-    (factor) =>
-      `- ${factor.label} (${scores[factor.id]} of 7). 1 means "${factor.low}". 7 means "${factor.high}".`,
-  ).join('\n');
+  const factors = [
+    ...FACTORS.filter((factor) => !artifact.naFactors.includes(factor.id)).map(
+      (factor) =>
+        `- ${factor.label} (${scores[factor.id] ?? 'n/a'} of 7). 1 means "${factor.low}". 7 means "${factor.high}".`,
+    ),
+    ...FACTORS.filter((factor) => artifact.naFactors.includes(factor.id)).map(
+      (factor) => `${factor.label} does not apply to this item.`,
+    ),
+  ].join('\n');
   const prior = previous
     ? `Previous review (${previous.roundLabel}): ${scoreLine(previous.scores)}.${previous.note ? ` Its write-up: "${previous.note}"` : ''}`
     : 'This is the first review of this item.';

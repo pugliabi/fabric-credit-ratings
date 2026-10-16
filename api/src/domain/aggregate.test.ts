@@ -114,3 +114,29 @@ describe('asOfDate', () => {
     expect(asOfDate(rounds)).toBe('2026-10-01');
   });
 });
+
+describe('not-applicable factors', () => {
+  const git: Artifact = { id: 'git', name: 'Git', workload: 'storage', status: 'ga', naFactors: ['cost'] };
+  const roundWith = (a: ScoreTuple, b: ScoreTuple): RoundData[] => [
+    {
+      round: { id: '2026-Q4', label: 'Q4 2026', status: 'published', publishedOn: '2026-10-01' },
+      notes: {},
+      scorecards: [
+        { rater: 'ann', submittedAt: '2026-09-30T00:00:00Z', scores: { git: a } },
+        { rater: 'bo', submittedAt: '2026-09-30T00:00:00Z', scores: { git: b } },
+      ],
+    },
+  ];
+
+  it('averages and grades over the applicable factors only', () => {
+    const current = buildRatings([git], roundWith([7, 7, null, 7], [7, 7, null, 7]))[0]?.current;
+    expect(current?.scores).toEqual({ capability: 7, ux: 7, cost: null, outlook: 7 });
+    expect(current?.grade).toBe('AAA');
+  });
+
+  it('ignores a stored value in a not-applicable position', () => {
+    const current = buildRatings([git], roundWith([7, 7, 1, 7], [7, 7, 1, 7]))[0]?.current;
+    expect(current?.scores).toEqual({ capability: 7, ux: 7, cost: null, outlook: 7 });
+    expect(current?.grade).toBe('AAA');
+  });
+});

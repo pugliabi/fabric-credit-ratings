@@ -77,6 +77,19 @@ describe('promptFor', () => {
     expect(prompt).toContain('Never mention scores');
   });
 
+  it('lists only applicable factors and says which one does not apply', () => {
+    const prompt = promptFor({
+      ...input,
+      artifact: { ...input.artifact, naFactors: ['cost'] },
+      scores: { capability: 6, ux: 5, cost: null, outlook: 4 },
+      previous: { roundLabel: 'Q3 2026', scores: { capability: 6, ux: 5, cost: null, outlook: 4 }, note: '' },
+    });
+    expect(prompt.match(/^- .+ of 7\)/gm)).toHaveLength(3);
+    expect(prompt).not.toContain('- CU / Token Cost (');
+    expect(prompt).toContain('cu / token cost n/a');
+    expect(prompt).toContain('CU / Token Cost does not apply to this item.');
+  });
+
   it('names the workload id, with no empty brackets, when the workload row is missing', () => {
     const { workload: _, ...withoutWorkload } = input;
     expect(promptFor(withoutWorkload)).toContain('Workload: data-engineering\n');

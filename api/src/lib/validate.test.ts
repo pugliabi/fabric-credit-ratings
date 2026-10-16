@@ -11,7 +11,11 @@ import {
   validateScores,
 } from './validate.ts';
 
-const known = new Set(['notebook', 'pipeline']);
+const known = new Map([
+  ['notebook', { naFactors: [] }],
+  ['pipeline', { naFactors: [] }],
+  ['git', { naFactors: ['cost' as const] }],
+]);
 
 describe('isReservedId', () => {
   it("is true for Object.prototype's own property names and prototype", () => {
@@ -38,14 +42,25 @@ describe('validateScores', () => {
   it('reports unknown items and bad cards, including three- and five-entry ones', () => {
     const { scores, errors } = validateScores(
       { ghost: [5, 5, 5, 5], notebook: [0, 5, 5, 5], pipeline: [5, 5, 5], spare: [5, 5, 5, 5, 5] },
-      new Set([...known, 'spare']),
+      new Map([...known, ['spare', { naFactors: [] }]]),
     );
     expect(scores).toEqual({});
     expect(errors).toEqual([
       'Unknown item "ghost". Reload the page to get the current list.',
-      '"notebook" needs four whole scores from 1 to 7.',
-      '"pipeline" needs four whole scores from 1 to 7.',
-      '"spare" needs four whole scores from 1 to 7.',
+      '"notebook" needs whole scores from 1 to 7 for Feature Capability, User Experience, CU / Token Cost, Outlook.',
+      '"pipeline" needs whole scores from 1 to 7 for Feature Capability, User Experience, CU / Token Cost, Outlook.',
+      '"spare" needs whole scores from 1 to 7 for Feature Capability, User Experience, CU / Token Cost, Outlook.',
+    ]);
+  });
+
+  it('keeps null in the not-applicable position and refuses scores there or nulls elsewhere', () => {
+    expect(validateScores({ git: [5, 6, null, 3] }, known)).toEqual({ scores: { git: [5, 6, null, 3] }, errors: [] });
+    const git = '"git" needs whole scores from 1 to 7 for Feature Capability, User Experience, Outlook.';
+    expect(validateScores({ git: [5, 6, 4, 3] }, known).errors).toEqual([git]);
+    expect(validateScores({ git: [5, 6, null, null] }, known).errors).toEqual([git]);
+    expect(validateScores({ git: [5, 6, 3] }, known).errors).toEqual([git]);
+    expect(validateScores({ notebook: [5, 6, null, 3] }, known).errors).toEqual([
+      '"notebook" needs whole scores from 1 to 7 for Feature Capability, User Experience, CU / Token Cost, Outlook.',
     ]);
   });
 

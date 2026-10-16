@@ -1,4 +1,6 @@
-import type { Score, ScoreTuple } from '../../../src/domain/types.ts';
+import { FACTORS } from '../../../src/data/factors.ts';
+import { applicableFactors } from '../../../src/domain/factors-applicable.ts';
+import type { Artifact, Score, ScoreTuple } from '../../../src/domain/types.ts';
 import { HttpError } from './errors.ts';
 
 export const ROUND_ID = /^\d{4}-[A-Z0-9]{1,3}$/;
@@ -30,10 +32,13 @@ function isScore(value: unknown): value is Score {
   return typeof value === 'number' && Number.isInteger(value) && value >= 1 && value <= 7;
 }
 
-/** Checks a raw { itemId: [c, u, k, o] } object; unknown ids and bad cards become errors. */
+const FACTOR_IDS = FACTORS.map((factor) => factor.id);
+const FACTOR_LABELS = Object.fromEntries(FACTORS.map((factor) => [factor.id, factor.label]));
+
+/** Checks a raw { itemId: [c, u, k, o] } object (null where a factor does not apply); bad cards become errors. */
 export function validateScores(
   raw: unknown,
-  knownIds: ReadonlySet<string>,
+  artifacts: ReadonlyMap<string, Pick<Artifact, 'naFactors'>>,
 ): { scores: Record<string, ScoreTuple>; errors: string[] } {
   const scores: Record<string, ScoreTuple> = {};
   const errors: string[] = [];
@@ -41,16 +46,29 @@ export function validateScores(
     return { scores, errors: ['Scores must be an object keyed by item id.'] };
   }
   for (const [id, tuple] of Object.entries(raw)) {
-    if (!knownIds.has(id)) {
+    const artifact = artifacts.get(id);
+    if (!artifact) {
       errors.push(`Unknown item "${id}". Reload the page to get the current list.`);
       continue;
     }
-    if (!Array.isArray(tuple) || tuple.length !== 4 || !tuple.every(isScore)) {
-      errors.push(`"${id}" needs four whole scores from 1 to 7.`);
+    const applicable = applicableFactors(artifact);
+    const ok =
+      Array.isArray(tuple) &&
+      tuple.length === FACTOR_IDS.length &&
+      FACTOR_IDS.every((factorId, i) =>
+        applicable.includes(factorId) ? isScore(tuple[i]) : tuple[i] === null || tuple[i] === undefined,
+      );
+    if (!ok) {
+      const labels = applicable.map((factorId) => FACTOR_LABELS[factorId]).join(', ');
+      errors.push(`"${id}" needs whole scores from 1 to 7 for ${labels}.`);
       continue;
     }
-    const [capability, ux, cost, outlook] = tuple as [Score, Score, Score, Score];
-    scores[id] = [capability, ux, cost, outlook];
+    scores[id] = FACTOR_IDS.map((factorId, i) => (applicable.includes(factorId) ? tuple[i] : null)) as [
+      Score | null,
+      Score | null,
+      Score | null,
+      Score | null,
+    ];
   }
   // A hand-made request can name thousands of ids; the answer and the log stay short.
   const MAX_ERRORS = 10;

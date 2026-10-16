@@ -1,7 +1,7 @@
 import type { ChangeKind, ReviewItem, RoundReview } from '../../../src/domain/api-types.ts';
-import { pointFor, previousPoint } from './aggregate.ts';
+import { FACTOR_ORDER, pointFor, previousPoint } from './aggregate.ts';
 import { notchDelta } from '../../../src/domain/grades.ts';
-import type { RatingPoint } from '../../../src/domain/types.ts';
+import type { RatingPoint, ScoreTuple } from '../../../src/domain/types.ts';
 import { pluralize } from '../../../src/lib/format.ts';
 import type { Dataset } from './dataset.ts';
 
@@ -26,7 +26,11 @@ export function buildReview(data: Dataset, roundId: string, today: string, aiEna
     const previous = previousPoint(artifact, data.rounds, roundId);
     const breakdown = target.scorecards.flatMap((card) => {
       const scores = card.scores[artifact.id];
-      return scores ? [{ ...rater(card.rater), scores }] : [];
+      if (!scores) return [];
+      const shown = scores.map((value, i) =>
+        artifact.naFactors.includes(FACTOR_ORDER[i] ?? 'capability') ? null : value,
+      ) as unknown as ScoreTuple;
+      return [{ ...rater(card.rater), scores: shown }];
     });
     return [{ artifact, point, previous: previous ?? null, change: changeLabel(point, previous), breakdown }];
   });

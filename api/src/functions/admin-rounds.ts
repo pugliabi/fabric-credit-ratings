@@ -1,6 +1,6 @@
 import type { PublishResult, RoundReview } from '../../../src/domain/api-types.ts';
 import { pointFor, previousPoint } from '../domain/aggregate.ts';
-import type { Round } from '../../../src/domain/types.ts';
+import type { Artifact, Round } from '../../../src/domain/types.ts';
 import { buildReview } from '../domain/review.ts';
 import type { Config } from '../lib/config.ts';
 import { DatabaseUnavailableError, db, transaction } from '../lib/db.ts';
@@ -53,8 +53,8 @@ async function reviewFor(roundId: string, config: Config): Promise<RoundReview> 
   return review;
 }
 
-async function knownArtifactIds(): Promise<Set<string>> {
-  return new Set((await listArtifacts(db)).map((artifact) => artifact.id));
+async function knownArtifacts(): Promise<Map<string, Artifact>> {
+  return new Map((await listArtifacts(db)).map((artifact) => [artifact.id, artifact]));
 }
 route('adminRounds', 'GET', 'admin/rounds', 'admin', async () => listRoundsWithCounts(db));
 
@@ -134,7 +134,7 @@ route('adminScoresPut', 'PUT', 'admin/rounds/{id}/scores/{userId}', 'admin', asy
   const userId = ctx.params.userId ?? '';
   const owner = USER_ID.test(userId) ? await findUserById(db, Number(userId)) : undefined;
   if (!owner) throw new HttpError(404, 'That user does not exist.');
-  const { scores, errors } = validateScores(ctx.body.scores, await knownArtifactIds());
+  const { scores, errors } = validateScores(ctx.body.scores, await knownArtifacts());
   if (errors.length > 0) throw new HttpError(400, errors.join(' '));
   await saveForItems(ctx.log, CARD_ITEM_DELETED, async (tx) => {
     const current = await lockRound(tx, round.id);
@@ -150,7 +150,7 @@ route('adminScoresPut', 'PUT', 'admin/rounds/{id}/scores/{userId}', 'admin', asy
 route('adminNotePut', 'PUT', 'admin/rounds/{id}/notes/{artifactId}', 'admin', async (ctx) => {
   const round = await requireRound(ctx.params.id);
   const artifactId = ctx.params.artifactId ?? '';
-  if (!(await knownArtifactIds()).has(artifactId)) throw new HttpError(404, 'That item does not exist.');
+  if (!(await knownArtifacts()).has(artifactId)) throw new HttpError(404, 'That item does not exist.');
   if (typeof ctx.body.body !== 'string') throw new HttpError(400, 'Send the write-up as text.');
   const body = ctx.body.body.trim();
   if (body.length > NOTE_MAX) throw new HttpError(400, 'Keep the write-up to 2,000 characters or fewer.');
