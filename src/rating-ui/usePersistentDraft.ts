@@ -61,14 +61,30 @@ export function clearDrafts(prefix: string): void {
 }
 
 /**
+ * The stored draft re-applied on top of `initial`, without rows for items missing from `known`: those can't be seen or
+ * saved, and a record kept alive only by them would make Log out ask about scores the user can't find.
+ */
+export function restoredDraft(
+  stored: StoredDraft | undefined,
+  initial: Draft,
+  known?: ReadonlySet<string>,
+): Draft | undefined {
+  const merged = restorable(stored, initial);
+  if (!merged || !known) return merged;
+  const pruned: Draft = Object.fromEntries(Object.entries(merged).filter(([id]) => known.has(id)));
+  return sameDraft(pruned, initial) ? undefined : pruned;
+}
+
+/**
  * Slider state that survives reloads. `initial` is the saved card; keep it referentially stable (useMemo).
  * Only the rows a stored draft actually changed come back, re-applied on top of `initial`, so a save made
  * elsewhere is not hidden by an old draft. Each write records `initial` as the draft's base, so change
  * `initial` only together with `replace(...)` (as after a save) or by remounting. Remount (change the React
- * key) when `key` changes.
+ * key) when `key` changes. `known` is the catalog's item ids, read once at mount: stored rows for other items are
+ * dropped, so a record can't outlive the items it holds.
  */
-export function usePersistentDraft(key: string, initial: Draft) {
-  const [kept] = useState(() => restorable(readDraft(key), initial));
+export function usePersistentDraft(key: string, initial: Draft, known: ReadonlySet<string>) {
+  const [kept] = useState(() => restoredDraft(readDraft(key), initial, known));
   const [draft, setDraft] = useState<Draft>(kept ?? initial);
   const [restored, setRestored] = useState(kept !== undefined);
 

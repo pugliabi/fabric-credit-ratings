@@ -12,6 +12,14 @@ type SetSession = (next: Session | ((current: Session) => Session)) => void;
 
 export const EXPIRED = 'Your session ended. Log in again; unsaved scores are still in this browser.';
 
+/** The admin page stores only the admin's own Score-tab draft; whys and the Review tab's card edits live in the tab. */
+export const ADMIN_EXPIRED =
+  'Your session ended. Log in again. Unsaved scores on the Score tab are still in this browser; unsaved whys and ' +
+  'card edits on the Review tab are lost.';
+
+/** The login notice as the admin page words it. */
+export const adminNotice = (notice: string) => (notice === EXPIRED ? ADMIN_EXPIRED : notice);
+
 /** The second logout needs no database once the cookie is gone, so it answers fast or not at all. */
 const LOGOUT_RETRY_MS = 5000;
 

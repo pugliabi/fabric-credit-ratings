@@ -8,6 +8,7 @@ import {
   hasUnsavedDrafts,
   persistDraft,
   readDraft,
+  restoredDraft,
   writeDraft,
 } from './usePersistentDraft';
 
@@ -63,6 +64,25 @@ describe('draft storage', () => {
     expect(readDraft('fcr-card:1:2026-Q4')).toEqual(stored);
     persistDraft('fcr-card:1:2026-Q4', stored.base, stored.base);
     expect(storage.items.has('fcr-card:1:2026-Q4')).toBe(false);
+  });
+});
+
+describe('restoredDraft', () => {
+  const known = new Set(['notebook', 'lakehouse']);
+
+  it('restores nothing when the only edit is for an item no longer in the catalog', () => {
+    const phantom: StoredDraft = { base: stored.base, draft: { ...stored.base, deleted: [3, 3, 3] } };
+    expect(restoredDraft(phantom, stored.base, known)).toBeUndefined();
+  });
+
+  it("drops a deleted item's row but keeps the other edits", () => {
+    const mixed: StoredDraft = { base: stored.base, draft: { notebook: [6, 5, 5], deleted: [3, 3, 3] } };
+    expect(restoredDraft(mixed, stored.base, known)).toEqual({ notebook: [6, 5, 5] });
+  });
+
+  it('restores every row when no catalog is given', () => {
+    const phantom: StoredDraft = { base: stored.base, draft: { ...stored.base, deleted: [3, 3, 3] } };
+    expect(restoredDraft(phantom, stored.base)).toEqual({ ...stored.base, deleted: [3, 3, 3] });
   });
 });
 

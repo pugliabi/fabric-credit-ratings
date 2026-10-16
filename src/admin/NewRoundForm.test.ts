@@ -30,9 +30,13 @@ describe('NewRoundForm', () => {
     expect(html).toMatch(/<input[^>]*autoCapitalize="characters"[^>]*value="2027-Q1"/i);
   });
 
-  it('keeps Open round focusable, so focus survives a submit', () => {
+  it('renders Open round with aria-disabled, not disabled', () => {
     const button = /<button[^>]*>Open round<\/button>/.exec(render())?.[0];
     expect(button).toContain('aria-disabled="false"');
     expect(button).not.toMatch(/\sdisabled[\s=>]/);
+  });
+
+  it('marks no field as invalid or described by an error before one shows', () => {
+    expect(render()).not.toMatch(/aria-invalid|aria-describedby/);
   });
 });

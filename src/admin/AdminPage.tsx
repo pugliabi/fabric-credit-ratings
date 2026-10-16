@@ -2,15 +2,18 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { AccountBar } from '../account/AccountBar';
 import { LoginForm } from '../account/LoginForm';
 import { Unavailable } from '../account/Unavailable';
-import { useSession } from '../account/useSession';
+import { adminNotice, useSession } from '../account/useSession';
 import { WakeNotice } from '../account/WakeNotice';
 import { currentValues } from '../data';
 import type { AdminCatalog, AdminRound, AdminUser, SessionUser } from '../domain/api-types';
 import { useFocusIfLost } from '../hooks/useFocusIfLost';
+import { mayLeave } from '../hooks/useUnsavedWork';
 import { api, ApiError, errorMessage } from '../lib/api';
 import { ScorecardEditor } from '../rating-ui/ScorecardEditor';
 import { CatalogTab } from './CatalogTab';
 import { NewRoundForm } from './NewRoundForm';
+import { PublishTab } from './PublishTab';
+import { ReviewTab } from './ReviewTab';
 import { UsersTab } from './UsersTab';
 import styles from './Admin.module.css';
 
@@ -18,6 +21,8 @@ const CURRENT = currentValues();
 
 const TABS = [
   { id: 'score', label: 'Score' },
+  { id: 'review', label: 'Review & why' },
+  { id: 'publish', label: 'Publish' },
   { id: 'catalog', label: 'Catalog' },
   { id: 'users', label: 'Users' },
 ] as const;
@@ -31,8 +36,15 @@ function tabFromHash(): Tab {
 export function AdminPage() {
   const { session, login, logout, retry } = useSession();
   const isRater = session.status === 'signed-in' && session.user.role !== 'admin';
-  // A 403 means this account is no longer an admin: re-reading /me sends it to /rate.
-  const forbidden = useCallback(() => void retry(), [retry]);
+  const rechecked = useRef(false);
+  // A 403 means this account is no longer an admin: re-reading /me sends it to /rate. Once per page, so a 403 that
+  // /me can't explain shows its message instead of reloading forever.
+  const forbidden = useCallback(() => {
+    if (rechecked.current) return false;
+    rechecked.current = true;
+    void retry();
+    return true;
+  }, [retry]);
 
   useEffect(() => {
     if (isRater) location.replace('/rate');
@@ -53,7 +65,7 @@ export function AdminPage() {
           </header>
           <main className={styles.loading}>
             {session.status === 'signed-out' ? (
-              <LoginForm title="Admin login" notice={session.notice} onLogin={login} />
+              <LoginForm title="Admin login" notice={adminNotice(session.notice)} onLogin={login} />
             ) : session.status === 'unavailable' ? (
               <Unavailable message={session.message} onRetry={() => void retry()} />
             ) : (
@@ -76,8 +88,8 @@ interface AdminData {
 interface AdminShellProps {
   user: SessionUser;
   onLogout: () => Promise<void>;
-  /** Stable: `load` depends on it. */
-  onForbidden: () => void;
+  /** Stable: `load` depends on it. False when /me was already re-read; the 403 is then shown. */
+  onForbidden: () => boolean;
 }
 
 function AdminShell({ user, onLogout, onForbidden }: AdminShellProps) {
@@ -89,7 +101,8 @@ function AdminShell({ user, onLogout, onForbidden }: AdminShellProps) {
   const latest = useRef(0);
 
   // Only the latest load lands: an older answer arriving late would bring back the open round a reload just dropped.
-  const load = useCallback(async () => {
+  // Resolves to the rounds it applied.
+  const load = useCallback(async (): Promise<AdminRound[] | undefined> => {
     const mine = ++latest.current;
     setLoading(true);
     try {
@@ -98,17 +111,16 @@ function AdminShell({ user, onLogout, onForbidden }: AdminShellProps) {
         api<AdminCatalog>('GET', '/admin/catalog'),
         api<AdminUser[]>('GET', '/admin/users'),
       ]);
-      if (mine !== latest.current) return;
+      if (mine !== latest.current) return undefined;
       setData({ rounds, catalog, users });
       setError('');
+      return rounds;
     } catch (reason) {
-      if (mine !== latest.current) return;
-      if (reason instanceof ApiError && reason.status === 403) {
-        onForbidden();
-      } else {
-        setError(errorMessage(reason));
-        setAttempt((count) => count + 1);
-      }
+      if (mine !== latest.current) return undefined;
+      if (reason instanceof ApiError && reason.status === 403 && onForbidden()) return undefined;
+      setError(errorMessage(reason));
+      setAttempt((count) => count + 1);
+      return undefined;
     } finally {
       if (mine === latest.current) setLoading(false);
     }
@@ -117,6 +129,17 @@ function AdminShell({ user, onLogout, onForbidden }: AdminShellProps) {
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    const follow = () => {
+      const next = tabFromHash();
+      if (next === tab) return;
+      if (mayLeave()) setTab(next);
+      else history.replaceState(null, '', `#${tab}`);
+    };
+    addEventListener('hashchange', follow);
+    return () => removeEventListener('hashchange', follow);
+  }, [tab]);
 
   const reload = useCallback(() => void load(), [load]);
   const setRounds = useCallback((rounds: AdminRound[]) => setData((current) => current && { ...current, rounds }), []);
@@ -127,11 +150,31 @@ function AdminShell({ user, onLogout, onForbidden }: AdminShellProps) {
   const setUsers = useCallback((users: AdminUser[]) => setData((current) => current && { ...current, users }), []);
 
   const choose = (next: Tab) => {
+    if (next !== tab && !mayLeave()) return;
     setTab(next);
     history.replaceState(null, '', `#${next}`);
   };
 
   const open = data?.rounds.find((round) => round.status === 'open');
+
+  // The Score tab lost its round. If the reload still lists that round as open (published and reopened meanwhile, or a
+  // 409 that a fresh card fixes), the editor remounts. A report from the editor's own load does that once per round,
+  // so a 409 that keeps coming back can't loop; the Reload page button does it every time.
+  const [scoreRun, setScoreRun] = useState(0);
+  const remountedFor = useRef<string | undefined>(undefined);
+  const openId = open?.id;
+  const refreshScore = useCallback(
+    (automatic: boolean) =>
+      void load().then((rounds) => {
+        if (!rounds?.some((round) => round.id === openId && round.status === 'open')) return;
+        if (automatic && remountedFor.current === openId) return;
+        if (automatic) remountedFor.current = openId;
+        setScoreRun((count) => count + 1);
+      }),
+    [load, openId],
+  );
+  const scoreClosed = useCallback(() => refreshScore(true), [refreshScore]);
+  const scoreReload = useCallback(() => refreshScore(false), [refreshScore]);
 
   return (
     <div className={styles.shell}>
@@ -163,12 +206,22 @@ function AdminShell({ user, onLogout, onForbidden }: AdminShellProps) {
           tab === 'score' &&
           (open ? (
             <div className={styles.scoreTab}>
-              {/* Keyed by the open round too: when onClosed's reload finds another open round, the editor refetches. */}
-              <ScorecardEditor key={`${user.id}:${open.id}`} user={user} reference={CURRENT} onClosed={reload} />
+              {/* Keyed by the open round too: when a reload finds another open round, the editor refetches. */}
+              <ScorecardEditor
+                key={`${user.id}:${open.id}:${scoreRun}`}
+                user={user}
+                reference={CURRENT}
+                onClosed={scoreClosed}
+                onReload={scoreReload}
+              />
             </div>
           ) : (
             <NewRoundForm rounds={data.rounds} onCreated={setRounds} />
           ))}
+        {data && tab === 'review' && <ReviewTab rounds={data.rounds} catalog={data.catalog} users={data.users} />}
+        {data && tab === 'publish' && (
+          <PublishTab rounds={data.rounds} catalogSize={data.catalog.artifacts.length} onRounds={setRounds} />
+        )}
         {data && tab === 'catalog' && <CatalogTab catalog={data.catalog} onCatalog={setCatalog} />}
         {data && tab === 'users' && (
           <UsersTab users={data.users} me={user} onUsers={setUsers} onForbidden={onForbidden} />

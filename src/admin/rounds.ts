@@ -22,6 +22,11 @@ export function roundIdProblem(id: string): string | undefined {
   return /^\d{4}-[A-Z0-9]{1,3}$/.test(id) ? undefined : 'Round ids look like 2027-Q1.';
 }
 
+/** The publish date to offer: today, unless the latest published round is dated later (the API refuses earlier). */
+export function publishDate(today: string, earliest?: string): string {
+  return earliest && today < earliest ? earliest : today;
+}
+
 /** Today in the browser's time zone, as YYYY-MM-DD. */
 export function localToday(now = new Date()): string {
   const month = String(now.getMonth() + 1).padStart(2, '0');

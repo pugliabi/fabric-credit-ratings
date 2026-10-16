@@ -2,7 +2,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { SessionUser } from '../domain/api-types';
 import { ApiError, api, onSignedOut, onSlow, SLOW_MS } from '../lib/api';
 import { runLogout, type LogoutState } from './logout';
-import { createSessionActions, EXPIRED, sessionAfterError, sessionAfterSignedOut, type Session } from './useSession';
+import {
+  ADMIN_EXPIRED,
+  adminNotice,
+  createSessionActions,
+  EXPIRED,
+  sessionAfterError,
+  sessionAfterSignedOut,
+  type Session,
+} from './useSession';
 
 const user: SessionUser = { id: 1, login: 'ann', displayName: 'Ann', role: 'rater' };
 const WAKING = 'The ratings database is not responding. Try again in a minute.';
@@ -59,6 +67,17 @@ describe('sessionAfterSignedOut', () => {
       { status: 'unavailable', message: 'The ratings server is down.' },
     ];
     for (const state of states) expect(sessionAfterSignedOut(state)).toBe(state);
+  });
+});
+
+describe('adminNotice', () => {
+  it('says on the admin page that only the Score tab keeps unsaved scores', () => {
+    expect(adminNotice(EXPIRED)).toBe(ADMIN_EXPIRED);
+    expect(ADMIN_EXPIRED).toBe(
+      'Your session ended. Log in again. Unsaved scores on the Score tab are still in this browser; unsaved whys ' +
+        'and card edits on the Review tab are lost.',
+    );
+    expect(adminNotice('')).toBe('');
   });
 });
 

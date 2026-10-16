@@ -40,7 +40,7 @@ export function summarize(draft: Draft, artifacts: readonly Artifact[]): DraftSu
   return { scores, rated: Object.keys(scores).length, partial };
 }
 
-function sameTriple(a: DraftTriple, b: DraftTriple): boolean {
+export function sameTriple(a: DraftTriple, b: DraftTriple): boolean {
   return a.every((score, i) => score === b[i]);
 }
 
