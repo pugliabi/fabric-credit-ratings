@@ -211,6 +211,53 @@ describe('PublishTab', () => {
     expect(heading(container, 'Q4 2026 is open again')).not.toBeNull();
   });
 
+  it('deletes the open round after a confirm that counts its scorecards', async () => {
+    const ask = vi.fn(() => true);
+    vi.stubGlobal('confirm', ask);
+    const api = fakeApi({
+      'GET /api/admin/site': behind,
+      'GET /api/admin/rounds/2026-Q4/review': review,
+      'DELETE /api/admin/rounds/2026-Q4': [q3],
+    });
+    vi.stubGlobal('fetch', api.fetchMock);
+    const { container } = await render(Host, { initial: [q4, q3] });
+    await settle();
+    await click(find(container, 'button', 'Delete round'));
+    await settle();
+    expect(ask).toHaveBeenCalledWith('Delete Q4 2026 and its 2 scorecards? This cannot be undone.');
+    expect(api.calls.filter((call) => call.method === 'DELETE').map((call) => call.path)).toEqual([
+      '/api/admin/rounds/2026-Q4',
+    ]);
+    expect(heading(container, 'Q4 2026 was deleted.')).not.toBeNull();
+    expect(heading(container, 'Start a new round')).not.toBeNull();
+  });
+
+  it('words the delete question for one scorecard and for none', async () => {
+    const ask = vi.fn(() => false);
+    vi.stubGlobal('confirm', ask);
+    const api = fakeApi({ 'GET /api/admin/site': behind, 'GET /api/admin/rounds/2026-Q4/review': review });
+    vi.stubGlobal('fetch', api.fetchMock);
+    const one = await render(Host, { initial: [{ ...q4, scorecards: 1 }] });
+    await settle();
+    await click(find(one.container, 'button', 'Delete round'));
+    expect(ask).toHaveBeenLastCalledWith('Delete Q4 2026 and its 1 scorecard? This cannot be undone.');
+    const none = await render(Host, { initial: [{ ...q4, scorecards: 0 }] });
+    await settle();
+    await click(find(none.container, 'button', 'Delete round'));
+    expect(ask).toHaveBeenLastCalledWith('Delete Q4 2026? This cannot be undone.');
+  });
+
+  it('sends nothing when the delete is not confirmed', async () => {
+    vi.stubGlobal('confirm', () => false);
+    const api = fakeApi({ 'GET /api/admin/site': behind, 'GET /api/admin/rounds/2026-Q4/review': review });
+    vi.stubGlobal('fetch', api.fetchMock);
+    const { container } = await render(Host, { initial: [q4] });
+    await settle();
+    await click(find(container, 'button', 'Delete round'));
+    await settle();
+    expect(api.calls.filter((call) => call.method === 'DELETE')).toHaveLength(0);
+  });
+
   it('shows the site panel with its error and a working Check again when the first read fails', async () => {
     let fails = true;
     vi.stubGlobal(

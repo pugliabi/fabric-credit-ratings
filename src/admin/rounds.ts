@@ -1,25 +1,51 @@
 import type { Round } from '../domain/types';
 
-/** After 2026-Q4 comes { id: '2027-Q1', label: 'Q1 2027' }. Other id styles fall back to the quarter of `today`. */
-export function nextRound(rounds: readonly Round[], today: string): { id: string; label: string } {
-  const latest = rounds.map((round) => round.id).sort().at(-1);
-  const match = latest ? /^(\d{4})-Q([1-4])$/.exec(latest) : null;
+export const MONTHS = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'] as const;
+const MONTH_NAMES = [
+  'January',
+  'February',
+  'March',
+  'April',
+  'May',
+  'June',
+  'July',
+  'August',
+  'September',
+  'October',
+  'November',
+  'December',
+];
+
+/** { year, month (1-12) } of the period after the latest round, or after `today` when no round id can be read. */
+function nextPeriod(rounds: readonly Round[], today: string): { year: number; month: number } {
+  const latest = rounds.map((round) => round.id).sort().at(-1) ?? '';
+  const month = /^(\d{4})-([A-Z]{3})$/.exec(latest);
+  const quarter = /^(\d{4})-Q([1-4])$/.exec(latest);
   let year = Number(today.slice(0, 4));
-  let quarter = Math.ceil(Number(today.slice(5, 7)) / 3);
-  if (match) {
-    year = Number(match[1]);
-    quarter = Number(match[2]) + 1;
-    if (quarter > 4) {
-      quarter = 1;
-      year += 1;
-    }
+  let next = Number(today.slice(5, 7)) + 1;
+  if (month && MONTHS.includes(month[2] as (typeof MONTHS)[number])) {
+    year = Number(month[1]);
+    next = MONTHS.indexOf(month[2] as (typeof MONTHS)[number]) + 2;
+  } else if (quarter) {
+    year = Number(quarter[1]);
+    next = Number(quarter[2]) * 3 + 1;
   }
-  return { id: `${year}-Q${quarter}`, label: `Q${quarter} ${year}` };
+  if (next > 12) {
+    next = 1;
+    year += 1;
+  }
+  return { year, month: next };
+}
+
+/** After 2026-OCT comes { id: '2026-NOV', label: 'November 2026' }; after 2026-Q4, January 2027. */
+export function nextRound(rounds: readonly Round[], today: string): { id: string; label: string } {
+  const { year, month } = nextPeriod(rounds, today);
+  return { id: `${year}-${MONTHS[month - 1]}`, label: `${MONTH_NAMES[month - 1]} ${year}` };
 }
 
 /** The API's ROUND_ID rule (api/src/lib/validate.ts), in its words, which the browser bundle can't import. */
 export function roundIdProblem(id: string): string | undefined {
-  return /^\d{4}-[A-Z0-9]{1,3}$/.test(id) ? undefined : 'Round ids look like 2027-Q1.';
+  return /^\d{4}-[A-Z0-9]{1,3}$/.test(id) ? undefined : 'Round ids look like 2026-NOV or 2027-Q1.';
 }
 
 /** The publish date to offer: today, unless the latest published round is dated later (the API refuses earlier). */

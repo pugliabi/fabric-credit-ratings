@@ -18,16 +18,16 @@ function render(): string {
 }
 
 describe('NewRoundForm', () => {
-  it('suggests the next quarter', () => {
+  it('suggests the next month', () => {
     const html = render();
-    expect(html).toContain('value="2027-Q1"');
-    expect(html).toContain('value="Q1 2027"');
+    expect(html).toContain('value="2027-JAN"');
+    expect(html).toContain('value="January 2027"');
   });
 
   it("leaves the id and label rules to the server's words instead of the browser's", () => {
     const html = render();
     expect(html).not.toMatch(/pattern=|maxlength=/i);
-    expect(html).toMatch(/<input[^>]*autoCapitalize="characters"[^>]*value="2027-Q1"/i);
+    expect(html).toMatch(/<input[^>]*autoCapitalize="characters"[^>]*value="2027-JAN"/i);
   });
 
   it('renders Open round with aria-disabled, not disabled', () => {

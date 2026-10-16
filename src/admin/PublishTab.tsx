@@ -81,6 +81,29 @@ export function PublishTab({ rounds, catalogSize, onRounds }: PublishTabProps) {
     );
   };
 
+  const remove = async (round: AdminRound) => {
+    if (busy) return;
+    const cards =
+      round.scorecards === 0
+        ? ''
+        : ` and its ${round.scorecards} ${round.scorecards === 1 ? 'scorecard' : 'scorecards'}`;
+    if (!confirm(`Delete ${round.label}${cards}? This cannot be undone.`)) return;
+    setBusy(true);
+    setError('');
+    setNotice(undefined);
+    setAttempt((count) => count + 1);
+    try {
+      const rounds = await api<AdminRound[]>('DELETE', `/admin/rounds/${round.id}`, undefined, { wakeNotice: true });
+      onRounds(rounds);
+      setNotice({ title: `${round.label} was deleted.`, text: '' });
+    } catch (reason) {
+      setError(errorMessage(reason));
+      setFailures((count) => count + 1);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <div className={styles.publishTab}>
       {/* Before NewRoundForm: after a publish both mount, and the notice's focus effect runs first. */}
@@ -100,6 +123,8 @@ export function PublishTab({ rounds, catalogSize, onRounds }: PublishTabProps) {
           onPublish={(publishedOn) =>
             setStatus(open, { status: 'published', publishedOn }, `${open.label} is published`)
           }
+          onDelete={() => void remove(open)}
+          deleting={busy}
         />
       ) : (
         <NewRoundForm rounds={rounds} onCreated={onRounds} />
@@ -251,9 +276,12 @@ interface OpenRoundProps {
   /** The latest published round's date; the API refuses anything earlier. */
   earliestDate?: string;
   onPublish: (publishedOn: string) => Promise<void>;
+  onDelete?: () => void;
+  /** A publish, reopen or delete is out; the page-level busy flag. */
+  deleting?: boolean;
 }
 
-function OpenRound({ round, catalogSize, earliestDate, onPublish }: OpenRoundProps) {
+function OpenRound({ round, catalogSize, earliestDate, onPublish, onDelete, deleting }: OpenRoundProps) {
   const [review, setReview] = useState<RoundReview>();
   const [error, setError] = useState('');
   const [failures, setFailures] = useState(0);
@@ -296,6 +324,8 @@ function OpenRound({ round, catalogSize, earliestDate, onPublish }: OpenRoundPro
       catalogSize={catalogSize}
       earliestDate={earliestDate}
       onPublish={onPublish}
+      onDelete={onDelete}
+      deleting={deleting}
     />
   );
 }
@@ -339,7 +369,15 @@ interface PublishFormProps extends OpenRoundProps {
 }
 
 /** Exported for markup tests; the page uses PublishTab. */
-export function PublishForm({ round, review, catalogSize, earliestDate, onPublish }: PublishFormProps) {
+export function PublishForm({
+  round,
+  review,
+  catalogSize,
+  earliestDate,
+  onPublish,
+  onDelete,
+  deleting,
+}: PublishFormProps) {
   // After a reopen, or on arrival after login, the button that had focus is gone.
   const heading = useFocusIfLost<HTMLHeadingElement>();
   const [date, setDate] = useState(() => publishDate(localToday(), earliestDate));
@@ -400,6 +438,9 @@ export function PublishForm({ round, review, catalogSize, earliestDate, onPublis
         {/* aria-disabled, not disabled: focus stays on it through the publish and after a refusal. */}
         <button type="button" className={styles.primary} aria-disabled={blocked} onClick={() => void publish()}>
           {busy ? 'Publishing…' : `Publish ${round.label}`}
+        </button>
+        <button type="button" className={styles.secondary} aria-disabled={busy || deleting} onClick={onDelete}>
+          Delete round
         </button>
       </div>
     </section>

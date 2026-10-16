@@ -5,17 +5,18 @@ import { localToday, nextRound, publishDate, roundIdProblem } from './rounds';
 const round = (id: string): Round => ({ id, label: id, status: 'published', publishedOn: '2026-01-01' });
 
 describe('nextRound', () => {
-  it('follows the newest quarter', () => {
-    expect(nextRound([round('2026-Q3'), round('2026-Q4')], '2026-12-01')).toEqual({ id: '2027-Q1', label: 'Q1 2027' });
-    expect(nextRound([round('2026-Q2')], '2026-12-01')).toEqual({ id: '2026-Q3', label: 'Q3 2026' });
+  const today = '2026-10-16';
+  it('suggests the month after the latest month round', () => {
+    expect(nextRound([round('2026-NOV')], today)).toEqual({ id: '2026-DEC', label: 'December 2026' });
+    expect(nextRound([round('2026-DEC')], today)).toEqual({ id: '2027-JAN', label: 'January 2027' });
   });
-
-  it('starts from the current quarter when there are no rounds', () => {
-    expect(nextRound([], '2026-05-10')).toEqual({ id: '2026-Q2', label: 'Q2 2026' });
+  it('suggests the month after the latest quarter round', () => {
+    expect(nextRound([round('2026-Q4')], today)).toEqual({ id: '2027-JAN', label: 'January 2027' });
+    expect(nextRound([round('2026-Q1')], today)).toEqual({ id: '2026-APR', label: 'April 2026' });
   });
-
-  it('falls back to the quarter of today when the newest id is not a quarter', () => {
-    expect(nextRound([round('2026-Q3'), round('2026-X')], '2026-11-02')).toEqual({ id: '2026-Q4', label: 'Q4 2026' });
+  it('falls back to the month after today', () => {
+    expect(nextRound([], today)).toEqual({ id: '2026-NOV', label: 'November 2026' });
+    expect(nextRound([round('2026-H1')], '2026-12-02')).toEqual({ id: '2027-JAN', label: 'January 2027' });
   });
 });
 
@@ -23,7 +24,7 @@ describe('roundIdProblem', () => {
   it("accepts the API's round ids and words a bad one as the server does", () => {
     for (const id of ['2027-Q1', '2027-H2', '2027-Q']) expect(roundIdProblem(id)).toBeUndefined();
     for (const id of ['2027-q1', '27-Q1', '2027-Q123', '2027Q1', '']) {
-      expect(roundIdProblem(id)).toBe('Round ids look like 2027-Q1.');
+      expect(roundIdProblem(id)).toBe('Round ids look like 2026-NOV or 2027-Q1.');
     }
   });
 });

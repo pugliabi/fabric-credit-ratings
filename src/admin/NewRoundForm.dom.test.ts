@@ -57,7 +57,7 @@ describe('NewRoundForm', () => {
     await key(id, '27-Q1', 5);
     await click(find(container, 'button', 'Open round'));
     const alert = container.querySelector('[role="alert"]');
-    expect(alert?.textContent).toBe('Round ids look like 2027-Q1.');
+    expect(alert?.textContent).toBe('Round ids look like 2026-NOV or 2027-Q1.');
     expect(api.calls).toHaveLength(0);
     expect(document.activeElement).toBe(id);
     expect([id.selectionStart, id.selectionEnd]).toEqual([0, 5]);

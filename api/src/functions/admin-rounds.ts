@@ -60,7 +60,7 @@ route('adminRounds', 'GET', 'admin/rounds', 'admin', async () => listRoundsWithC
 
 route('adminRoundCreate', 'POST', 'admin/rounds', 'admin', async (ctx) => {
   const id = text(ctx.body, 'id', 'Round id', 8);
-  if (!ROUND_ID.test(id)) throw new HttpError(400, 'Round ids look like 2027-Q1.');
+  if (!ROUND_ID.test(id)) throw new HttpError(400, 'Round ids look like 2026-NOV or 2027-Q1.');
   const label = text(ctx.body, 'label', 'Label', 40);
   const open = await findOpenRound(db);
   if (open) throw new HttpError(409, `Publish ${open.label} before starting a new round.`);

@@ -355,7 +355,7 @@ describe('adminRoundCreate', () => {
   it('refuses a bad id with 400 before any query', async () => {
     await expect(call('adminRoundCreate', {}, { ...next, id: '2027-q1' })).rejects.toMatchObject({
       status: 400,
-      message: 'Round ids look like 2027-Q1.',
+      message: 'Round ids look like 2026-NOV or 2027-Q1.',
     });
     expect(findOpenRound).not.toHaveBeenCalled();
     expect(createRound).not.toHaveBeenCalled();
