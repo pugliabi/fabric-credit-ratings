@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { AccountBar } from '../account/AccountBar';
 import { LoginForm } from '../account/LoginForm';
 import { Unavailable } from '../account/Unavailable';
@@ -6,7 +6,8 @@ import { useSession } from '../account/useSession';
 import { WakeNotice } from '../account/WakeNotice';
 import { currentValues } from '../data';
 import type { AdminCatalog, AdminRound, AdminUser, SessionUser } from '../domain/api-types';
-import { api, errorMessage } from '../lib/api';
+import { useFocusIfLost } from '../hooks/useFocusIfLost';
+import { api, ApiError, errorMessage } from '../lib/api';
 import { ScorecardEditor } from '../rating-ui/ScorecardEditor';
 import { NewRoundForm } from './NewRoundForm';
 import styles from './Admin.module.css';
@@ -24,6 +25,8 @@ function tabFromHash(): Tab {
 export function AdminPage() {
   const { session, login, logout, retry } = useSession();
   const isRater = session.status === 'signed-in' && session.user.role !== 'admin';
+  // A 403 means this account is no longer an admin: re-reading /me sends it to /rate.
+  const forbidden = useCallback(() => void retry(), [retry]);
 
   useEffect(() => {
     if (isRater) location.replace('/rate');
@@ -33,7 +36,7 @@ export function AdminPage() {
   return (
     <>
       {session.status === 'signed-in' && !isRater ? (
-        <AdminShell user={session.user} onLogout={logout} />
+        <AdminShell user={session.user} onLogout={logout} onForbidden={forbidden} />
       ) : (
         <div className={styles.shell}>
           <header className={styles.header}>
@@ -64,29 +67,52 @@ interface AdminData {
   users: AdminUser[];
 }
 
-function AdminShell({ user, onLogout }: { user: SessionUser; onLogout: () => Promise<void> }) {
+interface AdminShellProps {
+  user: SessionUser;
+  onLogout: () => Promise<void>;
+  /** Stable: `load` depends on it. */
+  onForbidden: () => void;
+}
+
+function AdminShell({ user, onLogout, onForbidden }: AdminShellProps) {
   const [tab, setTab] = useState<Tab>(tabFromHash);
   const [data, setData] = useState<AdminData>();
   const [error, setError] = useState('');
+  const [attempt, setAttempt] = useState(0);
+  const [loading, setLoading] = useState(false);
+  const latest = useRef(0);
 
+  // Only the latest load lands: an older answer arriving late would bring back the open round a reload just dropped.
   const load = useCallback(async () => {
-    setError('');
+    const mine = ++latest.current;
+    setLoading(true);
     try {
       const [rounds, catalog, users] = await Promise.all([
         api<AdminRound[]>('GET', '/admin/rounds'),
         api<AdminCatalog>('GET', '/admin/catalog'),
         api<AdminUser[]>('GET', '/admin/users'),
       ]);
+      if (mine !== latest.current) return;
       setData({ rounds, catalog, users });
+      setError('');
     } catch (reason) {
-      setError(errorMessage(reason));
+      if (mine !== latest.current) return;
+      if (reason instanceof ApiError && reason.status === 403) {
+        onForbidden();
+      } else {
+        setError(errorMessage(reason));
+        setAttempt((count) => count + 1);
+      }
+    } finally {
+      if (mine === latest.current) setLoading(false);
     }
-  }, []);
+  }, [onForbidden]);
 
   useEffect(() => {
     void load();
   }, [load]);
 
+  const reload = useCallback(() => void load(), [load]);
   const setRounds = useCallback((rounds: AdminRound[]) => setData((current) => current && { ...current, rounds }), []);
 
   const choose = (next: Tab) => {
@@ -120,25 +146,52 @@ function AdminShell({ user, onLogout }: { user: SessionUser; onLogout: () => Pro
       </header>
 
       <main className={styles.main}>
-        {error && (
-          <section className={styles.panel} role="alert">
-            <p className={styles.error}>{error}</p>
-            <button type="button" className={styles.secondary} onClick={() => void load()}>
-              Try again
-            </button>
-          </section>
-        )}
+        {error && <LoadFailed message={error} attempt={attempt} busy={loading} onRetry={reload} />}
         {!data && !error && <p className={styles.muted}>Loading…</p>}
         {data &&
           tab === 'score' &&
           (open ? (
             <div className={styles.scoreTab}>
-              <ScorecardEditor key={user.id} user={user} reference={CURRENT} />
+              {/* Keyed by the open round too: when onClosed's reload finds another open round, the editor refetches. */}
+              <ScorecardEditor key={`${user.id}:${open.id}`} user={user} reference={CURRENT} onClosed={reload} />
             </div>
           ) : (
             <NewRoundForm rounds={data.rounds} onCreated={setRounds} />
           ))}
       </main>
     </div>
+  );
+}
+
+interface LoadFailedProps {
+  message: string;
+  /** Remounts the alert, so the same message is announced again after another failed try. */
+  attempt: number;
+  busy: boolean;
+  onRetry: () => void;
+}
+
+function LoadFailed({ message, attempt, busy, onRetry }: LoadFailedProps) {
+  const heading = useFocusIfLost<HTMLHeadingElement>();
+  // Try again stays mounted and focusable while it runs, so keyboard focus survives a try that fails again.
+  return (
+    <section className={styles.panel}>
+      <h2 ref={heading} tabIndex={-1} className={styles.panelTitle}>
+        Could not load the admin page
+      </h2>
+      <p key={attempt} className={styles.error} role="alert">
+        {message}
+      </p>
+      <button
+        type="button"
+        className={styles.secondary}
+        aria-disabled={busy}
+        onClick={() => {
+          if (!busy) onRetry();
+        }}
+      >
+        {busy ? 'Trying again…' : 'Try again'}
+      </button>
+    </section>
   );
 }

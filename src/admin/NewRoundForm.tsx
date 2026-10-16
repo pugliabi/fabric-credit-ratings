@@ -1,7 +1,8 @@
 import { useState, type FormEvent } from 'react';
 import type { AdminRound } from '../domain/api-types';
+import { useFocusIfLost } from '../hooks/useFocusIfLost';
 import { api, errorMessage } from '../lib/api';
-import { localToday, nextRound } from './rounds';
+import { localToday, nextRound, roundIdProblem } from './rounds';
 import styles from './Admin.module.css';
 
 interface NewRoundFormProps {
@@ -15,39 +16,63 @@ export function NewRoundForm({ rounds, onCreated }: NewRoundFormProps) {
   const [label, setLabel] = useState(suggested.label);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [attempt, setAttempt] = useState(0);
+  const heading = useFocusIfLost<HTMLHeadingElement>();
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
+    if (busy) return;
+    setAttempt((count) => count + 1);
+    const roundId = id.trim();
+    const problem = roundIdProblem(roundId);
+    if (problem) {
+      setError(problem);
+      return;
+    }
     setBusy(true);
     setError('');
     try {
-      onCreated(await api<AdminRound[]>('POST', '/admin/rounds', { id: id.trim(), label: label.trim() }));
+      onCreated(await api<AdminRound[]>('POST', '/admin/rounds', { id: roundId, label: label.trim() }));
     } catch (reason) {
       setError(errorMessage(reason));
       setBusy(false);
     }
   };
 
+  // The id and label rules come from the server's words (roundIdProblem, the API's 400s), not pattern/maxLength.
+  // The button stays focusable while busy (aria-disabled, not disabled), so focus survives a failed attempt.
   return (
     <form className={styles.panel} onSubmit={submit}>
-      <h2 className={styles.panelTitle}>Start a new round</h2>
+      <h2 ref={heading} tabIndex={-1} className={styles.panelTitle}>
+        Start a new round
+      </h2>
       <p className={styles.muted}>
         Opening a round lets raters log in and score it. Nothing shows on the public site until you publish it.
       </p>
       <div className={styles.fields}>
         <label className={styles.field}>
           <span>Round id</span>
-          <input value={id} onChange={(event) => setId(event.target.value)} pattern="\d{4}-[A-Za-z0-9]{1,3}" required />
+          <input
+            value={id}
+            onChange={(event) => setId(event.target.value.toUpperCase())}
+            autoCapitalize="characters"
+            spellCheck={false}
+            required
+          />
         </label>
         <label className={styles.field}>
           <span>Label</span>
-          <input value={label} onChange={(event) => setLabel(event.target.value)} maxLength={40} required />
+          <input value={label} onChange={(event) => setLabel(event.target.value)} required />
         </label>
-        <button type="submit" className={styles.primary} disabled={busy}>
-          Open round
+        <button type="submit" className={styles.primary} aria-disabled={busy}>
+          {busy ? 'Opening…' : 'Open round'}
         </button>
       </div>
-      {error && <p className={styles.error}>{error}</p>}
+      {error && (
+        <p key={attempt} className={styles.error} role="alert">
+          {error}
+        </p>
+      )}
     </form>
   );
 }

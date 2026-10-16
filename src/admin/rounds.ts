@@ -17,6 +17,11 @@ export function nextRound(rounds: readonly Round[], today: string): { id: string
   return { id: `${year}-Q${quarter}`, label: `Q${quarter} ${year}` };
 }
 
+/** The API's ROUND_ID rule (api/src/lib/validate.ts), in its words, which the browser bundle can't import. */
+export function roundIdProblem(id: string): string | undefined {
+  return /^\d{4}-[A-Z0-9]{1,3}$/.test(id) ? undefined : 'Round ids look like 2027-Q1.';
+}
+
 /** Today in the browser's time zone, as YYYY-MM-DD. */
 export function localToday(now = new Date()): string {
   const month = String(now.getMonth() + 1).padStart(2, '0');

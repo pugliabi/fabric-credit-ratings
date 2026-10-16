@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { Catalog, MyScores, SessionUser } from '../domain/api-types';
 import type { FactorValues } from '../domain/types';
+import { useFocusIfLost } from '../hooks/useFocusIfLost';
 import { api, ApiError, errorMessage } from '../lib/api';
 import { draftFromScores, draftFromValues, hasChanges, rebase, summarize, type Draft, type DraftTriple } from './draft';
 import { CHANGED_ELSEWHERE, saveCard, saveFailureMessage, saveStateText, type SaveStatus } from './save';
@@ -16,29 +17,22 @@ type Load =
   | { kind: 'failed'; message: string }
   | { kind: 'ready'; catalog: Catalog; card: MyScores };
 
-/**
- * Focuses the returned element on mount if focus sits on <body>, as it does when the control that had it (Log in, Try
- * again) has just been removed.
- */
-function useFocusIfLost<T extends HTMLElement>() {
-  const ref = useRef<T>(null);
-  useEffect(() => {
-    if (!document.activeElement || document.activeElement === document.body) ref.current?.focus();
-  }, []);
-  return ref;
-}
-
 interface ScorecardEditorProps {
   user: SessionUser;
   /** Published averages per item id, shown under each name and used by "Start from current ratings". */
   reference: Readonly<Record<string, FactorValues>>;
+  /**
+   * No round is open after all. The admin page reloads its rounds and shows "Start a new round" instead of the rater's
+   * closed-round panel. Pass a stable function: a new one refetches the card.
+   */
+  onClosed?: () => void;
 }
 
 /**
  * The logged-in user's own card in the open round. Used by /rate and the admin Score tab. Key it by the user's id, so
  * the stored draft's key never changes under a mounted form.
  */
-export function ScorecardEditor({ user, reference }: ScorecardEditorProps) {
+export function ScorecardEditor({ user, reference, onClosed }: ScorecardEditorProps) {
   const [load, setLoad] = useState<Load>({ kind: 'loading' });
 
   const fetchCard = useCallback(async () => {
@@ -50,19 +44,21 @@ export function ScorecardEditor({ user, reference }: ScorecardEditorProps) {
       ]);
       setLoad({ kind: 'ready', catalog, card });
     } catch (reason) {
-      if (reason instanceof ApiError && reason.status === 409) setLoad({ kind: 'closed' });
-      else if (!(reason instanceof ApiError && reason.status === 401)) {
+      if (reason instanceof ApiError && reason.status === 409) {
+        setLoad({ kind: 'closed' });
+        onClosed?.();
+      } else if (!(reason instanceof ApiError && reason.status === 401)) {
         setLoad({ kind: 'failed', message: errorMessage(reason) });
       }
     }
-  }, []);
+  }, [onClosed]);
 
   useEffect(() => {
     void fetchCard();
   }, [fetchCard]);
 
   if (load.kind === 'loading') return <p className={styles.muted}>Loading your scorecard…</p>;
-  if (load.kind === 'closed') return <Closed />;
+  if (load.kind === 'closed') return onClosed ? <p className={styles.muted}>Checking the rounds…</p> : <Closed />;
   if (load.kind === 'failed') return <LoadFailed message={load.message} onRetry={() => void fetchCard()} />;
   return (
     <CardForm
