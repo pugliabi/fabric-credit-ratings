@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
 import { newPasswordProblem } from '../account/password-rules';
 import type { AdminUser, Role, SessionUser } from '../domain/api-types';
+import { useFocusIfLost } from '../hooks/useFocusIfLost';
 import { api, ApiError, errorMessage } from '../lib/api';
 import { generatePassword } from './password';
 import styles from './Admin.module.css';
@@ -11,6 +12,24 @@ type Save = (changes: Record<string, unknown>, done: string) => Promise<boolean>
 const SELF_ROLE = 'You cannot remove your own admin access. Ask another admin to make this change.';
 
 const buttonKey = (id: number, action: Editing['kind'] | 'toggle') => `${id}:${action}`;
+
+/** Your own row sends only the name: a role there is what the server's self rule refuses. */
+export function detailsChanges(isMe: boolean, name: string, role: Role): Record<string, unknown> {
+  return isMe ? { displayName: name } : { displayName: name, role };
+}
+
+/** The message for a failed change. A 403 means this account lost admin rights, so it also re-reads /me. */
+export function failureMessage(reason: unknown, onForbidden: () => void): string {
+  if (reason instanceof ApiError && reason.status === 403) onForbidden();
+  return errorMessage(reason);
+}
+
+/** The server ends every session of the user, except the one you're using when it's your own row. */
+export function passwordNotice(isMe: boolean, name: string, password: string): string {
+  return isMe
+    ? `Your new password is ${password}. You stay logged in here; your other sessions were ended.`
+    : `New password for ${name}: ${password}. Share it privately. They are logged out everywhere and can change it after logging in.`;
+}
 
 interface UsersTabProps {
   users: readonly AdminUser[];
@@ -25,6 +44,8 @@ export function UsersTab({ users, me, onUsers, onForbidden }: UsersTabProps) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  const heading = useFocusIfLost<HTMLHeadingElement>();
+  const results = useRef<HTMLDivElement>(null);
   const buttons = useRef(new Map<string, HTMLButtonElement>());
   /** The row button to focus after the next render, if focus fell to <body>. */
   const refocus = useRef<string | undefined>(undefined);
@@ -57,8 +78,7 @@ export function UsersTab({ users, me, onUsers, onForbidden }: UsersTabProps) {
       setNotice(done);
       return true;
     } catch (reason) {
-      setError(errorMessage(reason));
-      if (reason instanceof ApiError && reason.status === 403) onForbidden();
+      setError(failureMessage(reason, onForbidden));
       return false;
     } finally {
       setBusy(false);
@@ -82,7 +102,7 @@ export function UsersTab({ users, me, onUsers, onForbidden }: UsersTabProps) {
   // Mounted from the start, so a later notice is announced; the WakeNotice keeps the page's only role="status".
   return (
     <div className={styles.stack}>
-      <div aria-live="polite">
+      <div ref={results} aria-live="polite">
         {notice && (
           <p className={styles.panel} data-tone="success">
             {notice}
@@ -95,7 +115,9 @@ export function UsersTab({ users, me, onUsers, onForbidden }: UsersTabProps) {
         </p>
       )}
       <section className={styles.panel}>
-        <h2 className={styles.panelTitle}>Raters and admins</h2>
+        <h2 ref={heading} tabIndex={-1} className={styles.panelTitle}>
+          Raters and admins
+        </h2>
         <table className={styles.table}>
           <thead>
             <tr>
@@ -128,56 +150,15 @@ export function UsersTab({ users, me, onUsers, onForbidden }: UsersTabProps) {
                   }
                 />
               ) : (
-                <tr key={user.id} data-inactive={!user.active}>
-                  <td>
-                    {user.displayName}
-                    {user.id === me.id && <span className={styles.badge}>you</span>}
-                  </td>
-                  <td className={styles.code}>{user.login}</td>
-                  <td>{user.role === 'admin' ? 'Admin' : 'Rater'}</td>
-                  <td>{user.active ? 'Active' : 'Disabled'}</td>
-                  <td>{user.lastScoredRound ?? '—'}</td>
-                  <td>
-                    {/* aria-disabled, not disabled, while busy: a disabled button drops focus to <body>. */}
-                    <div className={styles.rowActions}>
-                      <button
-                        ref={buttonRef(buttonKey(user.id, 'details'))}
-                        type="button"
-                        className={styles.small}
-                        aria-disabled={busy}
-                        onClick={() => {
-                          if (!busy) setEditing({ id: user.id, kind: 'details' });
-                        }}
-                      >
-                        Edit
-                      </button>
-                      <button
-                        ref={buttonRef(buttonKey(user.id, 'password'))}
-                        type="button"
-                        className={styles.small}
-                        aria-disabled={busy}
-                        onClick={() => {
-                          if (!busy) setEditing({ id: user.id, kind: 'password' });
-                        }}
-                      >
-                        Set password
-                      </button>
-                      {user.id !== me.id && (
-                        <button
-                          ref={buttonRef(buttonKey(user.id, 'toggle'))}
-                          type="button"
-                          className={styles.small}
-                          aria-disabled={busy}
-                          onClick={() => {
-                            if (!busy) toggleActive(user);
-                          }}
-                        >
-                          {user.active ? 'Disable' : 'Enable'}
-                        </button>
-                      )}
-                    </div>
-                  </td>
-                </tr>
+                <UserRow
+                  key={user.id}
+                  user={user}
+                  isMe={user.id === me.id}
+                  busy={busy}
+                  buttonRef={buttonRef}
+                  onEdit={(kind) => setEditing({ id: user.id, kind })}
+                  onToggle={() => toggleActive(user)}
+                />
               ),
             )}
           </tbody>
@@ -185,9 +166,79 @@ export function UsersTab({ users, me, onUsers, onForbidden }: UsersTabProps) {
       </section>
       <CreateUserForm
         busy={busy}
-        onCreate={(body, done) => run(() => api<AdminUser[]>('POST', '/admin/users', body), done)}
+        onCreate={async (body, done) => {
+          const ok = await run(() => api<AdminUser[]>('POST', '/admin/users', body), done);
+          // The result, with the one-time password, shows above the table, where a long list pushes it off-screen.
+          results.current?.scrollIntoView({ block: 'nearest' });
+          return ok;
+        }}
       />
     </div>
+  );
+}
+
+interface UserRowProps {
+  user: AdminUser;
+  isMe: boolean;
+  busy: boolean;
+  /** Registers each action button, so focus can go back to it after its row is swapped or moved. */
+  buttonRef: (key: string) => (element: HTMLButtonElement | null) => void;
+  onEdit: (kind: Editing['kind']) => void;
+  onToggle: () => void;
+}
+
+export function UserRow({ user, isMe, busy, buttonRef, onEdit, onToggle }: UserRowProps) {
+  // aria-disabled, not disabled, while busy: a disabled button drops focus to <body>.
+  return (
+    <tr data-inactive={!user.active}>
+      <td>
+        {user.displayName}
+        {isMe && <span className={styles.badge}>you</span>}
+      </td>
+      <td className={styles.code}>{user.login}</td>
+      <td>{user.role === 'admin' ? 'Admin' : 'Rater'}</td>
+      <td>{user.active ? 'Active' : 'Disabled'}</td>
+      <td>{user.lastScoredRound ?? '—'}</td>
+      <td>
+        <div className={styles.rowActions}>
+          <button
+            ref={buttonRef(buttonKey(user.id, 'details'))}
+            type="button"
+            className={styles.small}
+            aria-disabled={busy}
+            onClick={() => {
+              if (!busy) onEdit('details');
+            }}
+          >
+            Edit
+          </button>
+          <button
+            ref={buttonRef(buttonKey(user.id, 'password'))}
+            type="button"
+            className={styles.small}
+            aria-disabled={busy}
+            onClick={() => {
+              if (!busy) onEdit('password');
+            }}
+          >
+            Set password
+          </button>
+          {!isMe && (
+            <button
+              ref={buttonRef(buttonKey(user.id, 'toggle'))}
+              type="button"
+              className={styles.small}
+              aria-disabled={busy}
+              onClick={() => {
+                if (!busy) onToggle();
+              }}
+            >
+              {user.active ? 'Disable' : 'Enable'}
+            </button>
+          )}
+        </div>
+      </td>
+    </tr>
   );
 }
 
@@ -221,13 +272,10 @@ export function EditUserRow({ user, kind, isMe, busy, onCancel, onSave }: EditUs
         return;
       }
       setProblem('');
-      const done = isMe
-        ? `Your new password is ${password}. You stay logged in here; your other sessions were ended.`
-        : `New password for ${user.displayName}: ${password}. Share it privately. Their other sessions were ended, and they can change it after logging in.`;
-      void onSave({ password }, done);
+      void onSave({ password }, passwordNotice(isMe, user.displayName, password));
     } else {
       const name = displayName.trim();
-      void onSave(isMe ? { displayName: name } : { displayName: name, role }, `${name} is saved.`);
+      void onSave(detailsChanges(isMe, name, role), `${name} is saved.`);
     }
   };
 
@@ -318,9 +366,24 @@ export function CreateUserForm({ busy, onCreate }: { busy: boolean; onCreate: Sa
   const [displayName, setDisplayName] = useState('');
   const [role, setRole] = useState<Role>('rater');
   const [password, setPassword] = useState(generatePassword);
+  /** After a create the field stays empty, so it can't be mistaken for the password in the notice. */
+  const [suggestOnNextLogin, setSuggestOnNextLogin] = useState(false);
   const [problem, setProblem] = useState('');
   const [attempt, setAttempt] = useState(0);
   const problemId = useId();
+
+  // Lowercased in place, so React has nothing to write back and the caret stays put. Not mid-composition: writing the
+  // value would cut an IME's pre-edit text short, so a composed login is lowercased when the composition ends.
+  const takeLogin = (input: HTMLInputElement, composing: boolean) => {
+    if (!composing) {
+      const { selectionStart, selectionEnd } = input;
+      input.value = input.value.toLowerCase();
+      input.setSelectionRange(selectionStart, selectionEnd);
+    }
+    setLogin(input.value);
+    if (suggestOnNextLogin && !password) setPassword(generatePassword());
+    setSuggestOnNextLogin(false);
+  };
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
@@ -342,7 +405,8 @@ export function CreateUserForm({ busy, onCreate }: { busy: boolean; onCreate: Sa
       setLogin('');
       setDisplayName('');
       setRole('rater');
-      setPassword(generatePassword());
+      setPassword('');
+      setSuggestOnNextLogin(true);
     }
   };
 
@@ -354,7 +418,8 @@ export function CreateUserForm({ busy, onCreate }: { busy: boolean; onCreate: Sa
           <span>Login</span>
           <input
             value={login}
-            onChange={(event) => setLogin(event.target.value.toLowerCase())}
+            onChange={(event) => takeLogin(event.currentTarget, (event.nativeEvent as InputEvent).isComposing)}
+            onCompositionEnd={(event) => takeLogin(event.currentTarget, false)}
             pattern="[a-z0-9][a-z0-9._\-]{1,39}"
             title="Logins use 2 to 40 lowercase letters, digits, dots, dashes, or underscores."
             autoCapitalize="none"

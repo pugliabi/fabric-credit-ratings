@@ -2,7 +2,16 @@ import { createElement, type ReactElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import type { AdminUser, SessionUser } from '../domain/api-types';
-import { CreateUserForm, EditUserRow, UsersTab } from './UsersTab';
+import { ApiError } from '../lib/api';
+import {
+  CreateUserForm,
+  detailsChanges,
+  EditUserRow,
+  failureMessage,
+  passwordNotice,
+  UserRow,
+  UsersTab,
+} from './UsersTab';
 
 const me: SessionUser = { id: 2, login: 'boss', displayName: 'Bea Admin', role: 'admin' };
 const created = '2026-10-01T12:00:00.000Z';
@@ -32,9 +41,9 @@ function inTable(element: ReactElement): string {
   return renderToStaticMarkup(createElement('table', null, createElement('tbody', null, element)));
 }
 
-function editRow(user: AdminUser, kind: 'details' | 'password'): string {
+function editRow(user: AdminUser, kind: 'details' | 'password', busy = false): string {
   return inTable(
-    createElement(EditUserRow, { user, kind, isMe: user.id === me.id, busy: false, onCancel: noop, onSave: saved }),
+    createElement(EditUserRow, { user, kind, isMe: user.id === me.id, busy, onCancel: noop, onSave: saved }),
   );
 }
 
@@ -44,10 +53,20 @@ function tag(html: string, name: string): string {
   return found!;
 }
 
+/** Asserts the busy state is carried by aria-disabled alone: a disabled button drops focus to <body>. */
+function expectAriaDisabledOnly(button: string | undefined, busy: boolean) {
+  expect(button).toContain(`aria-disabled="${busy}"`);
+  expect(button).not.toMatch(/\sdisabled[\s=>]/);
+}
+
 describe('UsersTab', () => {
   const html = renderToStaticMarkup(
     createElement(UsersTab, { users: [mine, ann, gone], me, onUsers: noop, onForbidden: noop }),
   );
+
+  it('gives the tab a heading that can take focus after login', () => {
+    expect(html).toMatch(/<h2\b[^>]*tabindex="-1"[^>]*>Raters and admins<\/h2>/);
+  });
 
   it('marks your own row and offers no Disable there', () => {
     const own = row(html, 'boss');
@@ -62,15 +81,6 @@ describe('UsersTab', () => {
     expect(html).toMatch(/^<div[^>]*><div aria-live="polite"><\/div>/);
   });
 
-  it('keeps the row buttons focusable, so focus survives an action', () => {
-    const buttons = row(html, 'ann').match(/<button\b[^>]*>/g) ?? [];
-    expect(buttons).toHaveLength(3);
-    for (const button of buttons) {
-      expect(button).toContain('aria-disabled="false"');
-      expect(button).not.toMatch(/\sdisabled[\s=>]/);
-    }
-  });
-
   it('offers Disable for an active user, and Enable on a greyed-out row for a disabled one', () => {
     const active = row(html, 'ann');
     expect(active).toMatch(/^<tr[^>]*data-inactive="false"/);
@@ -79,6 +89,19 @@ describe('UsersTab', () => {
     expect(disabled).toMatch(/^<tr[^>]*data-inactive="true"/);
     expect(disabled).toContain('>Disabled</td>');
     expect(disabled).toContain('>Enable</button>');
+  });
+});
+
+describe('UserRow', () => {
+  const userRow = (busy: boolean) =>
+    inTable(createElement(UserRow, { user: ann, isMe: false, busy, buttonRef: () => noop, onEdit: noop, onToggle: noop }));
+
+  it('renders its buttons with aria-disabled, not disabled, while busy', () => {
+    for (const busy of [false, true]) {
+      const buttons = userRow(busy).match(/<button\b[^>]*>/g) ?? [];
+      expect(buttons).toHaveLength(3);
+      for (const button of buttons) expectAriaDisabledOnly(button, busy);
+    }
   });
 });
 
@@ -99,10 +122,10 @@ describe('EditUserRow', () => {
     expect(html).not.toContain(SELF_ROLE);
   });
 
-  it('keeps Save focusable, so focus survives a failed save', () => {
-    const save = /<button[^>]*>Save<\/button>/.exec(editRow(ann, 'password'))?.[0];
-    expect(save).toContain('aria-disabled="false"');
-    expect(save).not.toMatch(/\sdisabled[\s=>]/);
+  it('renders Save with aria-disabled, not disabled, while busy', () => {
+    for (const busy of [false, true]) {
+      expectAriaDisabledOnly(/<button[^>]*>Save<\/button>/.exec(editRow(ann, 'password', busy))?.[0], busy);
+    }
   });
 
   it("leaves password length to the server-worded check, so a paste isn't cut short", () => {
@@ -113,7 +136,8 @@ describe('EditUserRow', () => {
 });
 
 describe('CreateUserForm', () => {
-  const html = renderToStaticMarkup(createElement(CreateUserForm, { busy: false, onCreate: saved }));
+  const render = (busy: boolean) => renderToStaticMarkup(createElement(CreateUserForm, { busy, onCreate: saved }));
+  const html = render(false);
   const inputs = html.match(/<input\b[^>]*>/g) ?? [];
 
   it("mirrors the server's login rule, in its words", () => {
@@ -123,10 +147,10 @@ describe('CreateUserForm', () => {
     expect(login).toMatch(/autoCapitalize="none"/i);
   });
 
-  it('keeps Add user focusable, so focus survives a failed create', () => {
-    const add = /<button[^>]*>Add user<\/button>/.exec(html)?.[0];
-    expect(add).toContain('aria-disabled="false"');
-    expect(add).not.toMatch(/\sdisabled[\s=>]/);
+  it('renders Add user with aria-disabled, not disabled, while busy', () => {
+    for (const busy of [false, true]) {
+      expectAriaDisabledOnly(/<button[^>]*>Add user<\/button>/.exec(render(busy))?.[0], busy);
+    }
   });
 
   it('suggests a password and leaves its length to the server-worded check', () => {
@@ -134,5 +158,34 @@ describe('CreateUserForm', () => {
     const password = inputs[2]!;
     expect(password).toMatch(/value="[a-hjkmnp-zA-HJ-NP-Z2-9]{16}"/);
     expect(password).not.toMatch(/minlength|maxlength|required|aria-invalid|aria-describedby/i);
+  });
+});
+
+describe('detailsChanges', () => {
+  it('sends only the name for your own row', () => {
+    expect(detailsChanges(true, 'Bea Admin', 'rater')).toEqual({ displayName: 'Bea Admin' });
+    expect(detailsChanges(false, 'Ann Rater', 'admin')).toEqual({ displayName: 'Ann Rater', role: 'admin' });
+  });
+});
+
+describe('failureMessage', () => {
+  it('re-reads /me on a 403 only, and keeps the server text', () => {
+    const calls: string[] = [];
+    const forbidden = () => void calls.push('me');
+    expect(failureMessage(new ApiError(403, 'Only admins can do that.'), forbidden)).toBe('Only admins can do that.');
+    expect(failureMessage(new ApiError(409, SELF_ROLE), forbidden)).toBe(SELF_ROLE);
+    expect(failureMessage(new ApiError(401, 'Log in to continue.'), forbidden)).toBe('Log in to continue.');
+    expect(calls).toEqual(['me']);
+  });
+});
+
+describe('passwordNotice', () => {
+  it("says every session of someone else ended, and that yours here stays", () => {
+    expect(passwordNotice(false, 'Ann Rater', 'abcdefghjk23')).toBe(
+      'New password for Ann Rater: abcdefghjk23. Share it privately. They are logged out everywhere and can change it after logging in.',
+    );
+    expect(passwordNotice(true, 'Bea Admin', 'abcdefghjk23')).toBe(
+      'Your new password is abcdefghjk23. You stay logged in here; your other sessions were ended.',
+    );
   });
 });
