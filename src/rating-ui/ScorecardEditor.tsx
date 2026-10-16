@@ -6,7 +6,7 @@ import { formatTimestamp } from '../lib/format';
 import { draftFromScores, draftFromValues, rebase, sameDraft, summarize, type Draft } from './draft';
 import { CHANGED_ELSEWHERE, saveCard } from './save';
 import { ScoreMatrix } from './ScoreMatrix';
-import { usePersistentDraft } from './usePersistentDraft';
+import { cardDraftPrefix, usePersistentDraft } from './usePersistentDraft';
 import styles from './Editor.module.css';
 
 const EMPTY: Draft = {};
@@ -102,11 +102,13 @@ interface CardFormProps {
 
 type Status = { kind: 'idle' | 'saving' } | { kind: 'error'; message: string };
 
-function CardForm({ user, catalog, card, reference, onSaved }: CardFormProps) {
+/** Exported for markup tests; pages use ScorecardEditor. */
+export function CardForm({ user, catalog, card, reference, onSaved }: CardFormProps) {
   const { round, previous } = card;
   const saved = useMemo(() => draftFromScores(card.scores), [card.scores]);
-  const { draft, setTriple, replace, restored } = usePersistentDraft(`fcr-card:${user.id}:${round.id}`, saved);
+  const { draft, setTriple, replace, restored } = usePersistentDraft(`${cardDraftPrefix(user.id)}${round.id}`, saved);
   const [status, setStatus] = useState<Status>({ kind: 'idle' });
+  const [attempt, setAttempt] = useState(0);
 
   const ids = useMemo(() => new Set(catalog.artifacts.map((artifact) => artifact.id)), [catalog.artifacts]);
   const summary = summarize(draft, catalog.artifacts);
@@ -114,9 +116,11 @@ function CardForm({ user, catalog, card, reference, onSaved }: CardFormProps) {
   const dirty = !sameDraft(Object.fromEntries(Object.entries(draft).filter(([id]) => ids.has(id))), saved);
   const touched = summary.rated + summary.partial.length > 0;
   const hasReference = Object.keys(reference).length > 0;
+  const blocked = !dirty || summary.partial.length > 0 || status.kind === 'saving';
 
   const save = async () => {
     const sent = draft;
+    setAttempt((count) => count + 1);
     setStatus({ kind: 'saving' });
     try {
       const outcome = await saveCard(round.id, saved, summary.scores);
@@ -165,8 +169,13 @@ function CardForm({ user, catalog, card, reference, onSaved }: CardFormProps) {
             {round.label} · {summary.rated} of {catalog.artifacts.length} rated
           </strong>
           {summary.partial.length > 0 && <span className={styles.warn}> · {summary.partial.length} incomplete</span>}
-          {stateText && <span className={styles.muted}> · {stateText}</span>}
-          {status.kind === 'error' && <span className={styles.error}> {status.message}</span>}
+          <span aria-live="polite">{stateText && <span className={styles.muted}> · {stateText}</span>}</span>
+          {status.kind === 'error' && (
+            <span key={attempt} className={styles.error} role="alert">
+              {' '}
+              {status.message}
+            </span>
+          )}
         </div>
         <div className={styles.toolbarActions}>
           {previous && (
@@ -203,11 +212,14 @@ function CardForm({ user, catalog, card, reference, onSaved }: CardFormProps) {
               Clear all
             </button>
           )}
+          {/* aria-disabled, not disabled: a disabled button drops keyboard focus to the page when a save starts. */}
           <button
             type="button"
             className={styles.primary}
-            onClick={() => void save()}
-            disabled={!dirty || summary.partial.length > 0 || status.kind === 'saving'}
+            aria-disabled={blocked}
+            onClick={() => {
+              if (!blocked) void save();
+            }}
           >
             Save scores
           </button>

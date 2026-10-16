@@ -1,5 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
-import { parseStoredDraft, restorable, type Draft, type DraftTriple, type StoredDraft } from './draft';
+import { parseStoredDraft, restorable, sameDraft, type Draft, type DraftTriple, type StoredDraft } from './draft';
+
+/** Stored drafts of a user's own cards are keyed `fcr-card:<userId>:<roundId>`. */
+export const cardDraftPrefix = (userId: number) => `fcr-card:${userId}:`;
 
 export function readDraft(key: string): StoredDraft | undefined {
   try {
@@ -9,17 +12,52 @@ export function readDraft(key: string): StoredDraft | undefined {
   }
 }
 
+export function removeDraft(key: string): void {
+  try {
+    localStorage.removeItem(key);
+  } catch {
+    // Storage is blocked entirely.
+  }
+}
+
 export function writeDraft(key: string, stored: StoredDraft): void {
   try {
     localStorage.setItem(key, JSON.stringify(stored));
   } catch {
     // Storage is full or blocked; the draft lives only in this tab. An older record must not come back.
-    try {
-      localStorage.removeItem(key);
-    } catch {
-      // Storage is blocked entirely.
-    }
+    removeDraft(key);
   }
+}
+
+/** Keeps a record only while the draft differs from the saved card; a clean record could never be restored anyway. */
+export function persistDraft(key: string, base: Draft, draft: Draft): void {
+  if (sameDraft(draft, base)) removeDraft(key);
+  else writeDraft(key, { base, draft });
+}
+
+export function draftKeys(prefix: string): string[] {
+  try {
+    const keys: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key?.startsWith(prefix)) keys.push(key);
+    }
+    return keys;
+  } catch {
+    return [];
+  }
+}
+
+/** True when any stored draft under `prefix` holds edits that were never saved. */
+export function hasUnsavedDrafts(prefix: string): boolean {
+  return draftKeys(prefix).some((key) => {
+    const stored = readDraft(key);
+    return stored !== undefined && !sameDraft(stored.draft, stored.base);
+  });
+}
+
+export function clearDrafts(prefix: string): void {
+  for (const key of draftKeys(prefix)) removeDraft(key);
 }
 
 /**
@@ -35,7 +73,7 @@ export function usePersistentDraft(key: string, initial: Draft) {
   const [restored, setRestored] = useState(kept !== undefined);
 
   useEffect(() => {
-    writeDraft(key, { base: initial, draft });
+    persistDraft(key, initial, draft);
   }, [key, initial, draft]);
 
   const setTriple = useCallback((artifactId: string, triple: DraftTriple) => {

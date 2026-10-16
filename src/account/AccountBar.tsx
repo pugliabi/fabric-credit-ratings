@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import type { SessionUser } from '../domain/api-types';
 import { ChangePasswordDialog } from './ChangePasswordDialog';
-import { runLogout, type LogoutState } from './logout';
+import { logOutClearingDrafts, type LogoutState } from './logout';
 import styles from './Account.module.css';
 
 interface AccountBarProps {
@@ -34,7 +34,7 @@ export function AccountBar({ user, onLogout, adminLink = false }: AccountBarProp
         className={styles.link}
         aria-disabled={leaving}
         onClick={() => {
-          if (!leaving) void runLogout(onLogout, setLogout);
+          if (!leaving) void logOutClearingDrafts(user.id, onLogout, setLogout);
         }}
       >
         {leaving ? 'Logging out…' : 'Log out'}

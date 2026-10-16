@@ -1,6 +1,15 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { StoredDraft } from './draft';
-import { readDraft, writeDraft } from './usePersistentDraft';
+import { memoryStorage } from './memory-storage';
+import {
+  cardDraftPrefix,
+  clearDrafts,
+  draftKeys,
+  hasUnsavedDrafts,
+  persistDraft,
+  readDraft,
+  writeDraft,
+} from './usePersistentDraft';
 
 const stored: StoredDraft = { base: { notebook: [5, 5, 5] }, draft: { notebook: [6, 5, 5] } };
 
@@ -45,5 +54,52 @@ describe('draft storage', () => {
       removeItem: () => fail('SecurityError'),
     });
     expect(() => writeDraft('fcr-card:1:2026-Q4', stored)).not.toThrow();
+  });
+
+  it('drops the record once the draft matches the saved card again', () => {
+    const storage = memoryStorage();
+    vi.stubGlobal('localStorage', storage);
+    persistDraft('fcr-card:1:2026-Q4', stored.base, stored.draft);
+    expect(readDraft('fcr-card:1:2026-Q4')).toEqual(stored);
+    persistDraft('fcr-card:1:2026-Q4', stored.base, stored.base);
+    expect(storage.items.has('fcr-card:1:2026-Q4')).toBe(false);
+  });
+});
+
+describe('clearing drafts', () => {
+  const clean = JSON.stringify({ base: stored.base, draft: stored.base });
+  const unsaved = JSON.stringify(stored);
+
+  it("clears only that user's cards", () => {
+    const storage = memoryStorage({
+      'fcr-card:7:2026-Q4': '{}',
+      'fcr-card:7:2027-Q1': '{}',
+      'fcr-card:70:2026-Q4': '{}',
+      other: 'x',
+    });
+    vi.stubGlobal('localStorage', storage);
+    expect(draftKeys(cardDraftPrefix(7)).sort()).toEqual(['fcr-card:7:2026-Q4', 'fcr-card:7:2027-Q1']);
+    clearDrafts(cardDraftPrefix(7));
+    expect([...storage.items.keys()].sort()).toEqual(['fcr-card:70:2026-Q4', 'other']);
+  });
+
+  it("counts only records holding edits as unsaved scores, and only that user's", () => {
+    vi.stubGlobal('localStorage', memoryStorage({ 'fcr-card:7:2026-Q4': clean, 'fcr-card:70:2026-Q4': unsaved }));
+    expect(hasUnsavedDrafts(cardDraftPrefix(7))).toBe(false);
+    vi.stubGlobal('localStorage', memoryStorage({ 'fcr-card:7:2026-Q4': clean, 'fcr-card:7:2025-Q3': unsaved }));
+    expect(hasUnsavedDrafts(cardDraftPrefix(7))).toBe(true);
+    vi.stubGlobal('localStorage', memoryStorage({ 'fcr-card:7:2026-Q4': '{"base":null}' }));
+    expect(hasUnsavedDrafts(cardDraftPrefix(7))).toBe(false);
+  });
+
+  it('keeps going when storage is blocked while clearing', () => {
+    vi.stubGlobal('localStorage', {
+      get length(): number {
+        return fail('SecurityError');
+      },
+    });
+    expect(draftKeys('fcr-card:7:')).toEqual([]);
+    expect(hasUnsavedDrafts('fcr-card:7:')).toBe(false);
+    expect(() => clearDrafts('fcr-card:7:')).not.toThrow();
   });
 });
