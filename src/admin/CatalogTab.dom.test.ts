@@ -103,6 +103,35 @@ describe('CatalogTab item descriptions', () => {
     expect(toggle(described.container)?.textContent).toBe('Description ✓');
   });
 
+  it('tells a screen reader which items have a description, which the aria-label would hide', async () => {
+    const empty = await open([]);
+    expect(toggle(empty.container)?.hasAttribute('title')).toBe(false);
+    expect(toggle(empty.container)?.hasAttribute('aria-describedby')).toBe(false);
+    expect(empty.container.textContent).not.toContain('Has a description');
+    await cleanup();
+
+    const { container } = await open([], 'Runs Spark code.');
+    const button = toggle(container);
+    expect(button?.getAttribute('title')).toBe('Has a description');
+    const hint = container.querySelector(`[id="${button?.getAttribute('aria-describedby')}"]`);
+    expect(hint?.textContent).toBe('Has a description');
+    expect(hint?.classList.contains('visually-hidden')).toBe(true);
+  });
+
+  it('still renders the row and its Description toggle when an older API omits the description', async () => {
+    const full = catalogWith([]);
+    const { description: _, ...artifact } = full.artifacts[0] as AdminCatalog['artifacts'][number];
+    const old = { ...full, artifacts: [artifact] } as unknown as AdminCatalog;
+    vi.stubGlobal('fetch', fakeApi({ 'GET /api/admin/catalog': old }).fetchMock);
+    const { container } = await render(CatalogTab, { catalog: old, onCatalog: () => {} });
+    await settle();
+
+    expect(container.querySelector('input[aria-label="Notebook name"]')).not.toBeNull();
+    expect(toggle(container)?.textContent).toBe('Description');
+    await click(toggle(container));
+    expect(editor(container)?.value).toBe('');
+  });
+
   it('opens a row below the item with the current text and a counter, and closes it again', async () => {
     const { container } = await open([], 'Runs Spark code.');
 

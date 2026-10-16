@@ -25,9 +25,16 @@ export const EXAMPLES = [
 
 const MAX_DRAFT_CHARS = 350;
 
-/** At most three sentences, dropping trailing ones while over 350 characters; never fewer than one. */
+/**
+ * At most three sentences, dropping trailing ones while over 350 characters; never fewer than one. A full stop after
+ * "e.g.", "i.e.", "vs.", or "etc." doesn't end a sentence.
+ */
 export function shortenDraft(text: string): string {
-  const sentences = text.trim().split(/(?<=[.!?])\s+/).filter(Boolean).slice(0, 3);
+  const sentences = text
+    .trim()
+    .split(/(?<!\b(?:e\.g|i\.e|vs|etc)\.)(?<=[.!?])\s+/)
+    .filter(Boolean)
+    .slice(0, 3);
   while (sentences.length > 1 && sentences.join(' ').length > MAX_DRAFT_CHARS) sentences.pop();
   return sentences.join(' ');
 }
@@ -79,7 +86,7 @@ export function promptFor(input: DraftInput): string {
     ? `Previous review (${previous.roundLabel}): ${scoreLine(previous.scores)}.${previous.note ? ` Its write-up: "${previous.note}"` : ''}`
     : 'This is the first review of this item.';
 
-  return `Write the "why this rating" paragraph for a Microsoft Fabric item on a bond-style ratings site.
+  return `Write the "why this rating" note for a Microsoft Fabric item on a bond-style ratings site.
 
 Item: ${artifact.name}
 Workload: ${workload ? `${workload.name}${workload.blurb ? ` (${workload.blurb})` : ''}` : artifact.workload}

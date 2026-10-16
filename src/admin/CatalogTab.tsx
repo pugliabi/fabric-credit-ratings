@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
 import type { AdminArtifact, AdminCatalog, AdminWorkload } from '../domain/api-types';
 import { FACTORS } from '../data/factors';
 import type { ReleaseStatus } from '../domain/types';
@@ -11,6 +11,9 @@ import styles from './Admin.module.css';
 
 /** The server's limit on an item description, for the counter. The server refuses anything longer. */
 const DESCRIPTION_MAX = 600;
+
+/** An item's description. During a deploy the new site can talk to an old API, which omits the field. */
+const descriptionOf = (artifact: { description?: string }) => artifact.description ?? '';
 
 /** The item table's columns, which an editor row spans. */
 const ITEM_COLUMNS = 6;
@@ -352,16 +355,18 @@ export function ArtifactRowEditor({
   }
 
   const [describing, setDescribing] = useState(false);
-  const [description, setDescription] = useState(artifact.description);
-  const [shownDescription, setShownDescription] = useState(artifact.description);
+  const serverDescription = descriptionOf(artifact);
+  const [description, setDescription] = useState(serverDescription);
+  const [shownDescription, setShownDescription] = useState(serverDescription);
+  const hasDescriptionHint = useId();
   // A description saved elsewhere replaces an untouched text instead of offering to undo it.
-  if (artifact.description !== shownDescription) {
-    setShownDescription(artifact.description);
-    setDescription((current) => followServer(current, shownDescription, artifact.description));
+  if (serverDescription !== shownDescription) {
+    setShownDescription(serverDescription);
+    setDescription((current) => followServer(current, shownDescription, serverDescription));
   }
   // The server trims, so compare trimmed values: Save would otherwise stay after saving "Text ".
   const descriptionLength = description.trim().length;
-  const descriptionChanged = description.trim() !== artifact.description;
+  const descriptionChanged = description.trim() !== serverDescription;
 
   const update = (changes: ArtifactChanges, focusAfter: readonly string[]) =>
     void run(actions.updateArtifact(artifact, changes, catalog), focusAfter);
@@ -474,9 +479,17 @@ export function ArtifactRowEditor({
               onClick={() => setDescribing(!describing)}
               aria-expanded={describing}
               aria-label={`${artifact.name} description`}
+              // The aria-label replaces the visible "✓", so a screen reader is told through the hidden span instead.
+              title={serverDescription ? 'Has a description' : undefined}
+              aria-describedby={serverDescription ? hasDescriptionHint : undefined}
             >
-              {artifact.description ? 'Description ✓' : 'Description'}
+              {serverDescription ? 'Description ✓' : 'Description'}
             </button>
+            {serverDescription && (
+              <span id={hasDescriptionHint} className="visually-hidden">
+                Has a description
+              </span>
+            )}
             <MoveButtons
               scope={`item:${artifact.id}`}
               name={artifact.name}

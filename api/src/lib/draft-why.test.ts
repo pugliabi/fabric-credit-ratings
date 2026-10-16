@@ -117,6 +117,16 @@ describe('shortenDraft', () => {
   it('trims surrounding whitespace', () => {
     expect(shortenDraft('  \n Solid and complete.  Rough edges.\n')).toBe('Solid and complete. Rough edges.');
   });
+
+  it('does not split after e.g., i.e., vs., or etc.', () => {
+    const draft =
+      'It runs Spark and T-SQL. Best for teams that want one tool, e.g. data engineers who live in notebooks. ' +
+      'Costs more at idle.';
+    expect(shortenDraft(draft)).toBe(draft);
+    // Still three sentences, since "i.e.", "vs.", and "etc." end none of them.
+    const others = 'Fast, i.e. quick. Beats Dataflow vs. pipelines. Handles CSV, JSON, etc. Fourth one.';
+    expect(shortenDraft(others)).toBe(others);
+  });
 });
 
 describe('promptFor', () => {
@@ -126,6 +136,12 @@ describe('promptFor', () => {
     expect(prompt).toContain('average of 2 raters');
     expect(prompt).not.toContain('Rules:');
     expect(prompt).not.toContain('Never mention scores');
+  });
+
+  it('opens by asking for a note, to match the system prompt, not a paragraph', () => {
+    const prompt = promptFor(input);
+    expect(prompt.startsWith('Write the "why this rating" note for a Microsoft Fabric item')).toBe(true);
+    expect(prompt).not.toContain('paragraph');
   });
 
   it('gives the item description on the line after the workload', () => {
@@ -257,6 +273,10 @@ describe('createDrafter', () => {
     const retry = JSON.stringify(create.mock.calls[1]?.[0]);
     expect(retry).toContain('Rewrite it without any of those.');
     expect(retry).toContain('Rated AA+.');
+    const [second] = create.mock.calls[1] ?? [];
+    expect(second).toMatchObject({ system: SYSTEM_PROMPT });
+    expect(second?.messages[0]?.content).toContain('What it is:');
+    expect(second?.messages[0]?.content).toContain(EXAMPLES[0]);
   });
 
   describe("the caller's deadline", () => {
