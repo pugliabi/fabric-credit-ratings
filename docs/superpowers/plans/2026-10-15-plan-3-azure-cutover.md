@@ -12,7 +12,7 @@
 
 **Series:** Plan 3 of 3. Plans 1 and 2 are done: the API and front end work locally against `fcr-dev` on the `login-backend` branch.
 
-**Branch:** `login-backend` until Task 10 merges it to `main`. Every push to `main` deploys the live site.
+**Branch:** `main`. `login-backend` was fast-forwarded into `main` (`65d7c81`, merged as `659aa5d`) before this plan started, so the live site already serves the new front end and its `/rate` and `/admin` pages show the Unavailable screen until Task 8 finishes. Tasks 2, 3, 7 and 9 commit on `main` directly. Every push to `main` deploys the live site, so batch pushes and run `npm run typecheck`, `npm test`, `npm run build` before each.
 
 ## Global Constraints
 
@@ -460,23 +460,26 @@ gh variable set AZURE_FUNCTIONAPP_NAME -R $repo --body $app
 Run: `gh variable list -R $repo`
 Expected: the four `AZURE_*` variables.
 
-- [ ] **Step 2: Create `.github/workflows/api-deploy.yml`.** `login-backend` is in the trigger only until Task 11, so the API can be deployed before the merge. The API package installs with `--ignore-scripts`, which skips the 200 MB Core Tools download (esbuild still works). The package ships `dist/` plus production dependencies only.
+- [ ] **Step 2: Create `.github/workflows/api-deploy.yml`.** The trigger is `main` only (the branch is already merged). The API package installs with `--ignore-scripts`, which skips the 200 MB Core Tools download (esbuild still works). The package ships `dist/` plus production dependencies only. `npm test` in CI is network-free: `vitest.setup.ts` refuses sockets, `fetch`, and child processes unless `FCR_API_URL` or `FCR_DB_TESTS` is set. The job has `timeout-minutes: 20`, checks out with `persist-credentials: false` (nothing pushes), and ends by dispatching `deploy.yml`, so on a push that touches both the site is rebuilt after the API is live (the push-triggered site run may build against the old API; the dispatched one fixes that, and a snapshot that didn't change costs nothing). That dispatch needs `actions: write`.
 
 ```yaml
 name: Deploy the API
 
 on:
   push:
-    branches: [main, login-backend]
+    branches: [main]
     paths:
       - 'api/**'
       - 'src/domain/**'
+      - 'package.json'
+      - 'package-lock.json'
       - '.github/workflows/api-deploy.yml'
   workflow_dispatch:
 
 permissions:
   contents: read
   id-token: write
+  actions: write
 
 concurrency:
   group: api-deploy
@@ -485,9 +488,12 @@ concurrency:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     environment: api
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-node@v4
         with:
@@ -535,20 +541,32 @@ jobs:
           done
           echo "::error::${{ vars.API_URL }}/api/health did not answer after the deploy."
           exit 1
+
+      - name: Rebuild the site against the new API
+        if: ${{ github.event_name == 'push' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run deploy.yml --ref main
 ```
 
-- [ ] **Step 3: Commit and push the branch.** This is the branch's first push. `deploy.yml` only runs for `main`, so the live site doesn't change.
+Also in this commit (the hardening the Plan 2 Task 10-11 review handed over):
+
+- `.github/workflows/ci.yml`: on `pull_request` and on `push` to every branch but `main` (pushes to `main` are covered by the two deploys), `timeout-minutes: 20`, `persist-credentials: false`: `npm ci`, `npm ci --prefix api --ignore-scripts`, `npm run typecheck`, `npm test`, `npx vite build`, then a grep of `dist/` for token shapes and the formula (`sk-ant-`, `ghp_`, `gho_`, `github_pat_`, `21:"AAA"`) that fails the job on a hit.
+- `.github/workflows/deploy.yml`: `timeout-minutes: 20` on the job; `actions/checkout` with `ref: ${{ github.ref }}` and `persist-credentials: false`; the commit step gated with `if: github.ref == 'refs/heads/main'` and pushing with an explicit `http.extraheader` built from `github.token` (the way `actions/checkout` itself authenticates; it can't be tested outside Actions, and the first real test is the first snapshot commit after a publish, so if the run warns "Could not push the snapshot commit", restore `persist-credentials` and drop the header); the deploy-confirmation `curl` reads its `Authorization` header from stdin (`-H @-`) instead of the command line.
+- `scripts/snapshot.ts` refuses a base URL that isn't `https://` when `GITHUB_ACTIONS` is set, with a test, because the token travels in a header.
+
+- [ ] **Step 3: Commit and push `main`.** This push also carries Tasks 2, 3 and 9 and redeploys the site (which still shows the Unavailable screen on `/rate` and `/admin` until Task 8).
 
 ```powershell
-npm run typecheck; npm test
-git add .github/workflows/api-deploy.yml
-git commit -m "Deploy the API to Azure Functions with OIDC"
-git push -u origin login-backend
+npm run typecheck; npm test; npm run build
+git add .github/workflows scripts
+git commit -m "Deploy the API to Azure Functions with OIDC; CI workflow; harden the site deploy"
+git push origin main
 Start-Sleep -Seconds 10
 gh run watch (gh run list -R $repo --workflow api-deploy.yml -L 1 --json databaseId --jq '.[0].databaseId') -R $repo --exit-status
 ```
 
-Expected: the run succeeds. The health check step is skipped because `API_URL` isn't set yet.
+Expected: the run succeeds. The health check step is skipped because `API_URL` isn't set yet, and the final step dispatches a second `deploy.yml` run.
 
 - [ ] **Step 4: Smoke test on the default host name.**
 
@@ -569,7 +587,7 @@ Invoke-RestMethod "$api/api/admin/rounds" -WebSession $web
 ```
 
 Expected:
-- health returns `ok: True` (the first call can take up to a minute while `fcr` wakes);
+- health returns `ok: True` (the first call can take up to a minute while `fcr` wakes: `GET /api/health` runs `SELECT 1`, so it is a public, cheap wake button for the database; expect that latency on every first call after a quiet spell);
 - the preflight echoes `https://fabriccreditratings.com` and `true`;
 - login returns your user with `role: admin`;
 - rounds lists `2026-Q4`, open, with 0 scorecards.
@@ -616,6 +634,8 @@ Expected: `ok: True` over a valid certificate.
 - [ ] **Step 4: Point the site deploy at the API.**
 
 Run: `gh variable set API_URL -R $repo --body "https://$apiHost"`
+
+`API_URL` must start with `https://`: the snapshot token travels in a request header, and `scripts/snapshot.ts` refuses any other scheme on Actions.
 
 From now on, `deploy.yml` fetches the snapshot from the API, and the health check in `api-deploy.yml` runs after every API deploy. Both workflows first run with it in Task 10.
 
@@ -731,13 +751,15 @@ Needs Node 24, the Azure CLI, and access to the `fcr-dev` database in Fabric.
 ```powershell
 az login
 npm install
-npm --prefix api install
+npm --prefix api install --ignore-scripts
 Copy-Item api/local.settings.example.json api/local.settings.json   # set SQL_SERVER and SQL_DATABASE for fcr-dev
 npm run api   # terminal 1: the API on http://localhost:7071
 npm run dev   # terminal 2: http://localhost:5173, /rate.html, /admin.html
 ```
 
-Vite proxies `/api` to the local API, so the session cookie works on localhost.
+`--ignore-scripts` skips the Azure Functions Core Tools download, whose npm postinstall fails on Node 24. `npm run api` needs `func` anyway: install Core Tools separately (`winget install Microsoft.Azure.FunctionsCoreTools`, or the MSI) so it is on PATH, or copy `func.exe` and its folder from a working install into `api/node_modules/azure-functions-core-tools/bin/`.
+
+Vite proxies `/api` to the local API, so the session cookie works on localhost. To use a Functions host on another port, set `FCR_API_TARGET` (for example `http://localhost:7076`) before `npm run dev`. The first API call after a quiet spell can take up to a minute while `fcr-dev` wakes.
 
 | Command | What it does |
 |---------|--------------|
@@ -814,23 +836,14 @@ git commit -m "README: logins, admin, Fabric SQL backend, and both deploys"
 
 **Files:** none
 
-- [ ] **Step 1: Final check on the branch.**
+- [ ] **Step 1: Final check on `main`.**
 
 Run: `npm run typecheck; npm test; npm run build; git status --short`
 Expected: everything passes and the tree is clean. `src/data/snapshot.json` is still the empty file from Plan 2.
 
-The live run of the 13-test API integration suite (Plan 1 Task 17 Step 4) should have passed against `fcr-dev` on the code being merged. If you keep a pinned runbook for that run, its pin is the `login-backend` HEAD after the front-end merge (`53cff7f` or later), not an API-only commit, because the test setup (`vitest.setup.ts`, `vitest.config.ts`, `api/src/network-guard.test.ts`) changed in the merge and the cleanup round.
+The live run of the 13-test API integration suite (Plan 1 Task 17 Step 4) passed against `fcr-dev` on `812983f` (integration run 2) and the Task 12 end-to-end check passed on `65d7c81`. Before the live check below, run the suite once more against the deployed API on its default host (`FCR_API_URL=https://<app>.azurewebsites.net`, `FCR_ORIGIN=https://fabriccreditratings.com`, the production admin login and password, the production `SNAPSHOT_TOKEN`). Expect 13 passed. It writes only `itest-` rows and removes them.
 
-- [ ] **Step 2: Merge and push.**
-
-```powershell
-git switch main
-git pull --ff-only
-git merge --ff-only login-backend
-git push origin main
-```
-
-If `--ff-only` refuses because `main` moved, run `git merge login-backend`, resolve any conflicts, and push.
+- [ ] **Step 2: Merge and push.** Already done: `main` is the branch (see the Branch note at the top). Nothing to merge.
 
 - [ ] **Step 3: Watch both deploys.**
 
@@ -847,7 +860,7 @@ Expected:
 
 - [ ] **Step 4: Live check** in a normal browser window, with a private window for a rater.
   1. https://fabriccreditratings.com shows "Items rated 0" and the "No ratings are published right now. Check back once the next review round is published." empty state, with "Raters: log in" in the footer. The mock ratings that used to be live are gone; this is expected until Q4 2026 is published.
-  2. https://fabriccreditratings.com/admin: log in. The Score tab shows Q4 2026 with every item, and the Publish tab reads "The public site is up to date".
+  2. https://fabriccreditratings.com/admin: log in (the first request after a quiet spell can take up to a minute while `fcr` wakes; the page says so after 4 seconds). The Score tab shows Q4 2026 with every item, and the Publish tab reads "The public site is up to date".
   3. On Users, create the real raters. Each one's notice shows the password to hand over.
   4. In the private window, log in at https://fabriccreditratings.com/rate as one rater, save a score, and change the password.
   5. On Publish, select Update public site. The notice reads "The public site is rebuilding…", and `gh run list -R $repo --workflow deploy.yml -L 1` shows a `workflow_dispatch` run.
@@ -857,22 +870,27 @@ Expected:
 
 ### Task 11: Clean up
 
-**Files:**
-- Modify: `.github/workflows/api-deploy.yml`
+**Files:** none
 
-- [ ] **Step 1: Deploy the API from `main` only.** In `.github/workflows/api-deploy.yml`, change `branches: [main, login-backend]` to `branches: [main]`.
+- [ ] **Step 1: Deploy the API from `main` only.** Already so: Task 7 wrote the trigger as `branches: [main]`.
 
-- [ ] **Step 2: Commit, push, and delete the branch.**
+- [ ] **Step 2: Delete the merged branches and worktrees.** Everything in them is contained in `main`.
 
 ```powershell
-git add .github/workflows/api-deploy.yml
-git commit -m "Deploy the API from main only"
-git push origin main
-git push origin --delete login-backend
 git branch -d login-backend
+git push origin --delete login-backend
+git worktree remove --force C:\Github\fcr-wt-l1
+git worktree remove --force C:\Github\fcr-wt-l2
+git worktree remove --force C:\Github\fcr-wt-l3
+git worktree remove --force C:\Github\fcr-wt-l4
+git worktree remove --force C:\Github\fcr-wt-docs2
+git worktree remove --force C:\Github\fcr-wt-p2a
+git worktree prune
+git branch -d p2-t6 p2-t8 p2-t9 p2-t10 p2-front-end
+git branch -D docs-round-6
 ```
 
-Expected: `api-deploy.yml` runs once more and passes (the workflow file changed). `deploy.yml` also runs, and leaves the snapshot alone.
+Keep `cloudflare-backend` and its worktree.
 
 - [ ] **Step 3: Note the expiries.** The GitHub token from Task 6 expires a year from creation, and site updates from the admin stop when it does. When that happens, the admin shows "GitHub refused the site update (HTTP 401)…". Set the calendar reminder now if you skipped it.
 
@@ -884,6 +902,6 @@ Expected: `api-deploy.yml` runs once more and passes (the workflow file changed)
 - `fcr` holds the catalog, round 2026-Q4 (open), your admin account, and the real raters.
 - Raters log in at `/rate` and the admin works at `/admin` on the live site; publishing or Update public site rebuilds it.
 - The public site is built from `src/data/snapshot.json`, which the deploy refreshes from the API.
-- `api-deploy.yml` deploys the API from `main` through OIDC; `deploy.yml` deploys the site.
+- `api-deploy.yml` deploys the API from `main` through OIDC; `deploy.yml` deploys the site; `ci.yml` typechecks, tests and scans the bundle on every branch and pull request.
 - `src/data/rounds/`, `artifacts.ts`, and `workloads.ts` are gone. `formula.ts` and `aggregate.ts` live only under `api/`, and the boundary test passes.
 - The README describes the new setup.
