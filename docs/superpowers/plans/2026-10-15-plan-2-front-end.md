@@ -612,7 +612,7 @@ export function Unavailable({ message, onRetry }: UnavailableProps) {
 }
 ```
 
-- [ ] **Step 5: Create `src/account/ChangePasswordDialog.tsx`.**
+- [ ] **Step 5: Create `src/account/ChangePasswordDialog.tsx`.** Success ends the user's other sessions and keeps this one. A 400 "Your current password is wrong." can also mean an admin reset the password or disabled the account while the request ran. In that case nothing changed, and the admin's change already ended this session, so the next API call gets a 401 and `onSignedOut` sends the page to its login form. The dialog shows the message as is and needs no special case.
 
 ```tsx
 import { useEffect, useRef, useState, type FormEvent } from 'react';
@@ -4225,8 +4225,8 @@ git status --short
 
 Expected: a clean tree. `fcr-dev` keeps Q4 2026 (published) and Q1 2027 (open).
 
-- [ ] **Step 10: Re-run the API integration test** (Plan 1 Task 17 Step 4). First log out of or close the admin window and the private window, and don't log in through any local site while it runs. Run one copy of the suite per database at a time, because each copy's `beforeAll` deletes every `itest-` row. Never run `db:seed --force` during it. From a second checkout, set `FCR_API_URL` to that checkout's host port, and check that its `api/local.settings.json` points at `fcr-dev`. The suite connects for its own checks with the settings file of the checkout it runs from. It refuses a database whose name doesn't start with `fcr-dev`, and fails if the host's database differs from its own.
-Expected: `Tests  12 passed (12)` against the new open round, `2027-Q1`. "12 skipped" means `FCR_API_URL` wasn't set. After Steps 5 and 6, `site_state.changed_at` and `last_snapshot_at` are both set. The suite writes only to the open round, and its `afterAll` asserts the whole `site_state` row is unchanged. If a stamp moves, an open-round write stamped the site or something else wrote public data. Treat that as an API bug, and don't loosen the test.
+- [ ] **Step 10: Re-run the API integration test** (Plan 1 Task 17 Step 4). First log out of or close the admin window and the private window, and don't log in through any local site while it runs. Run one copy of the suite per database at a time, because each copy's `beforeAll` deletes every `itest-` row. Never run `db:seed --force` during it. From a second checkout, set `FCR_API_URL` to that checkout's host port, and check that its `api/local.settings.json` points at `fcr-dev`. The suite connects for its own checks with the settings file of the checkout it runs from. It refuses a database whose name doesn't start with `fcr-dev`. In `beforeAll`, before any test writes, it fails if the host's database differs from its own.
+Expected: `Tests  12 passed (12)` against the new open round, `2027-Q1`. If `fcr-dev` has two or more active admins, the self-demotion check skips itself: `11 passed | 1 skipped (12)`. "12 skipped" means `FCR_API_URL` wasn't set. Leave `FCR_DB_TESTS` unset, and don't run the opt-in database tests in the same session, because both clean up `itest-` rows. After Steps 5 and 6, `site_state.changed_at` and `last_snapshot_at` are both set. The suite writes only to the open round, and its `afterAll` asserts the whole `site_state` row is unchanged. If a stamp moves, an open-round write stamped the site or something else wrote public data. Treat that as an API bug, and don't loosen the test.
 
 ---
 

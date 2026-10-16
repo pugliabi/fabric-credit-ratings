@@ -158,7 +158,7 @@ All responses are JSON. Errors look like `{ "error": "<message>" }`, with status
 | `POST /api/auth/login` | `{ login, password }` | 200 `{ id, login, displayName, role }` and sets the session cookie. The session is created only if the user is still active with the password that was checked, so a reset or disable that lands during the login gives 401 "Wrong login or password." |
 | `POST /api/auth/logout` | none | 204. Clears the cookie, then deletes the session. If the delete fails, the answer is 503 (database not responding) or 500, and it still clears the cookie, so the browser is logged out either way. A logout with no session cookie answers 204 without touching the database |
 | `GET /api/me` | none | 200 `{ id, login, displayName, role }` or 401 |
-| `PUT /api/me/password` | `{ current, next }` | 204. The new hash and the end of the user's other sessions commit in one transaction |
+| `PUT /api/me/password` | `{ current, next }` | 204. The new hash and the end of the user's other sessions commit in one transaction. The change applies only if the password is still the one just checked: if an admin reset it or disabled the user in the meantime, the answer is 400 "Your current password is wrong." and nothing changes, so no session ends |
 
 ### Rater (any logged-in user)
 
@@ -177,7 +177,7 @@ The rater page's "Start from current ratings" uses the bundled `snapshot.json` (
 |---|---|---|
 | `GET /api/admin/rounds` | none | every round, with scorecard and note counts |
 | `POST /api/admin/rounds` | `{ id, label }` | opens a round and returns every round. 409 if one is already open or the id exists |
-| `PUT /api/admin/rounds/:id` | `{ status: 'published', publishedOn }` or `{ status: 'open' }` | publish, or reopen the latest published round when no round is open. Returns `{ rounds, deploy }`. A `publishedOn` earlier than the latest published round's gets 400 ("Publish dates can't be earlier than <label>'s (<date>)."); the same day and future dates are allowed. The latest published round is the one with the latest publish date; rounds published on the same date fall back to round order, so the one whose id sorts last counts as latest |
+| `PUT /api/admin/rounds/:id` | `{ status: 'published', publishedOn }` or `{ status: 'open' }` | publish, or reopen the latest published round when no round is open. Returns `{ rounds, deploy }`. A `publishedOn` earlier than the latest published round's gets 400 ("Publish dates can't be earlier than <label>'s (<date>)."); the same day and future dates are allowed. The latest published round is the one with the latest publish date; rounds published on the same date fall back to round order, so the one whose id sorts last counts as latest. A lower-id round published that day therefore doesn't become the latest, which is accepted because round ids are created in order |
 | `GET /api/admin/rounds/:id/review` | none | the raters, and per item: averaged scores, grade, change from the previous published round, per-rater scores. Plus the notes and whether AI drafting is configured |
 | `PUT /api/admin/rounds/:id/scores/:userId` | `{ scores }` | replaces any user's card in any round, published included. Returns the review. A `userId` that isn't 1 to 9 digits gets 404. An item deleted after the check gets 409, as on the rater's save |
 | `PUT /api/admin/rounds/:id/notes/:artifactId` | `{ body }` | 204. Saves the why text. An empty body deletes it. A body that isn't text gets 400. An item deleted after the check gets 409 ("That item was just deleted. Reload the page to get the current list.") |
@@ -389,11 +389,14 @@ vitest.config.ts
   - a boundary test that keeps the formula out of the site sources.
 - **Integration, against `fcr-dev` (runs when `FCR_API_URL` is set):**
   - origin check, user creation and login, raters kept out of admin routes;
-  - a taken login and an admin removing their own admin access both get 409;
+  - a taken login gets 409. So does an admin removing their own admin access, a check that runs only when exactly one admin is active, so the last-admin rule backs it up; otherwise it's skipped;
   - a card saved in the open round shows in the admin review, and a stale round gets 409;
   - the snapshot needs the build token and has no rater names, and deploy confirmations need the token too;
   - an admin password reset ends the user's sessions and swaps the password;
-  - disabling a user ends their sessions, and a login locks after 10 failures.
+  - disabling a user ends their sessions and their login gets 401, and a login locks after 10 failures.
+
+  Before any test writes, the suite proves that the API host and its own connection use the same database.
+- **Opt-in database tests (run when `FCR_DB_TESTS` is set):** login-attempt counting, card-write locking, the admin-count lock, and the site-changed stamp's row lock. Every test that writes rows, these and the integration suite, refuses a database whose name doesn't start with `fcr-dev`.
 - **Browser end-to-end against `fcr-dev` (Plan 2, Task 12):** rater and admin scoring, review and whys, editing a rater's card, publish, snapshot, a silent edit flagged as "behind", the next round, catalog edits, and session end.
 - **Live check after cutover (Plan 3, Task 10):** a rater logs in, saves, and changes their password. The admin creates users and starts a site update.
 

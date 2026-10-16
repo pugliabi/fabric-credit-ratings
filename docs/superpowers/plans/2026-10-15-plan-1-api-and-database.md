@@ -1753,6 +1753,20 @@ export async function updateUser(db: Db, id: number, changes: UserChanges): Prom
 }
 
 /**
+ * Sets a new password hash only if the user is still active with the hash the caller just verified, and reports
+ * whether it did. A reset or disable that commits first wins, and this changes nothing.
+ */
+export async function replacePasswordHash(db: Db, id: number, verified: string, next: string): Promise<boolean> {
+  const rows = await db.query<{ id: number }>(
+    `UPDATE users SET password_hash = @next, password_changed_at = SYSUTCDATETIME()
+     OUTPUT inserted.id
+     WHERE id = @id AND active = 1 AND password_hash = @verified`,
+    { id, verified, next },
+  );
+  return rows.length === 1;
+}
+
+/**
  * Holds the users it reads until commit, so two admins demoting or deactivating each other take turns instead of both
  * seeing the other still active. Use inside a transaction, before reading the user being changed.
  */
@@ -2760,7 +2774,7 @@ route('health', 'GET', 'health', 'public', async () => {
 });
 ```
 
-- [ ] **Step 6: Create `api/src/functions/auth.ts`.** As built, login's lockout differs from the block below, and `api/src/functions/auth.ts` wins: it validates the login against `LOGIN`, takes a lock-free look at both keys, then reserves the attempt on both (`reserveAttempt`) before the password check, and on success clears the login key and hands back the IP attempt (`releaseAttempt`). The session insert is guarded (`7e573e9`), logout clears the cookie first (`dbcbb18`), and a password change commits the new hash and the end of the other sessions together (`29bfb0c`), as shown here.
+- [ ] **Step 6: Create `api/src/functions/auth.ts`.** As built, login's lockout differs from the block below, and `api/src/functions/auth.ts` wins: it validates the login against `LOGIN`, takes a lock-free look at both keys, then reserves the attempt on both (`reserveAttempt`) before the password check, and on success clears the login key and hands back the IP attempt (`releaseAttempt`). The session insert is guarded (`7e573e9`), logout clears the cookie first (`dbcbb18`), and a password change commits the new hash and the end of the other sessions together (`29bfb0c`), as shown here. The change applies only to the hash it verified (`7075b0f`). `replacePasswordHash` updates the row only while the user is still active with that hash. If an admin reset the password or disabled the user in the meantime, it matches nothing, and the route answers 400 "Your current password is wrong." inside the transaction. That rolls the transaction back, so nothing changes and no session ends.
 
 ```ts
 import { sessionToken } from '../lib/current-user.ts';
@@ -2773,7 +2787,7 @@ import { clearedCookie, expiryFrom, hashToken, newToken, sessionCookie } from '.
 import { rawString, text } from '../lib/validate.ts';
 import { clearAttempt, getAttempts, saveAttempt } from '../repo/attempts.ts';
 import { createSession, deleteSession, deleteUserSessions, pruneExpiredSessions } from '../repo/sessions.ts';
-import { findUserById, findUserByLogin, toSessionUser, updateUser } from '../repo/users.ts';
+import { findUserById, findUserByLogin, replacePasswordHash, toSessionUser } from '../repo/users.ts';
 
 route('login', 'POST', 'auth/login', 'public', async (ctx) => {
   const login = text(ctx.body, 'login', 'Login', 40).toLowerCase();
@@ -2824,7 +2838,10 @@ route('changePassword', 'PUT', 'me/password', 'user', async (ctx) => {
   const passwordHash = await hashPassword(next);
   const token = sessionToken(ctx.request.headers.get('cookie'), ctx.config);
   await transaction(async (tx) => {
-    await updateUser(tx, record.id, { passwordHash });
+    // False when an admin reset the password or disabled the user after the check above.
+    if (!(await replacePasswordHash(tx, record.id, record.passwordHash, passwordHash))) {
+      throw new HttpError(400, 'Your current password is wrong.');
+    }
     await deleteUserSessions(tx, record.id, token ? hashToken(token) : '');
   });
   return undefined;
@@ -3591,7 +3608,7 @@ export type Drafter = NonNullable<ReturnType<typeof createDrafter>>;
 Run: `npx vitest run api/src/lib/draft-why.test.ts`
 Expected: 3 tests pass.
 
-- [ ] **Step 3: Create `api/src/functions/admin-rounds.ts`.** As built (`f8bdb00`, `817d1d6`, `8090e47`), the writes differ from the block below, and `api/src/functions/admin-rounds.ts` wins. Publish, reopen, `adminScoresPut`, and `adminNotePut` each run in one `transaction`: `lockRound(tx, round.id)` first (from the Task 9 fix), then the status checks on the locked row, then the write, then `markChanged(tx)` as the last statement. Scores and notes stamp only when the locked round is published. Publish starts the deploy after the commit, and refuses a `publishedOn` earlier than the latest published round's with 400 (`e9fe8cf`). The latest published round is the one with the latest publish date; on a tie, the one whose id sorts last (`findLatestPublishedRound`: `ORDER BY published_on DESC, id DESC`). Reopen accepts only the latest published round. `adminDraft` starts `AbortSignal.timeout(200_000)` as its first statement, so the dataset load counts against it, and passes it to the drafter (`3b86266`). A failed draft logs `failureDetails(error, ctx.config.anthropic)` and answers 502 with the friendly message (`cfaae75`). A note body that isn't a string gets 400. `adminScoresPut` takes `userId` only as 1 to 9 digits (`USER_ID`), and both saves turn a foreign-key refusal (547, the item was deleted after the check) into a 409 (`beb3ca5`, `saveForItems`).
+- [ ] **Step 3: Create `api/src/functions/admin-rounds.ts`.** As built (`f8bdb00`, `817d1d6`, `8090e47`), the writes differ from the block below, and `api/src/functions/admin-rounds.ts` wins. Publish, reopen, `adminScoresPut`, and `adminNotePut` each run in one `transaction`: `lockRound(tx, round.id)` first (from the Task 9 fix), then the status checks on the locked row, then the write, then `markChanged(tx)` as the last statement. Scores and notes stamp only when the locked round is published. Publish starts the deploy after the commit, and refuses a `publishedOn` earlier than the latest published round's with 400 (`e9fe8cf`). The latest published round is the one with the latest publish date; on a tie, the one whose id sorts last (`findLatestPublishedRound`: `ORDER BY published_on DESC, id DESC`). So a lower-id round published on the same day doesn't become the latest. That's accepted, because round ids are created in order (`d98671a`). Reopen accepts only the latest published round. `adminDraft` starts `AbortSignal.timeout(200_000)` as its first statement, so the dataset load counts against it, and passes it to the drafter (`3b86266`). A failed draft logs `failureDetails(error, ctx.config.anthropic)` and answers 502 with the friendly message (`cfaae75`). A note body that isn't a string gets 400. `adminScoresPut` takes `userId` only as 1 to 9 digits (`USER_ID`), and both saves turn a foreign-key refusal (547, the item was deleted after the check) into a 409 (`beb3ca5`, `saveForItems`).
 
 ```ts
 import type { DeployResult, PublishResult, RoundReview } from '../../../src/domain/api-types.ts';
@@ -4038,16 +4055,21 @@ git commit -m "API: admin catalog, user management, and public-site status"
   },
 ```
 
-- [ ] **Step 2: Write the integration test.** It runs only when `FCR_API_URL` is set and cleans up after itself. As built (`5f8be72`, then `78dc8cb`), the file differs from the block below, and `api/src/integration.test.ts` wins:
+- [ ] **Step 2: Write the integration test.** It runs only when `FCR_API_URL` is set and cleans up after itself. As built (`5f8be72`, then `78dc8cb`, `e68ee68`, `90f3cb0`, `8f5e592`, `230bccd`), the file differs from the block below, and `api/src/integration.test.ts` wins:
   - **12 tests.** On top of the 8 below:
     - deploy confirmations need the build token and no particular `Origin` (sent with a `generatedAt` the API refuses, so `fcr-dev` isn't stamped);
     - a second user with a taken login gets 409;
-    - the admin removing their own admin access gets 409;
+    - the admin removing their own admin access gets 409. This test counts the active admins first and skips itself unless there is exactly one, so the last-admin rule backs up the self rule and a broken self rule can't demote anyone;
     - an admin password reset ends the rater's sessions and swaps the password.
-  - **Fails fast.** It throws, naming the variables, when `FCR_ADMIN_LOGIN`, `FCR_ADMIN_PASSWORD`, or `FCR_SNAPSHOT_TOKEN` is missing. It refuses to run unless `SQL_DATABASE` starts with `fcr-dev`. After creating the rater, it checks that the host and the suite use the same database.
+
+    The disable test also checks that the disabled rater's login gets 401.
+  - **Fails fast.** It throws, naming the variables, when `FCR_ADMIN_LOGIN`, `FCR_ADMIN_PASSWORD`, or `FCR_SNAPSHOT_TOKEN` is missing.
+    - It refuses to run unless `SQL_DATABASE` starts with `fcr-dev`, through `useDevTarget()` in `api/src/test-target.ts`, the same guard every row-writing test uses.
+    - Right after the admin login in `beforeAll`, before any test writes, it looks up the session the host just wrote by its hash. That proves the host and the suite share a database.
+    - The check after creating the rater stays.
   - **Its own addresses.** Every request sends `X-Forwarded-For` with a per-run TEST-NET-3 address (`203.0.113.x`), so its lockout traffic never shares the `ip:unknown` row with other local hosts. The lock test uses a new address per try, so only the login's own key reaches the limit.
-  - **Cleanup.** `clearTestRows` also deletes the suite's notes and its `ip:203.0.113.%` attempts.
-  - **`afterAll` checks:**
+  - **Cleanup.** `clearTestRows` also deletes the suite's notes and its `ip:203.0.113.%` attempts. `afterAll` skips all cleanup when the `fcr-dev` guard never passed, so a wrong database is never cleaned.
+  - **`afterAll` checks, in one assertion** so a failed logout can't hide a failed cleanup:
     - the admin's logout answers 204;
     - no `itest-` users, no `login:itest-%` or `ip:203.0.113.%` attempts, and no session for the admin's token remain;
     - the whole `site_state` row (`changed_at` and `last_snapshot_at`) is unchanged.
@@ -4205,7 +4227,7 @@ describe.skipIf(!BASE)('API against the dev database', () => {
 - [ ] **Step 3: Confirm the default run skips it.**
 
 Run: `npm test`
-Expected: all unit tests pass; the 12 integration tests show as skipped. The run shows 17 skipped in all, because the 5 opt-in database tests (`FCR_DB_TESTS`) skip too: 2 in `attempts.test.ts`, and 1 each in `rounds.test.ts`, `users.test.ts`, and `site.test.ts`.
+Expected: all unit tests pass; the 12 integration tests show as skipped. The run shows 17 skipped in all, because the 5 opt-in database tests (`FCR_DB_TESTS`) skip too: 2 in `attempts.test.ts`, and 1 each in `rounds.test.ts`, `users.test.ts`, and `site.test.ts`. When they run, each refuses a database whose name doesn't start with `fcr-dev` (`useDevTarget()`), and cleans up only after that check passed. The `rounds.test.ts` one publishes a throwaway round dated `2000-01-01`, so it's never the latest published round that publish and reopen check against. Its `afterAll` deletes the round's scores, the test user, and the round, each step even if the one before failed.
 
 - [ ] **Step 4: Run it against `fcr-dev`.** Close every local site and host using `fcr-dev`, in this checkout and in worktrees, and run one copy of the suite at a time. Leave `FCR_DB_TESTS` unset, and never run the suite in the same run as the opt-in database tests: their `itest-` rows collide with the suite's cleanup.
 
@@ -4225,7 +4247,7 @@ try {
 }
 ```
 
-Expected: 12 tests pass (`Tests  12 passed (12)`; "12 skipped" means `FCR_API_URL` wasn't set). `afterAll` logs the admin out and deletes the suite's rows. It then checks that no `itest-` users, suite attempts, or admin session remain, and that `site_state` is unchanged, so a green run is the cleanup check. If `afterAll` fails on `site_state`, an open-round write stamped the site: treat it as an API bug.
+Expected: `Tests  12 passed (12)` when `fcr-dev` has exactly one active admin. With two or more, the self-demotion check skips itself, giving `11 passed | 1 skipped (12)`. "12 skipped" means `FCR_API_URL` wasn't set. `afterAll` logs the admin out and deletes the suite's rows. In one assertion, it then checks that the logout answered 204, that no `itest-` users, suite attempts, or admin session remain, and that `site_state` is unchanged, so a green run is the cleanup check. If `afterAll` fails on `site_state`, an open-round write stamped the site: treat it as an API bug.
 
 - [ ] **Step 5: Commit.**
 
