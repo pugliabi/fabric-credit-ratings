@@ -1,0 +1,72 @@
+.header {
+  background: var(--header-gradient);
+}
+
+.inner {
+  max-width: 72ch;
+  margin: 0 auto;
+  padding: 28px 24px 36px;
+}
+
+.back {
+  color: var(--white);
+  font-size: 14px;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.back:hover {
+  text-decoration: underline;
+}
+
+.title {
+  margin-top: 18px;
+  color: var(--white);
+  font-family: var(--font-display);
+  font-size: clamp(30px, 5vw, 44px);
+  font-weight: 700;
+  line-height: 1.1;
+}
+
+.main {
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+  max-width: 72ch;
+  margin: 0 auto;
+  padding: 36px 24px 80px;
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  font-size: 16px;
+  overflow-wrap: anywhere;
+}
+
+.section h2 {
+  color: var(--fabric-green-deep);
+  font-family: var(--font-display);
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  line-height: 1.25;
+}
+
+.anchor {
+  scroll-margin-top: 16px;
+}
+
+.links {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.fine {
+  padding-top: 20px;
+  border-top: 1px solid var(--rule);
+  color: var(--ink-faint);
+  font-size: 12.5px;
+}

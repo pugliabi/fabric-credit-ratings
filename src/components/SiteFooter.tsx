@@ -12,6 +12,9 @@ export function SiteFooter({ asOf }: SiteFooterProps) {
         <p className={styles.brand}>Microsoft Fabric Credit Ratings</p>
         {asOf && <p>Ratings as of {formatFullDate(asOf)}.</p>}
         <p>
+          <a href="/about.html">About these ratings</a>: where the ratings come from and who built this site.
+        </p>
+        <p>
           Raters: <a href="/rate">log in</a> to score the open round.
         </p>
         <p className={styles.fine}>

@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { cleanup, render } from '../test/dom';
 import { HowItWorks } from './HowItWorks';
 import { ScaleLegend } from './ScaleLegend';
+import { SiteFooter } from './SiteFooter';
 import { SiteHeader } from './SiteHeader';
 
 afterEach(cleanup);
@@ -20,6 +21,11 @@ describe('HowItWorks', () => {
     expect(text).not.toMatch(/weight|out of 21|\b21\b/);
     expect(text).not.toContain('down to E');
     expect(text).not.toContain('three factors');
+  });
+
+  it('links to the reasoning behind the 1 to 7 scale', async () => {
+    const { container } = await render(HowItWorks, {});
+    expect(container.querySelector('a[href="/about.html#scale"]')?.textContent).toBe('Why 1 to 7?');
   });
 });
 
@@ -40,5 +46,18 @@ describe('SiteHeader', () => {
     expect(text).toContain('outlook');
     expect(text).toContain('down to C');
     expect(text).not.toMatch(/down to E/);
+  });
+});
+
+describe('SiteFooter', () => {
+  it('links to the About page before the rater log-in line', async () => {
+    const { container } = await render(SiteFooter, { asOf: '2026-10-16' });
+    const about = container.querySelector('a[href="/about.html"]');
+    expect(about?.textContent).toBe('About these ratings');
+    expect(about?.parentElement?.textContent).toBe(
+      'About these ratings: where the ratings come from and who built this site.',
+    );
+    const login = container.querySelector('a[href="/rate"]');
+    expect(about?.compareDocumentPosition(login as Node) ?? 0).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
   });
 });

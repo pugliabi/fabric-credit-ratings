@@ -26,6 +26,9 @@ export function HowItWorks() {
           Every Fabric item is scored from {MIN_SCORE} to {MAX_SCORE} on four factors, where {MAX_SCORE} is best. Those
           scores, along with other factors such as release status and reliability, inform a rating from AAA down to C.
         </p>
+        <p className={styles.lede}>
+          <a href="/about.html#scale">Why 1 to 7?</a>
+        </p>
       </header>
 
       <ol className={styles.factors}>
