@@ -5,3 +5,4 @@ dist
 .env
 local.settings.json
 infra/names.ps1
+.deploy

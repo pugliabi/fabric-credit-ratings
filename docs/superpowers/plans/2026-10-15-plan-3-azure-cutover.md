@@ -329,10 +329,15 @@ az functionapp update --resource-group $rg --name $app --set httpsOnly=true -o n
 az functionapp identity assign --resource-group $rg --name $app -o none
 ```
 
-- [ ] **Step 2: Leave CORS to the API.** The API sends its own CORS headers. Platform CORS would answer preflights first and break the cookie flow.
+- [ ] **Step 2: Platform CORS for preflights only.** As built: in Azure the Functions host's CORS middleware answers every `OPTIONS` request before the function runs, so with no platform CORS a preflight gets a bare 204 and the browser blocks every POST and PUT from the site. The API's own `OPTIONS` branch only ever runs locally. The actual responses still carry the API's single `Access-Control-Allow-Origin` and `Allow-Credentials` pair (the host adds none of its own, only a second `Vary: Origin`).
+
+```powershell
+az functionapp cors add --resource-group $rg --name $app --allowed-origins https://fabriccreditratings.com https://www.fabriccreditratings.com -o none
+az functionapp cors credentials --resource-group $rg --name $app --enable true -o none
+```
 
 Run: `az functionapp cors show --resource-group $rg --name $app`
-Expected: `allowedOrigins` is empty or missing. For each origin listed, run `az functionapp cors remove --resource-group $rg --name $app --allowed-origins <origin>`.
+Expected: the two origins and `supportCredentials: true`. Check from outside: an `OPTIONS` to `/api/auth/login` with `Origin: https://fabriccreditratings.com` answers 204 with `Access-Control-Allow-Origin` echoing it and `Access-Control-Allow-Credentials: true`; a foreign origin gets a bare 204.
 
 - [ ] **Step 3: Check it.**
 
@@ -449,6 +454,12 @@ az role assignment create --assignee-object-id $deployerPrincipalId --assignee-p
   --role 'Website Contributor' --scope $appId -o none
 az identity federated-credential create --resource-group $rg --identity-name $deployer --name github-api-environment `
   --issuer https://token.actions.githubusercontent.com --subject "repo:${repo}:environment:api" `
+  --audiences api://AzureADTokenExchange -o none
+# GitHub now presents the subject with the owner and repository ids (repo:<owner>@<ownerId>/<repo>@<repoId>:environment:api);
+# a credential with only the plain subject fails azure/login with AADSTS700213. Add the id-qualified one too.
+$ownerId = gh api "repos/$repo" --jq '.owner.id'; $repoId = gh api "repos/$repo" --jq '.id'
+az identity federated-credential create --resource-group $rg --identity-name $deployer --name github-api-environment-ids `
+  --issuer https://token.actions.githubusercontent.com --subject "repo:pugliabi@$ownerId/fabric-credit-ratings@${repoId}:environment:api" `
   --audiences api://AzureADTokenExchange -o none
 gh api -X PUT "repos/$repo/environments/api" --silent
 gh variable set AZURE_CLIENT_ID -R $repo --body $deployerClientId

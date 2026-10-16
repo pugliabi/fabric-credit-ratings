@@ -6,6 +6,8 @@ const SITE = new URL('../../src/', import.meta.url);
 function sourceFiles(dir: URL): URL[] {
   return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
     if (entry.isDirectory()) return sourceFiles(new URL(`${entry.name}/`, dir));
+    // Tests may reach API code (vi.importActual of a shared rule, say); the shipped sources never may.
+    if (/\.test\.tsx?$/.test(entry.name)) return [];
     return /\.tsx?$/.test(entry.name) ? [new URL(entry.name, dir)] : [];
   });
 }
@@ -17,7 +19,8 @@ describe('site boundary', () => {
   });
 
   it('never imports API code from the site', () => {
-    const leaks = sourceFiles(SITE).filter((file) => /from '[^']*api\/src\//.test(readFileSync(file, 'utf8')));
+    // Any quoted module path into api/src: static or dynamic imports, either quote style.
+    const leaks = sourceFiles(SITE).filter((file) => /['"][^'"]*\/api\/src\//.test(readFileSync(file, 'utf8')));
     expect(leaks.map((file) => file.pathname)).toEqual([]);
   });
 });

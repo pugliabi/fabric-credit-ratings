@@ -81,7 +81,7 @@ See `api/src/domain/aggregate.ts`.
 ## Deploy
 
 - **Site:** `.github/workflows/deploy.yml` runs on every push to `main` and when the API starts it. It refreshes the snapshot (repo variable `API_URL`, secret `SNAPSHOT_TOKEN`), builds, publishes to GitHub Pages, and then confirms the live snapshot to the API (`POST /api/build/snapshot/deployed`).
-- **API:** `.github/workflows/api-deploy.yml` deploys `api/` when `api/` or `src/domain/` changes on `main`. It signs in to Azure with OIDC through the `api` environment (variables `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`, `AZURE_FUNCTIONAPP_NAME`), and ends by starting a site deploy so the site is rebuilt against the new API.
+- **API:** `.github/workflows/api-deploy.yml` deploys `api/` when `api/`, `src/domain/`, `src/lib/` or `src/data/factors.ts` changes on `main`. It signs in to Azure with OIDC through the `api` environment (variables `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`, `AZURE_FUNCTIONAPP_NAME`), and ends by starting a site deploy so the site is rebuilt against the new API.
 - **Checks:** `.github/workflows/ci.yml` typechecks, tests, builds, and scans `dist/` for token shapes and the grade formula on every pull request and every push to a branch other than `main`.
 
 Function App settings:
@@ -95,5 +95,7 @@ Function App settings:
 | `GITHUB_DISPATCH_TOKEN` | Fine-grained token (this repo, Actions read/write) that starts the site deploy. Rotate it yearly. Until it is set, **Update public site** answers that dispatch isn't configured; run `npm run snapshot -- --confirm` against the API and push the snapshot instead |
 | `GITHUB_REPO`, `GITHUB_BRANCH`, `GITHUB_WORKFLOW` | Which workflow to start |
 | `ANTHROPIC_API_KEY`, `ANTHROPIC_WORKSPACE_ID`, `ANTHROPIC_MODEL` | Draft with AI. The workspace id and model are optional |
+
+The Function App's platform CORS lists the two site origins with credentials enabled: in Azure the Functions host answers every `OPTIONS` preflight itself, before the function runs, so without it the browser blocks every POST and PUT from the site. The API still sets the CORS headers on its own responses.
 
 DNS is at Bluehost. The site records point at GitHub Pages (`public/CNAME` holds the domain). `api` is a CNAME to the Function App, with an App Service managed certificate.

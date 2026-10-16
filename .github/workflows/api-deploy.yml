@@ -6,6 +6,8 @@ on:
     paths:
       - 'api/**'
       - 'src/domain/**'
+      - 'src/lib/**'
+      - 'src/data/factors.ts'
       - 'package.json'
       - 'package-lock.json'
       - '.github/workflows/api-deploy.yml'
@@ -71,12 +73,14 @@ jobs:
 
       - name: Check the API answers
         if: ${{ vars.API_URL != '' }}
+        env:
+          API_URL: ${{ vars.API_URL }}
         run: |
           for attempt in 1 2 3 4 5 6; do
-            if curl -fsS --max-time 60 "${{ vars.API_URL }}/api/health"; then exit 0; fi
+            if curl -fsS --max-time 60 "$API_URL/api/health"; then exit 0; fi
             sleep 10
           done
-          echo "::error::${{ vars.API_URL }}/api/health did not answer after the deploy."
+          echo "::error::$API_URL/api/health did not answer after the deploy."
           exit 1
 
       # A push that touches the site too already started deploy.yml, possibly against the old API. This run

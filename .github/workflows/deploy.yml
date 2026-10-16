@@ -60,11 +60,12 @@ jobs:
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add src/data/snapshot.json
           git commit -m "Snapshot $(node -p "require('./src/data/snapshot.json').asOf || 'empty'")"
-          # The same header actions/checkout would have persisted, scoped to these two commands.
-          auth="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)"
+          # The same header actions/checkout would have persisted, passed through the environment (not argv) to
+          # these two commands only.
+          export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=http.extraheader
+          export GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)"
           for _ in 1 2 3; do
-            if git -c http.extraheader="$auth" pull --rebase origin "$GITHUB_REF_NAME" \
-                && git -c http.extraheader="$auth" push origin "HEAD:$GITHUB_REF_NAME"; then exit 0; fi
+            if git pull --rebase origin "$GITHUB_REF_NAME" && git push origin "HEAD:$GITHUB_REF_NAME"; then exit 0; fi
             git rebase --abort 2>/dev/null || true
             sleep 5
           done
