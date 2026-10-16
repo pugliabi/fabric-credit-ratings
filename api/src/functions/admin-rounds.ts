@@ -17,6 +17,7 @@ import { saveNote } from '../repo/notes.ts';
 import {
   countScorecards,
   createRound,
+  deleteRound,
   findLatestPublishedRound,
   findOpenRound,
   findRound,
@@ -108,6 +109,20 @@ route('adminRoundUpdate', 'PUT', 'admin/rounds/{id}', 'admin', async (ctx): Prom
     await markChanged(tx);
   });
   return { rounds: await listRoundsWithCounts(db), deploy: null };
+});
+
+route('adminRoundDelete', 'DELETE', 'admin/rounds/{id}', 'admin', async (ctx) => {
+  const round = await requireRound(ctx.params.id);
+  await transaction(async (tx) => {
+    const current = await lockRound(tx, round.id);
+    if (!current) throw noSuchRound(round.id);
+    if (current.status !== 'open') {
+      throw new HttpError(409, "Published rounds can't be deleted. Reopen it first if it must change.");
+    }
+    // An open round never reached the site, so site_state is not stamped.
+    await deleteRound(tx, current.id);
+  });
+  return listRoundsWithCounts(db);
 });
 
 route('adminReview', 'GET', 'admin/rounds/{id}/review', 'admin', async (ctx) =>

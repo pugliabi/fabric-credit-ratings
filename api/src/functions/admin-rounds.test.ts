@@ -15,6 +15,7 @@ import { saveNote } from '../repo/notes.ts';
 import {
   countScorecards,
   createRound,
+  deleteRound,
   findLatestPublishedRound,
   findOpenRound,
   findRound,
@@ -54,6 +55,7 @@ vi.mock(import('../repo/notes.ts'), () => ({ saveNote: vi.fn() }));
 vi.mock(import('../repo/rounds.ts'), () => ({
   countScorecards: vi.fn(),
   createRound: vi.fn(),
+  deleteRound: vi.fn(),
   findLatestPublishedRound: vi.fn(),
   findOpenRound: vi.fn(),
   findRound: vi.fn(),
@@ -299,6 +301,44 @@ describe('adminRoundUpdate: reopen', () => {
 
     expect(reopenRound).not.toHaveBeenCalled();
     expect(markChanged).not.toHaveBeenCalled();
+  });
+});
+
+describe('adminRoundDelete', () => {
+  it('deletes an open round with its scores and notes in one locked transaction and returns the rounds', async () => {
+    const result = await call('adminRoundDelete', { id: open.id });
+
+    expect(result).toEqual(rounds);
+    expect(transaction).toHaveBeenCalledTimes(1);
+    expect(lockRound).toHaveBeenCalledWith(tx, open.id);
+    expect(deleteRound).toHaveBeenCalledWith(tx, open.id);
+    expectAscending(callOrder(vi.mocked(lockRound), vi.mocked(deleteRound), committed));
+    expect(markChanged).not.toHaveBeenCalled();
+  });
+
+  it('refuses a published round with 409, changing nothing', async () => {
+    vi.mocked(findRound).mockResolvedValue(published);
+    vi.mocked(lockRound).mockResolvedValue(published);
+
+    await expect(call('adminRoundDelete', { id: published.id })).rejects.toMatchObject({
+      status: 409,
+      message: "Published rounds can't be deleted. Reopen it first if it must change.",
+    });
+    expect(deleteRound).not.toHaveBeenCalled();
+    expect(markChanged).not.toHaveBeenCalled();
+  });
+
+  it('answers 404 for an unknown id, and when the round vanishes before the lock', async () => {
+    vi.mocked(findRound).mockResolvedValue(undefined);
+    await expect(call('adminRoundDelete', { id: '1999-Q1' })).rejects.toMatchObject({ status: 404 });
+
+    vi.mocked(findRound).mockResolvedValue(open);
+    vi.mocked(lockRound).mockResolvedValue(undefined);
+    await expect(call('adminRoundDelete', { id: open.id })).rejects.toMatchObject({
+      status: 404,
+      message: `Round ${open.id} does not exist.`,
+    });
+    expect(deleteRound).not.toHaveBeenCalled();
   });
 });
 

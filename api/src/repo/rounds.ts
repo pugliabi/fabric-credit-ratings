@@ -64,6 +64,14 @@ export async function createRound(db: Db, id: string, label: string): Promise<vo
   await db.query(`INSERT INTO rounds (id, label, status) VALUES (@id, @label, 'open')`, { id: varchar(id), label });
 }
 
+/** Removes an open round and everything in it. Run inside a transaction after lockRound on the same round. */
+export async function deleteRound(tx: Db, id: string): Promise<void> {
+  const params = { id: varchar(id) };
+  await tx.query('DELETE FROM notes WHERE round_id = @id', params);
+  await tx.query('DELETE FROM scores WHERE round_id = @id', params);
+  await tx.query('DELETE FROM rounds WHERE id = @id', params);
+}
+
 export async function publishRound(db: Db, id: string, publishedOn: string): Promise<void> {
   await db.query(
     `UPDATE rounds SET status = 'published', published_on = @publishedOn, updated_at = SYSUTCDATETIME() WHERE id = @id`,
