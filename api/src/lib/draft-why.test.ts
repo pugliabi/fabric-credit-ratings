@@ -1,5 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createDrafter, failureDetails, mentionsMath, promptFor, type DraftInput } from './draft-why.ts';
 
 const clients = vi.hoisted(() => [] as { options: unknown; client: unknown }[]);
@@ -13,6 +13,16 @@ vi.mock(import('@anthropic-ai/sdk'), async (importOriginal) => {
     }
   }
   return { ...real, default: Recording };
+});
+
+// The client takes the global fetch when it's built, so no test here can reach Anthropic, even one that forgets to
+// stub create.
+const offline = vi.hoisted(() => () => Promise.reject(new Error('Unit tests make no network calls.')));
+beforeEach(() => {
+  vi.stubGlobal('fetch', vi.fn(offline));
+});
+afterEach(() => {
+  vi.unstubAllGlobals();
 });
 
 const input: DraftInput = {
@@ -232,6 +242,60 @@ describe('createDrafter', () => {
     expect(failure).toBeInstanceOf(Error);
     expect((failure as Error).message).toContain(message);
     expect((failure as Error).cause).toBe(error);
+  });
+
+  describe('a key a request header cannot carry', () => {
+    const refused =
+      "ANTHROPIC_API_KEY has a line break or another character a request header can't carry. " +
+      'Paste the key again in the Function App settings.';
+
+    it.each([
+      ['an interior line break', 'sk-ant-unit\ntest-secret'],
+      ['a NUL', 'sk-ant-unit\u0000test-secret'],
+      ['an interior space', 'sk-ant-unit test-secret'],
+    ])('is refused for %s before any client exists, and nothing quotes it', async (_, apiKey) => {
+      const keySettings = { ...settings, apiKey };
+      const draft = createDrafter(keySettings);
+
+      const failure = await draft?.(input).catch((caught: unknown) => caught);
+      expect((failure as Error).message).toBe(refused);
+      expect(clients).toEqual([]);
+      const logged = JSON.stringify(failureDetails(failure, keySettings));
+      for (const part of ['sk-ant-unit', 'test-secret']) {
+        expect((failure as Error).message).not.toContain(part);
+        expect(logged).not.toContain(part);
+      }
+    });
+
+    it('is taken once its outer whitespace is trimmed, if that leaves nothing a header refuses', () => {
+      createDrafter({ ...settings, apiKey: '  sk-ant-unit-ok \n' });
+      expect(clients[0]?.options).toMatchObject({ apiKey: 'sk-ant-unit-ok' });
+    });
+  });
+
+  it('redacts the key, as set and trimmed, from error text that quotes it, in the message and the log', async () => {
+    const keySettings = { ...settings, apiKey: ' sk-ant-unit-test-secret ' };
+    const draft = createDrafter(keySettings);
+    const quoting = new TypeError('Headers.append: "sk-ant-unit-test-secret" is an invalid header value.');
+    stubbedCreate().mockRejectedValueOnce(quoting);
+
+    const failure = await draft?.(input).catch((caught: unknown) => caught);
+    expect((failure as Error).message).toBe('Headers.append: "[redacted]" is an invalid header value.');
+    const logged = JSON.stringify(failureDetails(failure, keySettings));
+    expect(logged).not.toContain('sk-ant-unit-test-secret');
+    expect(logged).toContain('[redacted]');
+  });
+
+  it('redacts the key from a provider body that quotes it', async () => {
+    const keySettings = { ...settings, apiKey: 'sk-ant-unit-test-secret' };
+    const draft = createDrafter(keySettings);
+    const body = { error: { message: 'invalid x-api-key sk-ant-unit-test-secret' } };
+    stubbedCreate().mockRejectedValueOnce(new Anthropic.BadRequestError(400, body, undefined, new Headers()));
+
+    const failure = await draft?.(input).catch((caught: unknown) => caught);
+    const redacted = JSON.stringify(body).replace('sk-ant-unit-test-secret', '[redacted]');
+    expect((failure as Error).message).toBe(`400 ${redacted}`);
+    expect(JSON.stringify(failureDetails(failure, keySettings))).not.toContain('sk-ant-unit-test-secret');
   });
 
   it('passes the text of an error it has no message for, still keeping that error as the cause', async () => {

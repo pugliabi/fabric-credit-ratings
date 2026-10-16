@@ -4,7 +4,7 @@ import type { Round } from '../../../src/domain/types.ts';
 import { buildReview } from '../domain/review.ts';
 import type { Config } from '../lib/config.ts';
 import { DatabaseUnavailableError, db, transaction } from '../lib/db.ts';
-import { createDrafter, failureDetails } from '../lib/draft-why.ts';
+import { createDrafter, failureDetails, redactKey } from '../lib/draft-why.ts';
 import { HttpError } from '../lib/errors.ts';
 import { startDeploy } from '../lib/github.ts';
 import { route } from '../lib/http.ts';
@@ -181,6 +181,7 @@ route('adminDraft', 'POST', 'admin/rounds/{id}/draft/{artifactId}', 'admin', asy
   } catch (error) {
     const timing = { loadMs, elapsedMs: Date.now() - started };
     ctx.log.warn('AI draft failed', { ...failureDetails(error, ctx.config.anthropic), ...timing });
-    throw new HttpError(502, error instanceof Error ? error.message : String(error));
+    const message = error instanceof Error ? error.message : String(error);
+    throw new HttpError(502, redactKey(message, ctx.config.anthropic.apiKey));
   }
 });

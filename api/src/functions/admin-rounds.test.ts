@@ -90,10 +90,11 @@ function call(
   params: Record<string, string>,
   body: Record<string, unknown> = {},
   user: SessionUser = admin,
+  settings: Config = config,
 ): Promise<unknown> {
   const handler = handlers.get(name);
   if (!handler) throw new Error(`${name} was not registered.`);
-  return handler({ params, body, user, config, log } as unknown as UserCtx);
+  return handler({ params, body, user, config: settings, log } as unknown as UserCtx);
 }
 
 /** When each mock was first called, for comparing with the order the calls should happen in. Each must be called. */
@@ -616,6 +617,18 @@ describe('adminDraft', () => {
       message: 'Notebook has no scores in Q4 2026 yet.',
     });
     expect(drafter).not.toHaveBeenCalled();
+  });
+
+  it("redacts the key from the drafter's message in the 502 and from the log", async () => {
+    const keyed = { anthropic: { apiKey: 'sk-ant-route-secret', workspaceId: '', model: '' } } as Config;
+    drafter.mockRejectedValue(new Error('Headers.append: "sk-ant-route-secret" is an invalid header value.'));
+
+    await expect(call('adminDraft', { id: open.id, artifactId: 'notebook' }, {}, admin, keyed)).rejects.toMatchObject({
+      status: 502,
+      message: 'Headers.append: "[redacted]" is an invalid header value.',
+    });
+    expect(log.warn).toHaveBeenCalledWith('AI draft failed', expect.anything());
+    expect(JSON.stringify(log.warn.mock.calls)).not.toContain('sk-ant-route-secret');
   });
 
   it("answers 502 with the drafter's message, and logs the provider's answer behind it", async () => {

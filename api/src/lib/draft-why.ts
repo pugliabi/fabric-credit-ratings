@@ -75,11 +75,26 @@ Rules:
 - Never mention scores, totals, letter grades, rater counts, or arithmetic. The reader must not be able to reconstruct the rating from the paragraph.`;
 }
 
+/** Printable ASCII with no space: a request header can't carry anything else, and the error for it quotes the value. */
+const SENDABLE_KEY = /^[\x21-\x7e]+$/;
+const KEY_NOT_SENDABLE =
+  "ANTHROPIC_API_KEY has a line break or another character a request header can't carry. " +
+  'Paste the key again in the Function App settings.';
+
+/** Replaces the key, as set and trimmed, wherever error text quotes it. */
+export function redactKey(text: string, apiKey: string): string {
+  let redacted = text;
+  for (const secret of new Set([apiKey, apiKey.trim()])) {
+    if (secret) redacted = redacted.split(secret).join('[redacted]');
+  }
+  return redacted;
+}
+
 /** Turns the errors people actually hit into instructions, keeping the provider's error as the cause for the log. */
-function explain(error: unknown): Error {
-  const message = error instanceof Error ? error.message : String(error);
+function explain(error: unknown, apiKey: string): Error {
+  const raw = error instanceof Error ? error.message : String(error);
   const friendly = (text: string) => new Error(text, { cause: error });
-  if (message.includes('anthropic-workspace-id')) {
+  if (raw.includes('anthropic-workspace-id')) {
     return friendly(
       'This Anthropic key is not scoped to a workspace. Set ANTHROPIC_WORKSPACE_ID in the Function App settings (Claude Console, Settings, Workspaces), or create the key inside a workspace.',
     );
@@ -97,7 +112,7 @@ function explain(error: unknown): Error {
     return friendly('Anthropic is overloaded right now. Try again in a minute.');
   }
   if (timedOut(error)) return friendly('Anthropic did not answer in time. Try again.');
-  return friendly(message);
+  return friendly(redactKey(raw, apiKey));
 }
 
 /** One attempt's own timeout, or the caller's deadline: the SDK reports that as a user abort. */
@@ -127,7 +142,7 @@ export function failureDetails(error: unknown, settings: AnthropicSettings): Rec
     const code = (link as { code?: unknown }).code;
     chain.push(`${link.constructor.name}: ${link.message}${typeof code === 'string' ? ` (${code})` : ''}`);
   }
-  details.error = chain.length > 0 ? chain.join(' <- ') : String(cause);
+  details.error = redactKey(chain.length > 0 ? chain.join(' <- ') : String(cause), settings.apiKey);
   return details;
 }
 
@@ -141,11 +156,18 @@ function textOf(message: Anthropic.Message): string {
 
 /** Returns undefined when no API key is configured. */
 export function createDrafter(settings: AnthropicSettings) {
-  if (!settings.apiKey) return undefined;
+  const apiKey = settings.apiKey.trim();
+  if (!apiKey) return undefined;
+  if (!SENDABLE_KEY.test(apiKey)) {
+    // Never handed to the SDK, whose header error would quote the whole key.
+    return async function draft(_input: DraftInput, _signal?: AbortSignal): Promise<string> {
+      throw new Error(KEY_NOT_SENDABLE);
+    };
+  }
   // Each attempt gives up after 40 s. The SDK's waits between retries follow Retry-After with no cap, so only the
   // caller's signal bounds the whole draft.
   const client = new Anthropic({
-    apiKey: settings.apiKey,
+    apiKey,
     timeout: REQUEST_TIMEOUT_MS,
     maxRetries: 1,
     ...(settings.workspaceId ? { defaultHeaders: { 'anthropic-workspace-id': settings.workspaceId } } : {}),
@@ -157,7 +179,7 @@ export function createDrafter(settings: AnthropicSettings) {
     const prompt = promptFor(input);
     let rejected = '';
     for (let attempt = 0; attempt < 2; attempt += 1) {
-      if (signal?.aborted) throw explain(signal.reason);
+      if (signal?.aborted) throw explain(signal.reason, settings.apiKey);
       const message = await client.messages
         .create(
           {
@@ -176,7 +198,7 @@ export function createDrafter(settings: AnthropicSettings) {
           { signal },
         )
         .catch((error: unknown) => {
-          throw explain(error);
+          throw explain(error, settings.apiKey);
         });
       const text = textOf(message);
       if (text && !mentionsMath(text)) return text;
