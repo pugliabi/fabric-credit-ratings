@@ -144,6 +144,18 @@ describe('RoundReviewPanel', () => {
     expect(routes.calls.map((call) => call.path)).toEqual(['/api/admin/rounds/2026-Q4/draft/notebook']);
   });
 
+  it("lists a reviewed item whose workload this page's catalog hasn't loaded, under a group named by its id", async () => {
+    vi.stubGlobal('fetch', fakeApi({}).fetchMock);
+    const current = review({});
+    const copilot = { id: 'copilot', name: 'Copilot', workload: 'fabric-iq', status: 'preview' as const };
+    const added = { ...current, items: [...current.items, { ...current.items[0]!, artifact: copilot }] };
+    const { container } = await render(RoundReviewPanel, panelProps(added));
+    expect(shownItems(container)).toEqual(['Notebook', 'Environment', 'Lakehouse', 'Copilot']);
+    expect(find(container, 'h2', 'fabric-iq')).not.toBeNull();
+    expect(box(container, 'Copilot')).not.toBeNull();
+    expect(container.textContent).toContain('4 missing a why');
+  });
+
   it('asks before the page drops unsaved whys', async () => {
     vi.stubGlobal('fetch', fakeApi({}).fetchMock);
     const { container } = await render(RoundReviewPanel, panelProps());

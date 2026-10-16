@@ -16,6 +16,7 @@ import {
   withNote,
   type Edits,
 } from './notes';
+import { raterCardWorkloads } from '../rating-ui/save';
 import { RaterCardEditor } from './RaterCardEditor';
 import styles from './Admin.module.css';
 
@@ -207,6 +208,8 @@ export function RoundReviewPanel({ review, catalog, users, onReview }: RoundRevi
 
   const drafting = busy !== undefined;
   const visible = missingOnly ? review.items.filter(({ artifact }) => missingOnly.has(artifact.id)) : review.items;
+  // An item in a workload added after this page loaded is still reviewed (counted, drafted), so it must be listed too.
+  const workloads = raterCardWorkloads(catalog.workloads, review.items.map((item) => item.artifact));
   const saveText = saveState === 'saving' ? 'Saving…' : edits.dirty.size > 0 ? 'Unsaved' : 'All notes saved';
 
   return (
@@ -330,7 +333,7 @@ export function RoundReviewPanel({ review, catalog, users, onReview }: RoundRevi
             <p className={styles.panel}>Nobody has scored anything in {review.round.label} yet.</p>
           )}
 
-          {catalog.workloads.map((workload) => {
+          {workloads.map((workload) => {
             const group = visible.filter(({ artifact }) => artifact.workload === workload.id);
             if (group.length === 0) return null;
             return (

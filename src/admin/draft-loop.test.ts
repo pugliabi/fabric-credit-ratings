@@ -44,8 +44,8 @@ describe('stopDrafting', () => {
       ),
       fail(
         502,
-        "ANTHROPIC_API_KEY has a line break or another character a request header can't carry. Paste the key again " +
-          'in the Function App settings.',
+        "ANTHROPIC_API_KEY doesn't look like an Anthropic key: it's too short, or it has spaces, quotes, line breaks, " +
+          'or other characters a key never has. Paste the key again in the Function App settings.',
       ),
       fail(502, '529 {"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}}'),
       fail(400, 'Set ANTHROPIC_API_KEY in the Function App settings to draft with AI.'),
