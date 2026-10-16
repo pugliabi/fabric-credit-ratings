@@ -126,8 +126,15 @@ export function parseStoredDraft(raw: string | null): StoredDraft | undefined {
   return undefined;
 }
 
+/** The saved card as a draft. Rows go through the same upgrade as stored drafts: an old API's three-entry card is
+ * padded with an unset Outlook, and a row of any other shape is dropped. */
 export function draftFromScores(scores: Readonly<Record<string, ScoreTuple>>): Draft {
-  return { ...scores };
+  const draft: Record<string, DraftTuple> = {};
+  for (const [id, row] of Object.entries(scores)) {
+    const tuple = toRow(row);
+    if (tuple) draft[id] = tuple;
+  }
+  return draft;
 }
 
 /** Rounds averaged values to whole scores so they can seed the sliders. */

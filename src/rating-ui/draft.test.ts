@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import type { Artifact } from '../domain/types';
+import type { Artifact, ScoreTuple } from '../domain/types';
 import {
+  draftFromScores,
   draftFromValues,
   EMPTY_TUPLE,
   hasChanges,
@@ -184,6 +185,15 @@ describe('four factors', () => {
       base: { notebook: [5, 5, 5, null] },
       draft: { notebook: [6, 5, 5, null] },
     });
+  });
+
+  it('pads a three-entry card from the API to a partial row', () => {
+    expect(draftFromScores({ notebook: [6, 6, 5] as unknown as ScoreTuple })).toEqual({ notebook: [6, 6, 5, null] });
+    expect(isComplete(draftFromScores({ notebook: [6, 6, 5] as unknown as ScoreTuple }).notebook!)).toBe(false);
+  });
+
+  it('keeps four-entry cards and drops rows of other lengths', () => {
+    expect(draftFromScores({ a: [1, 2, 3, 4], b: [1, 2] as unknown as ScoreTuple })).toEqual({ a: [1, 2, 3, 4] });
   });
 
   it('still rejects rows of any other length', () => {
