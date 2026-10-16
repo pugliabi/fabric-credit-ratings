@@ -231,40 +231,42 @@ function WorkloadBlock({ workload, catalog, busy, run, control, canMoveUp, canMo
         </div>
       </form>
       {items.length > 0 && (
-        <table className={styles.table}>
-          <thead>
-            <tr>
-              <th>Item</th>
-              <th>Id</th>
-              <th>Status</th>
-              <th>Workload</th>
-              <th>
-                <span className="visually-hidden">Actions</span>
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {items.map((artifact, index) => (
-              <ArtifactRowEditor
-                key={artifact.id}
-                artifact={artifact}
-                catalog={catalog}
-                busy={busy}
-                run={run}
-                control={control}
-                afterDelete={deleteFocus(ids, index, workload.id)}
-                canMoveUp={index > 0}
-                canMoveDown={index < items.length - 1}
-                onMove={(step) =>
-                  void run(
-                    actions.moveArtifacts(catalog, workload.id, index, index + step),
-                    moveFocus(`item:${artifact.id}`, step),
-                  )
-                }
-              />
-            ))}
-          </tbody>
-        </table>
+        <div className={styles.tableWrap}>
+          <table className={styles.table}>
+            <thead>
+              <tr>
+                <th>Item</th>
+                <th>Id</th>
+                <th>Status</th>
+                <th>Workload</th>
+                <th>
+                  <span className="visually-hidden">Actions</span>
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {items.map((artifact, index) => (
+                <ArtifactRowEditor
+                  key={artifact.id}
+                  artifact={artifact}
+                  catalog={catalog}
+                  busy={busy}
+                  run={run}
+                  control={control}
+                  afterDelete={deleteFocus(ids, index, workload.id)}
+                  canMoveUp={index > 0}
+                  canMoveDown={index < items.length - 1}
+                  onMove={(step) =>
+                    void run(
+                      actions.moveArtifacts(catalog, workload.id, index, index + step),
+                      moveFocus(`item:${artifact.id}`, step),
+                    )
+                  }
+                />
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
       <AddArtifactForm workload={workload} busy={busy} run={run} control={control} />
     </section>

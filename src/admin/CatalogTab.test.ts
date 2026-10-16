@@ -64,6 +64,11 @@ describe('CatalogTab', () => {
     expect(headings.map((heading) => heading.replace(/<[^>]*>/g, ''))).toEqual(['Data Factory', 'Power BI']);
   });
 
+  it('puts each item table in a wrapper that scrolls sideways on a narrow screen', () => {
+    const wrapped = render().match(/<div class="[^"]*tableWrap[^"]*"><table/g) ?? [];
+    expect(wrapped).toHaveLength(1);
+  });
+
   it('disables Delete, with the reason, only on an item that has scores or notes', () => {
     const html = render();
     expect(button(html, 'Delete Pipeline')).toContain('title="Has scores or notes. Mark it retired instead."');

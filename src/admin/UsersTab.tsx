@@ -123,51 +123,53 @@ export function UsersTab({ users, me, onUsers, onForbidden }: UsersTabProps) {
         <h2 ref={heading} tabIndex={-1} className={styles.panelTitle}>
           Raters and admins
         </h2>
-        <table className={styles.table}>
-          <thead>
-            <tr>
-              <th>Name</th>
-              <th>Login</th>
-              <th>Role</th>
-              <th>Status</th>
-              <th>Last scored</th>
-              <th>
-                <span className="visually-hidden">Actions</span>
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {users.map((user) =>
-              editing?.id === user.id ? (
-                <EditUserRow
-                  key={user.id}
-                  user={user}
-                  kind={editing.kind}
-                  isMe={user.id === me.id}
-                  busy={busy}
-                  onCancel={close}
-                  onSave={(changes, done) =>
-                    run(
-                      () => api<AdminUser[]>('PUT', `/admin/users/${user.id}`, changes),
-                      done,
-                      buttonKey(user.id, editing.kind),
-                    )
-                  }
-                />
-              ) : (
-                <UserRow
-                  key={user.id}
-                  user={user}
-                  isMe={user.id === me.id}
-                  busy={busy}
-                  buttonRef={buttonRef}
-                  onEdit={(kind) => setEditing({ id: user.id, kind })}
-                  onToggle={() => toggleActive(user)}
-                />
-              ),
-            )}
-          </tbody>
-        </table>
+        <div className={styles.tableWrap}>
+          <table className={styles.table}>
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Login</th>
+                <th>Role</th>
+                <th>Status</th>
+                <th>Last scored</th>
+                <th>
+                  <span className="visually-hidden">Actions</span>
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {users.map((user) =>
+                editing?.id === user.id ? (
+                  <EditUserRow
+                    key={user.id}
+                    user={user}
+                    kind={editing.kind}
+                    isMe={user.id === me.id}
+                    busy={busy}
+                    onCancel={close}
+                    onSave={(changes, done) =>
+                      run(
+                        () => api<AdminUser[]>('PUT', `/admin/users/${user.id}`, changes),
+                        done,
+                        buttonKey(user.id, editing.kind),
+                      )
+                    }
+                  />
+                ) : (
+                  <UserRow
+                    key={user.id}
+                    user={user}
+                    isMe={user.id === me.id}
+                    busy={busy}
+                    buttonRef={buttonRef}
+                    onEdit={(kind) => setEditing({ id: user.id, kind })}
+                    onToggle={() => toggleActive(user)}
+                  />
+                ),
+              )}
+            </tbody>
+          </table>
+        </div>
       </section>
       <CreateUserForm
         busy={busy}

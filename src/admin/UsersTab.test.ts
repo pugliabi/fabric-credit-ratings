@@ -68,6 +68,10 @@ describe('UsersTab', () => {
     expect(html).toMatch(/<h2\b[^>]*tabindex="-1"[^>]*>Raters and admins<\/h2>/);
   });
 
+  it('puts the table in a wrapper that scrolls sideways on a narrow screen', () => {
+    expect(html).toMatch(/<div class="[^"]*tableWrap[^"]*"><table/);
+  });
+
   it('marks your own row and offers no Disable there', () => {
     const own = row(html, 'boss');
     expect(own).toContain('>you</span>');

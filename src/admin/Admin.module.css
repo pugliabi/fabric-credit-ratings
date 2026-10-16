@@ -32,8 +32,10 @@
   font-weight: 700;
 }
 
+/* Wraps, so the five tabs never force the header wider than a mid-width window (861-1,100 px). */
 .tabs {
   display: flex;
+  flex-wrap: wrap;
   gap: 6px;
   padding: 4px;
   border-radius: 999px;
@@ -379,7 +381,9 @@
   cursor: pointer;
 }
 
-.small:disabled {
+/* Row buttons stay focusable while a write runs, so they use aria-disabled instead of disabled. */
+.small:disabled,
+.small[aria-disabled='true'] {
   opacity: 0.45;
   cursor: not-allowed;
 }
@@ -399,6 +403,12 @@
   flex-wrap: wrap;
   align-items: flex-end;
   gap: 12px;
+}
+
+/* The Users and Catalog tables are wider than a phone, so the wrapper scrolls sideways instead of the page. */
+.tableWrap {
+  max-width: 100%;
+  overflow-x: auto;
 }
 
 .table {
@@ -490,10 +500,4 @@
   .cardScores {
     grid-column: 1;
   }
-}
-
-/* Users tab (Plan 2 Task 9): row buttons stay focusable while busy, so they use aria-disabled instead of disabled. */
-.small[aria-disabled='true'] {
-  opacity: 0.45;
-  cursor: not-allowed;
 }
