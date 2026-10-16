@@ -18,17 +18,19 @@ const MONTH_NAMES = [
 
 /** { year, month (1-12) } of the period after the latest round, or after `today` when no round id can be read. */
 function nextPeriod(rounds: readonly Round[], today: string): { year: number; month: number } {
-  const latest = rounds.map((round) => round.id).sort().at(-1) ?? '';
-  const month = /^(\d{4})-([A-Z]{3})$/.exec(latest);
-  const quarter = /^(\d{4})-Q([1-4])$/.exec(latest);
+  let best = -1;
+  for (const { id } of rounds) {
+    const month = /^(\d{4})-([A-Z]{3})$/.exec(id);
+    const quarter = /^(\d{4})-Q([1-4])$/.exec(id);
+    const index = month ? MONTHS.indexOf(month[2] as (typeof MONTHS)[number]) : -1;
+    if (month && index >= 0) best = Math.max(best, Number(month[1]) * 12 + index);
+    else if (quarter) best = Math.max(best, Number(quarter[1]) * 12 + Number(quarter[2]) * 3 - 1);
+  }
   let year = Number(today.slice(0, 4));
   let next = Number(today.slice(5, 7)) + 1;
-  if (month && MONTHS.includes(month[2] as (typeof MONTHS)[number])) {
-    year = Number(month[1]);
-    next = MONTHS.indexOf(month[2] as (typeof MONTHS)[number]) + 2;
-  } else if (quarter) {
-    year = Number(quarter[1]);
-    next = Number(quarter[2]) * 3 + 1;
+  if (best >= 0) {
+    year = Math.floor(best / 12);
+    next = (best % 12) + 2;
   }
   if (next > 12) {
     next = 1;

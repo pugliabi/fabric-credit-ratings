@@ -14,6 +14,15 @@ describe('nextRound', () => {
     expect(nextRound([round('2026-Q4')], today)).toEqual({ id: '2027-JAN', label: 'January 2027' });
     expect(nextRound([round('2026-Q1')], today)).toEqual({ id: '2026-APR', label: 'April 2026' });
   });
+  it('ranks rounds by period, not by id text', () => {
+    const rounds = [round('2026-OCT'), round('2026-NOV')];
+    expect(nextRound(rounds, today)).toEqual({ id: '2026-DEC', label: 'December 2026' });
+    expect(nextRound([round('2026-NOV'), round('2026-Q4')], today)).toEqual({ id: '2027-JAN', label: 'January 2027' });
+    expect(nextRound([round('2026-Q4'), round('2027-JAN')], today)).toEqual({ id: '2027-FEB', label: 'February 2027' });
+  });
+  it('ignores ids it cannot read', () => {
+    expect(nextRound([round('2026-H1')], today)).toEqual({ id: '2026-NOV', label: 'November 2026' });
+  });
   it('falls back to the month after today', () => {
     expect(nextRound([], today)).toEqual({ id: '2026-NOV', label: 'November 2026' });
     expect(nextRound([round('2026-H1')], '2026-12-02')).toEqual({ id: '2027-JAN', label: 'January 2027' });
