@@ -1152,13 +1152,21 @@ export class HttpError extends Error {
 import type { Score, ScoreTriple } from '../../../src/domain/types.ts';
 import { HttpError } from './errors.ts';
 
-export const ROUND_ID = /^\d{4}-[A-Za-z0-9]{1,3}$/;
+export const ROUND_ID = /^\d{4}-[A-Z0-9]{1,3}$/;
 export const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 /** Lowercase letters, digits, dot, dash, underscore; 2 to 40 characters. */
 export const LOGIN = /^[a-z0-9][a-z0-9._-]{1,39}$/;
 export const SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 /** Digits only, so 1e1 or 0x7 can't name a user; at most 9, so the bound value always fits SQL int. */
 export const USER_ID = /^\d{1,9}$/;
+
+/** Ids are keys of plain objects in the API and the editors, where these names already resolve to built-ins. */
+const RESERVED_IDS: ReadonlySet<string> = new Set([...Object.getOwnPropertyNames(Object.prototype), 'prototype']);
+
+/** True for a workload or item id that can't be used as a plain-object key. */
+export function isReservedId(id: string): boolean {
+  return RESERVED_IDS.has(id);
+}
 
 type Body = Record<string, unknown>;
 
@@ -2235,7 +2243,8 @@ export async function siteState(db: Db): Promise<SiteState> {
 
 export function isBehind(state: SiteState): boolean {
   if (!state.lastSnapshotAt) return true;
-  // Both come back truncated to milliseconds; a tie may hide a change made just after the snapshot's clock read.
+  // A tie may hide a change made just after the snapshot's clock read: both come back truncated to milliseconds, and
+  // two clock reads can be equal anyway.
   return state.changedAt !== null && state.changedAt >= state.lastSnapshotAt;
 }
 
@@ -2307,13 +2316,13 @@ Loads the catalog and round files from the repo into the database and creates th
 **Files:**
 - Create: `db/seed.ts`
 
-- [ ] **Step 1: Create `db/seed.ts`.**
+- [ ] **Step 1: Create `db/seed.ts`.** Before its first catalog write, it refuses a workload or item id that the admin catalog would refuse as reserved (`isReservedId`, `fa28250`), naming the file and the id.
 
 ```ts
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { closeDb, db, transaction } from '../api/src/lib/db.ts';
 import { hashPassword, passwordProblem } from '../api/src/lib/password.ts';
-import { LOGIN, validateScores } from '../api/src/lib/validate.ts';
+import { LOGIN, isReservedId, validateScores } from '../api/src/lib/validate.ts';
 import { listArtifacts, upsertArtifact, upsertWorkload } from '../api/src/repo/catalog.ts';
 import { saveNote } from '../api/src/repo/notes.ts';
 import { upsertRound } from '../api/src/repo/rounds.ts';
@@ -2340,17 +2349,33 @@ function readJson<T>(path: URL): T {
 }
 
 async function ensureAdmin(): Promise<string> {
-  if (await findUserByLogin(db, adminLogin)) return 'already exists, password unchanged';
+  const existing = await findUserByLogin(db, adminLogin);
+  if (existing) {
+    const state = `${existing.role}, ${existing.active ? 'active' : 'inactive'}`;
+    return `already exists (${state}), not changed. --name was not applied.`;
+  }
   const password = process.env.FCR_ADMIN_PASSWORD ?? '';
   const problem = passwordProblem(password);
   if (problem) throw new Error(`Set FCR_ADMIN_PASSWORD first. ${problem}`);
-  await createUser(db, { login: adminLogin, displayName: adminName, role: 'admin', passwordHash: await hashPassword(password) });
+  await createUser(db, {
+    login: adminLogin,
+    displayName: adminName,
+    role: 'admin',
+    passwordHash: await hashPassword(password),
+  });
   return 'created';
+}
+
+function refuseReservedIds(file: string, rows: readonly { id: string }[]): void {
+  const reserved = rows.find(({ id }) => isReservedId(id));
+  if (reserved) throw new Error(`src/data/${file}: the id ${reserved.id} is reserved. Rename it, then seed again.`);
 }
 
 async function seedCatalog(): Promise<string> {
   const { WORKLOADS } = await import('../src/data/workloads.ts');
   const { ARTIFACTS } = await import('../src/data/artifacts.ts');
+  refuseReservedIds('workloads.ts', WORKLOADS);
+  refuseReservedIds('artifacts.ts', ARTIFACTS);
   for (const [index, workload] of WORKLOADS.entries()) await upsertWorkload(db, workload, (index + 1) * 10);
   for (const workload of WORKLOADS) {
     const items = ARTIFACTS.filter((artifact) => artifact.workload === workload.id);
@@ -3091,9 +3116,9 @@ function deployedAt(value: unknown): Date {
 }
 
 /**
- * The database's clock, the one changed_at uses. markChanged stamps changed_at before its transaction commits, and
- * RCSI reads don't wait for that, so the read takes site_state's row lock (READCOMMITTEDLOCK): it waits for any
- * transaction that has already stamped to commit, and a later stamp is later than this time.
+ * The database's clock, the one changed_at uses. SYSUTCDATETIME() is fixed when this statement starts; the read then
+ * takes site_state's row lock (READCOMMITTEDLOCK), so it waits for any transaction that has already stamped. A stamp
+ * this read didn't wait for is no earlier than this time, and isBehind counts a tie as behind.
  */
 async function databaseNow(log: InvocationContext): Promise<Date> {
   const [locked] = await db.query<{ now: Date }>(
@@ -3101,7 +3126,10 @@ async function databaseNow(log: InvocationContext): Promise<Date> {
   );
   if (locked) return locked.now;
   // Without the row, markChanged has nothing to stamp, so there is nothing to wait for.
-  log.warn('site_state has no row, so the admin page will show the site as behind until npm run db:apply adds it.');
+  log.warn(
+    'site_state has no row, so the admin page shows the site as behind until npm run db:apply adds it ' +
+      'and the next deploy is confirmed.',
+  );
   const [clock] = await db.query<{ now: Date }>('SELECT SYSUTCDATETIME() AS now');
   if (!clock) throw new Error('SYSUTCDATETIME() returned no row.');
   return clock.now;
@@ -3109,7 +3137,7 @@ async function databaseNow(log: InvocationContext): Promise<Date> {
 
 /**
  * Read-only: the deploy workflow confirms with build/snapshot/deployed once the site is live. generatedAt is read
- * before the load starts, so a change is either in the snapshot or later than generatedAt.
+ * before the load starts, so a change is either in the snapshot or stamped no earlier than generatedAt.
  */
 route('buildSnapshot', 'GET', 'build/snapshot', 'build', async (ctx) => {
   const now = await databaseNow(ctx.log);
@@ -3411,7 +3439,16 @@ describe('createDrafter', () => {
 Run: `npx vitest run api/src/lib/draft-why.test.ts`
 Expected: FAIL, cannot resolve `./draft-why.ts`.
 
-- [ ] **Step 2: Create `api/src/lib/draft-why.ts`.** This is `scripts/draft-why.ts` with three changes: the caller passes the workload, settings come from the Function App, and the error messages point at app settings instead of `.env`. As built (`fc3a229`), the file differs from the block below, and `api/src/lib/draft-why.ts` wins. The client is built with `timeout: 40_000` and `maxRetries: 1`, so each Anthropic call gives up after 40 s with one retry. `mentionsMath` uses two regexes, `GRADE` and `OUT_OF`: signed grades such as `A-` or `B+` without flagging "B-tree", plus "6 of 7", "out of seven", "/7", and "/21". `explain()` adds messages for a model the key can't use (404), a rate limit or overload (429, 529), and a timeout. A missing workload row renders as its id in the prompt.
+- [ ] **Step 2: Create `api/src/lib/draft-why.ts`.** This is `scripts/draft-why.ts` with three changes: the caller passes the workload, settings come from the Function App, and the error messages point at app settings instead of `.env`. As built (`fc3a229`, then `3b86266`, `cfaae75`, `e4c63c5`), the file differs from the block below, and `api/src/lib/draft-why.ts` wins:
+  - **Timeouts.** The client is built with `timeout: 40_000` and `maxRetries: 1`, so each Anthropic call gives up after 40 s with one retry. The SDK's waits between retries follow `Retry-After` with no cap, so the caller's signal bounds the whole draft. `draft(input, signal?)` checks `signal.aborted` before each attempt and passes `{ signal }` to every `messages.create`.
+  - **Leak guard.** `mentionsMath` uses two regexes, `GRADE` and `OUT_OF`. They catch signed grades such as `A-` or `B+` without flagging "B-tree", plus "6 of 7", "out of seven", and a slash score from 1 to 21 over 7 or 21 ("6/7", "15/21"). "24/7" isn't flagged.
+  - **`explain()`.** Every message keeps the provider's error as its `cause`. Besides the workspace and key cases:
+    - a model the key can't use (404): "ANTHROPIC_MODEL names a model this key can't use. Check the setting in the Function App.";
+    - a rate limit (429): "Anthropic's rate limit for this key was reached. Wait a minute, then try again.";
+    - an overload (529 or `overloaded_error`): "Anthropic is overloaded right now. Try again in a minute.";
+    - a timeout, meaning an attempt's own 40 s, the SDK's `APIUserAbortError`, or a `TimeoutError` or `AbortError` from the caller's signal: "Anthropic did not answer in time. Try again."
+  - **`failureDetails(error, settings)`** is exported for the log. It returns the model, and for an SDK error with a status, its status, request id, and error type, plus `"<class>: <message>"`. It never includes the key, which travels only in request headers, or the prompt.
+  - **Prompt.** A missing workload row renders as its id.
 
 ```ts
 import Anthropic from '@anthropic-ai/sdk';
@@ -3554,7 +3591,7 @@ export type Drafter = NonNullable<ReturnType<typeof createDrafter>>;
 Run: `npx vitest run api/src/lib/draft-why.test.ts`
 Expected: 3 tests pass.
 
-- [ ] **Step 3: Create `api/src/functions/admin-rounds.ts`.** As built (`f8bdb00`, `817d1d6`, `8090e47`), the writes differ from the block below, and `api/src/functions/admin-rounds.ts` wins. Publish, reopen, `adminScoresPut`, and `adminNotePut` each run in one `transaction`: `lockRound(tx, round.id)` first (from the Task 9 fix), then the status checks on the locked row, then the write, then `markChanged(tx)` as the last statement. Scores and notes stamp only when the locked round is published. Publish starts the deploy after the commit, and refuses a `publishedOn` earlier than the latest published round's with 400 (`e9fe8cf`). Reopen accepts only the latest published round. A note body that isn't a string gets 400. `adminScoresPut` takes `userId` only as 1 to 9 digits (`USER_ID`), and both saves turn a foreign-key refusal (547, the item was deleted after the check) into a 409 (`beb3ca5`, `saveForItems`).
+- [ ] **Step 3: Create `api/src/functions/admin-rounds.ts`.** As built (`f8bdb00`, `817d1d6`, `8090e47`), the writes differ from the block below, and `api/src/functions/admin-rounds.ts` wins. Publish, reopen, `adminScoresPut`, and `adminNotePut` each run in one `transaction`: `lockRound(tx, round.id)` first (from the Task 9 fix), then the status checks on the locked row, then the write, then `markChanged(tx)` as the last statement. Scores and notes stamp only when the locked round is published. Publish starts the deploy after the commit, and refuses a `publishedOn` earlier than the latest published round's with 400 (`e9fe8cf`). The latest published round is the one with the latest publish date; on a tie, the one whose id sorts last (`findLatestPublishedRound`: `ORDER BY published_on DESC, id DESC`). Reopen accepts only the latest published round. `adminDraft` starts `AbortSignal.timeout(200_000)` as its first statement, so the dataset load counts against it, and passes it to the drafter (`3b86266`). A failed draft logs `failureDetails(error, ctx.config.anthropic)` and answers 502 with the friendly message (`cfaae75`). A note body that isn't a string gets 400. `adminScoresPut` takes `userId` only as 1 to 9 digits (`USER_ID`), and both saves turn a foreign-key refusal (547, the item was deleted after the check) into a 409 (`beb3ca5`, `saveForItems`).
 
 ```ts
 import type { DeployResult, PublishResult, RoundReview } from '../../../src/domain/api-types.ts';
@@ -3732,14 +3769,19 @@ git commit -m "API: admin rounds, review, score and note editing, AI drafting"
 - Create: `api/src/functions/admin-catalog.ts`, `api/src/functions/admin-users.ts`, `api/src/functions/admin-site.ts`
 - Modify: `api/src/index.ts`
 
-- [ ] **Step 1: Create `api/src/functions/admin-catalog.ts`.** Every write and its `markChanged(tx)` share one transaction, with the stamp last. As built (`1ed2260`), `saveCatalog` also takes a `refused` mapping, so a create that loses a race on its id (2601/2627) or a delete that loses a race with a new score or note (547) answers the route's 409 instead of a 500. Creates refuse ids that name a built-in object property (`constructor`, `__proto__`, `toString`, …) or `prototype` with 400, before the format check (`3777692`): ids are keys of plain objects in the API and the editors. A delete's foreign-key checks seek `ix_scores_artifact` and `ix_notes_artifact` (Task 8) instead of scanning, and waiting on, every card being saved.
+- [ ] **Step 1: Create `api/src/functions/admin-catalog.ts`.** Every write and its `markChanged(tx)` share one transaction, with the stamp last. As built (`1ed2260`, `571fd3a`), `saveCatalog` also takes any number of `{ numbers, error }` refusals after the write, so a SQL error number the route's earlier check lost a race on becomes that route's error instead of a 500:
+  - a create that loses a race on its id (2601/2627) answers the "already exists" 409;
+  - a delete that loses a race with a new score or note (547) answers the "has scores or notes" 409;
+  - a delete chosen as a deadlock victim (1205) answers 503 "Someone was saving a score or note for <name> at the same moment. Try again." With the `artifact_id` indexes, a delete can only deadlock with a card or note save that adds this item, and a retry gets the accurate 409.
+
+Creates refuse ids that name a built-in object property (`constructor`, `__proto__`, `toString`, …) or `prototype` with 400, before the format check (`3777692`): ids are keys of plain objects in the API and the editors. The check is `isReservedId` in `validate.ts` (Task 7), which the seed shares (`fa28250`). A delete's foreign-key checks seek `ix_scores_artifact` and `ix_notes_artifact` (Task 8) instead of scanning, and waiting on, every card being saved.
 
 ```ts
 import type { AdminCatalog } from '../../../src/domain/api-types.ts';
 import { db, transaction, type Db } from '../lib/db.ts';
 import { HttpError } from '../lib/errors.ts';
 import { route } from '../lib/http.ts';
-import { SLUG, oneOf, optionalInt, text } from '../lib/validate.ts';
+import { SLUG, isReservedId, oneOf, optionalInt, text } from '../lib/validate.ts';
 import {
   adminCatalog,
   createArtifact,
@@ -3751,12 +3793,10 @@ import {
 import { markChanged } from '../repo/site.ts';
 
 const RELEASE_STATUSES = ['ga', 'preview', 'retired'] as const;
-/** Ids are keys of plain objects in the API and the editors, where these names already resolve to built-ins. */
-const RESERVED_IDS: ReadonlySet<string> = new Set([...Object.getOwnPropertyNames(Object.prototype), 'prototype']);
 
 function slug(body: Record<string, unknown>, label: string): string {
   const id = text(body, 'id', label, 64);
-  if (RESERVED_IDS.has(id)) throw new HttpError(400, `${label} ${id} is reserved. Pick another id.`);
+  if (isReservedId(id)) throw new HttpError(400, `${label} ${id} is reserved. Pick another id.`);
   if (!SLUG.test(id)) throw new HttpError(400, `${label} must be lowercase words joined by dashes, like copy-job.`);
   return id;
 }
@@ -4165,9 +4205,9 @@ describe.skipIf(!BASE)('API against the dev database', () => {
 - [ ] **Step 3: Confirm the default run skips it.**
 
 Run: `npm test`
-Expected: all unit tests pass; the 12 integration tests show as skipped. The run shows 16 skipped in all, because the 4 opt-in database tests (`FCR_DB_TESTS`) skip too.
+Expected: all unit tests pass; the 12 integration tests show as skipped. The run shows 17 skipped in all, because the 5 opt-in database tests (`FCR_DB_TESTS`) skip too: 2 in `attempts.test.ts`, and 1 each in `rounds.test.ts`, `users.test.ts`, and `site.test.ts`.
 
-- [ ] **Step 4: Run it against `fcr-dev`.** Close every local site and host using `fcr-dev`, in this checkout and in worktrees, and run one copy of the suite at a time.
+- [ ] **Step 4: Run it against `fcr-dev`.** Close every local site and host using `fcr-dev`, in this checkout and in worktrees, and run one copy of the suite at a time. Leave `FCR_DB_TESTS` unset, and never run the suite in the same run as the opt-in database tests: their `itest-` rows collide with the suite's cleanup.
 
 Terminal 1: `npm run api`
 

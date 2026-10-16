@@ -1824,7 +1824,7 @@ export function NewRoundForm({ rounds, onCreated }: NewRoundFormProps) {
       <div className={styles.fields}>
         <label className={styles.field}>
           <span>Round id</span>
-          <input value={id} onChange={(event) => setId(event.target.value)} pattern="\d{4}-[A-Za-z0-9]{1,3}" required />
+          <input value={id} onChange={(event) => setId(event.target.value)} pattern="\d{4}-[A-Z0-9]{1,3}" required />
         </label>
         <label className={styles.field}>
           <span>Label</span>
@@ -2130,6 +2130,8 @@ export function RaterCardEditor({ review, rater, catalog, onSaved, onCancel }: R
 
 - [ ] **Step 2: Create `src/admin/ReviewTab.tsx`.** Notes save per item through `PUT /admin/rounds/:id/notes/:artifactId`, 700 ms after typing stops. An item stays "unsaved" if its text changed while its save was in flight. The limit matches the server's: up to 2,000 characters after trimming are accepted. A longer note isn't sent; it stays unsaved, with the server's wording ("Keep the write-up to 2,000 characters or fewer.") under the box. The box has no `maxLength`, which would cut a paste short without saying so and would count the untrimmed text.
 
+Drafts are slow by nature, so they skip the wake notice (`{ wakeNotice: false }`, the `api()` option noted in Task 2 Step 1). The API answers every draft within about 200 s, with the text or a 502 whose message is shown as is. So a status 0 there means the network failed, not a draft that ran too long. "Draft all blank" drafts one item at a time. It stops at the first rate-limit or overload message ("Anthropic's rate limit for this key was reached. …", "Anthropic is overloaded right now. …"), because every later draft would get the same answer. It keeps going past "The model kept mentioning scores or grades. Write this one by hand." and other per-item errors.
+
 ```tsx
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { GradeBadge } from '../components/GradeBadge';
@@ -2144,6 +2146,8 @@ const SAVE_DELAY = 700;
 /** The server's limit, counted on the trimmed text, with its wording. */
 const NOTE_MAX = 2000;
 const NOTE_TOO_LONG = 'Keep the write-up to 2,000 characters or fewer.';
+/** How the API's 502 starts when Anthropic refuses for the key or for everyone; every later draft would fail too. */
+const PROVIDER_LIMITS = ["Anthropic's rate limit for this key was reached.", 'Anthropic is overloaded right now.'];
 
 interface ReviewTabProps {
   rounds: readonly AdminRound[];
@@ -2257,14 +2261,19 @@ function RoundReviewPanel({ review, catalog, users, onReview }: RoundReviewPanel
     setEdits((current) => ({ notes: { ...current.notes, [id]: text }, dirty: new Set(current.dirty).add(id) }));
   }, []);
 
-  const draftOne = async (id: string) => {
+  /** Resolves to the error message, or '' once the draft is in the box. */
+  const draftOne = async (id: string): Promise<string> => {
     setBusy(id);
     setDraftErrors(({ [id]: _, ...rest }) => rest);
     try {
-      const { text } = await api<{ text: string }>('POST', `/admin/rounds/${roundId}/draft/${id}`);
+      const path = `/admin/rounds/${roundId}/draft/${id}`;
+      const { text } = await api<{ text: string }>('POST', path, undefined, { wakeNotice: false });
       setNote(id, text);
+      return '';
     } catch (reason) {
-      setDraftErrors((current) => ({ ...current, [id]: errorMessage(reason) }));
+      const message = errorMessage(reason);
+      setDraftErrors((current) => ({ ...current, [id]: message }));
+      return message;
     } finally {
       setBusy(undefined);
     }
@@ -2278,8 +2287,9 @@ function RoundReviewPanel({ review, catalog, users, onReview }: RoundReviewPanel
     setProgress({ done: 0, total: queue.length });
     for (const [index, id] of queue.entries()) {
       if (cancelRef.current) break;
-      await draftOne(id);
+      const failure = await draftOne(id);
       setProgress({ done: index + 1, total: queue.length });
+      if (PROVIDER_LIMITS.some((start) => failure.startsWith(start))) break;
     }
     setProgress(undefined);
   };

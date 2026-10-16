@@ -95,7 +95,7 @@ login_attempts (
   locked_until datetime2 NULL
 )
 rounds (
-  id           varchar(8)   PRIMARY KEY,         -- '2026-Q4', matches ^\d{4}-[A-Za-z0-9]{1,3}$
+  id           varchar(8)   PRIMARY KEY,         -- '2026-Q4', matches ^\d{4}-[A-Z0-9]{1,3}$
   label        nvarchar(40) NOT NULL,            -- 'Q4 2026'
   status       varchar(10)  NOT NULL CHECK (status IN ('open','published')),
   published_on date NULL,
@@ -177,14 +177,14 @@ The rater page's "Start from current ratings" uses the bundled `snapshot.json` (
 |---|---|---|
 | `GET /api/admin/rounds` | none | every round, with scorecard and note counts |
 | `POST /api/admin/rounds` | `{ id, label }` | opens a round and returns every round. 409 if one is already open or the id exists |
-| `PUT /api/admin/rounds/:id` | `{ status: 'published', publishedOn }` or `{ status: 'open' }` | publish, or reopen the latest published round when no round is open. Returns `{ rounds, deploy }`. A `publishedOn` earlier than the latest published round's gets 400 ("Publish dates can't be earlier than <label>'s (<date>)."); the same day and future dates are allowed |
+| `PUT /api/admin/rounds/:id` | `{ status: 'published', publishedOn }` or `{ status: 'open' }` | publish, or reopen the latest published round when no round is open. Returns `{ rounds, deploy }`. A `publishedOn` earlier than the latest published round's gets 400 ("Publish dates can't be earlier than <label>'s (<date>)."); the same day and future dates are allowed. The latest published round is the one with the latest publish date; rounds published on the same date fall back to round order, so the one whose id sorts last counts as latest |
 | `GET /api/admin/rounds/:id/review` | none | the raters, and per item: averaged scores, grade, change from the previous published round, per-rater scores. Plus the notes and whether AI drafting is configured |
 | `PUT /api/admin/rounds/:id/scores/:userId` | `{ scores }` | replaces any user's card in any round, published included. Returns the review. A `userId` that isn't 1 to 9 digits gets 404. An item deleted after the check gets 409, as on the rater's save |
 | `PUT /api/admin/rounds/:id/notes/:artifactId` | `{ body }` | 204. Saves the why text. An empty body deletes it. A body that isn't text gets 400. An item deleted after the check gets 409 ("That item was just deleted. Reload the page to get the current list.") |
-| `POST /api/admin/rounds/:id/draft/:artifactId` | none | `{ text }`, an AI-drafted why (existing `draft-why` logic), or 502 with the reason. Each Anthropic call times out after 40 s, with one retry |
+| `POST /api/admin/rounds/:id/draft/:artifactId` | none | `{ text }`, an AI-drafted why (existing `draft-why` logic), or 502 with the reason. Each Anthropic call times out after 40 s, with one retry. The whole draft, including the dataset load, gives up after 200 s ("Anthropic did not answer in time. Try again."). A rate limit on the key gets "Anthropic's rate limit for this key was reached. Wait a minute, then try again.", and an overload gets "Anthropic is overloaded right now. Try again in a minute." |
 | `GET /api/admin/catalog` | none | workloads and items with sort orders, and whether each item is referenced |
 | `POST /api/admin/workloads`, `PUT /api/admin/workloads/:id` | `{ id?, name, shortName, blurb, sortOrder? }` | create or edit. Create ignores `sortOrder` and appends to the end; an edit without it keeps the current order. Returns the admin catalog. A new id that names a built-in object property (`constructor`, `__proto__`, `toString`, …) or `prototype` gets 400 ("Workload id <id> is reserved. Pick another id.") |
-| `POST /api/admin/artifacts`, `PUT /api/admin/artifacts/:id`, `DELETE /api/admin/artifacts/:id` | `{ id?, name, workload, status, sortOrder? }` | create, edit, or delete (delete only when unreferenced, else 409). Create ignores `sortOrder` and appends to the end of the item's workload, and refuses the same reserved ids ("Item id <id> is reserved. Pick another id."). Returns the admin catalog |
+| `POST /api/admin/artifacts`, `PUT /api/admin/artifacts/:id`, `DELETE /api/admin/artifacts/:id` | `{ id?, name, workload, status, sortOrder? }` | create, edit, or delete (delete only when unreferenced, else 409). A delete that loses a deadlock to a save adding that item gets 503 ("Someone was saving a score or note for <name> at the same moment. Try again."). Create ignores `sortOrder` and appends to the end of the item's workload, and refuses the same reserved ids ("Item id <id> is reserved. Pick another id."). Returns the admin catalog |
 | `GET /api/admin/users`, `POST /api/admin/users` | `{ login, displayName, role, password }` | list or create. Returns every user |
 | `PUT /api/admin/users/:id` | any of `{ displayName, role, active, password }` | edit. Disabling or a new password ends the user's sessions; setting your own password keeps your current session. Returns every user. An id that isn't 1 to 9 digits gets 404 |
 | `GET /api/admin/site` | none | `{ lastSnapshotAt, behind, deployConfigured }` |
@@ -308,7 +308,7 @@ Requires the admin role; raters who open it are sent to `/rate`. Tabs:
 An idempotent run (upserts on primary keys) against the database in `api/local.settings.json`, or the one named with `--server` and `--database`. It authenticates with the developer's `az login` identity. Usage: `npm run db:seed -- --admin <login> --name "<display name>"`.
 
 1. An admin user, if the login doesn't exist yet. The password comes from `FCR_ADMIN_PASSWORD`, which the docs fill with `Read-Host -MaskInput`. It's never echoed or logged.
-2. Workloads and artifacts from the current `src/data/workloads.ts` and `src/data/artifacts.ts`, keeping their order as `sort_order`.
+2. Workloads and artifacts from the current `src/data/workloads.ts` and `src/data/artifacts.ts`, keeping their order as `sort_order`. Before writing any, it refuses an id the admin catalog would refuse as reserved, naming the file and the id ("src/data/<file>: the id <id> is reserved. Rename it, then seed again.").
 3. Rounds, notes, and scores from `src/data/rounds/*`. Today that's `2026-Q4`: open, no scores, no notes.
 
 Both `fcr-dev` (Plan 1) and `fcr` (Plan 3) get the full seed. Plan 3 then deletes the data files, and `seed.ts` keeps only step 1, which is still useful for bootstrapping a fresh database. Copying production data into `fcr-dev` is not part of this work.

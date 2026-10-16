@@ -269,7 +269,11 @@ if (!LOGIN.test(adminLogin)) throw new Error('Logins use 2 to 40 lowercase lette
 
 /** The first admin of an empty database. The catalog and rounds are then managed in /admin. */
 async function ensureAdmin(): Promise<string> {
-  if (await findUserByLogin(db, adminLogin)) return 'already exists, password unchanged';
+  const existing = await findUserByLogin(db, adminLogin);
+  if (existing) {
+    const state = `${existing.role}, ${existing.active ? 'active' : 'inactive'}`;
+    return `already exists (${state}), not changed. --name was not applied.`;
+  }
   const password = process.env.FCR_ADMIN_PASSWORD ?? '';
   const problem = passwordProblem(password);
   if (problem) throw new Error(`Set FCR_ADMIN_PASSWORD first. ${problem}`);
@@ -295,7 +299,7 @@ Run: `npm run typecheck; npm test; npm run build`
 Expected: all pass.
 
 Run: `npm run db:seed -- --admin pugliabi --name "<your display name>"`
-Expected: `Admin pugliabi: already exists, password unchanged` against `fcr-dev`.
+Expected: `Admin pugliabi: already exists (admin, active), not changed. --name was not applied.` against `fcr-dev`.
 
 - [ ] **Step 4: Commit.**
 
