@@ -3,10 +3,12 @@ import { describe, expect, it } from 'vitest';
 import {
   commandData,
   failureReason,
+  headerToken,
   isIsoTimestamp,
   isSnapshot,
   redact,
   snapshotProblem,
+  tokenSecrets,
   urlSecrets,
 } from './snapshot-checks.ts';
 
@@ -156,6 +158,48 @@ describe('redact and urlSecrets', () => {
 
   it('catches the encoded query a parsed URL prints', () => {
     expect(redact('GET http://x/?code=a%20b failed', urlSecrets('http://x/?code=a b'))).not.toContain('code=a');
+  });
+});
+
+describe('headerToken', () => {
+  it.each([
+    ['an inner LF plus a trailing LF', 'SECA\nSECB\n'],
+    ['an inner LF plus a trailing space', 'SECA\nSECB '],
+    ['an inner CRLF', 'SECA\r\nSECB'],
+    ['a NUL', 'SECA\u0000SECB'],
+    ['an inner space', 'SECA SECB'],
+    ['a non-ASCII letter', 'SECA\u00e9SECB'],
+  ])('refuses a token with %s', (_name, raw) => {
+    expect(headerToken(raw)).toBeUndefined();
+  });
+
+  it('trims surrounding whitespace, so a trailing space or newline alone leaves a usable token', () => {
+    expect(headerToken('SECA-SECB ')).toBe('SECA-SECB');
+    expect(headerToken('\tSECA-SECB\r\n')).toBe('SECA-SECB');
+  });
+
+  it('keeps an empty token, which means no token', () => {
+    expect(headerToken('')).toBe('');
+    expect(headerToken('  ')).toBe('');
+  });
+});
+
+describe('tokenSecrets', () => {
+  it('lists the token as read, trimmed, and URL-encoded', () => {
+    expect(tokenSecrets('SECA\nSECB\n')).toEqual(
+      expect.arrayContaining(['SECA\nSECB\n', 'SECA\nSECB', 'SECA%0ASECB%0A', 'SECA%0ASECB']),
+    );
+    expect(tokenSecrets('')).toEqual([]);
+  });
+
+  it("survives a token encodeURIComponent can't encode", () => {
+    expect(tokenSecrets('SECA\ud800')).toContain('SECA\ud800');
+  });
+
+  it("hides every piece of a trimmed token that Node echoes", () => {
+    const message = 'Headers.append: "Bearer SECA\nSECB" is an invalid header value.';
+    const out = commandData(redact(message, tokenSecrets('SECA\nSECB\n')));
+    expect(out).not.toMatch(/SECA|SECB/);
   });
 });
 

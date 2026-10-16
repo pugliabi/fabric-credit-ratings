@@ -132,8 +132,34 @@ export function urlSecrets(url: string): string[] {
   return [...new Set(found.filter(Boolean))];
 }
 
+/**
+ * The token trimmed, as a header carries it, or undefined when what's left has a character outside 0x21-0x7E. Node
+ * rejects such a header and quotes the (trimmed) value in its error, so it must never reach fetch.
+ */
+export function headerToken(raw: string): string | undefined {
+  const token = raw.trim();
+  return /[^\x21-\x7e]/.test(token) ? undefined : token;
+}
+
+/** Every form of the token an error could quote: as read, trimmed, and URL-encoded. */
+export function tokenSecrets(raw: string): string[] {
+  const forms = [raw, raw.trim()];
+  for (const form of [...forms]) {
+    try {
+      forms.push(encodeURIComponent(form));
+    } catch {
+      // A lone surrogate can't be encoded, so it can't appear encoded either.
+    }
+  }
+  return [...new Set(forms.filter(Boolean))];
+}
+
+/** Longest first, so a secret that contains another is replaced whole. */
 export function redact(text: string, secrets: readonly string[]): string {
-  return secrets.filter(Boolean).reduce((out, secret) => out.split(secret).join('[redacted]'), text);
+  return secrets
+    .filter(Boolean)
+    .sort((a, b) => b.length - a.length)
+    .reduce((out, secret) => out.split(secret).join('[redacted]'), text);
 }
 
 /** Escapes a `::warning::` message so a line break in it can't start another workflow command. */

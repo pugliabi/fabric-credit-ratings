@@ -3,10 +3,12 @@ import type { Snapshot } from '../src/domain/api-types.ts';
 import {
   commandData,
   failureReason,
+  headerToken,
   isIsoTimestamp,
   isSnapshot,
   redact,
   snapshotProblem,
+  tokenSecrets,
   urlSecrets,
 } from './snapshot-checks.ts';
 
@@ -25,6 +27,23 @@ function localToken(): string {
   } catch {
     // An unreadable settings file means no token: the fetch then fails with a warning, like any other failure.
     return '';
+  }
+}
+
+/** SNAPSHOT_TOKEN as configured, untrimmed: the environment's (CI), else the settings file's (local runs). */
+function configuredToken(): string {
+  const fromEnv = process.env.SNAPSHOT_TOKEN ?? '';
+  return fromEnv.trim() ? fromEnv : localToken();
+}
+
+/** The committed snapshot, or undefined when there is none or it isn't JSON, so the fetched one replaces it. */
+function committedSnapshot(): unknown {
+  if (!existsSync(OUT)) return undefined;
+  try {
+    return JSON.parse(readFileSync(OUT, 'utf8').replace(/^\uFEFF/, ''));
+  } catch {
+    warn('The committed src/data/snapshot.json is not valid JSON, so the fetched snapshot replaces it.');
+    return undefined;
   }
 }
 
@@ -50,7 +69,7 @@ async function refresh(base: string, token: string): Promise<{ message: string; 
   const { generatedAt } = snapshot;
   // Also keeps anything but one timestamp out of $GITHUB_OUTPUT.
   if (!isIsoTimestamp(generatedAt)) throw new Error("The snapshot's generatedAt is not an ISO timestamp.");
-  const current: unknown = existsSync(OUT) ? JSON.parse(readFileSync(OUT, 'utf8')) : undefined;
+  const current = committedSnapshot();
   if (isSnapshot(current) && sameContent(current, snapshot)) return { message: 'Snapshot unchanged.', generatedAt };
   writeFileSync(OUT, `${JSON.stringify(snapshot, null, 2)}\n`);
   const asOf = snapshot.asOf || 'no published round';
@@ -71,9 +90,10 @@ async function confirm(base: string, token: string, generatedAt: string): Promis
 }
 
 const base = (process.env.FCR_API_URL || 'http://localhost:7071').replace(/\/+$/, '');
-const token = process.env.SNAPSHOT_TOKEN || localToken();
+const rawToken = configuredToken();
+const token = headerToken(rawToken);
 // Node's errors can quote a header value or a whole URL, so warnings never show the token or the URL's secrets.
-const secrets = [token, ...urlSecrets(base)];
+const secrets = [...tokenSecrets(rawToken), ...urlSecrets(base)];
 const warn = (message: string) => {
   const safe = redact(message, secrets);
   console.warn(process.env.GITHUB_ACTIONS ? `::warning::${commandData(safe)}` : safe);
@@ -81,13 +101,14 @@ const warn = (message: string) => {
 
 let fetched: { message: string; generatedAt: string } | undefined;
 try {
+  if (token === undefined) throw new Error("SNAPSHOT_TOKEN has characters a header can't carry.");
   fetched = await refresh(base, token);
   console.log(fetched.message);
   if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, `generatedAt=${fetched.generatedAt}\n`);
 } catch (error) {
   warn(`Snapshot not refreshed: ${failureReason(error)} Keeping the committed src/data/snapshot.json.`);
 }
-if (fetched && process.argv.includes('--confirm')) {
+if (fetched && token !== undefined && process.argv.includes('--confirm')) {
   try {
     await confirm(base, token, fetched.generatedAt);
     console.log(`Confirmed the snapshot of ${fetched.generatedAt}.`);
