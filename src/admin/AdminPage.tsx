@@ -29,8 +29,15 @@ function tabFromHash(): Tab {
 export function AdminPage() {
   const { session, login, logout, retry } = useSession();
   const isRater = session.status === 'signed-in' && session.user.role !== 'admin';
-  // A 403 means this account is no longer an admin: re-reading /me sends it to /rate.
-  const forbidden = useCallback(() => void retry(), [retry]);
+  const rechecked = useRef(false);
+  // A 403 means this account is no longer an admin: re-reading /me sends it to /rate. Once per page, so a 403 that
+  // /me can't explain shows its message instead of reloading forever.
+  const forbidden = useCallback(() => {
+    if (rechecked.current) return false;
+    rechecked.current = true;
+    void retry();
+    return true;
+  }, [retry]);
 
   useEffect(() => {
     if (isRater) location.replace('/rate');
@@ -74,8 +81,8 @@ interface AdminData {
 interface AdminShellProps {
   user: SessionUser;
   onLogout: () => Promise<void>;
-  /** Stable: `load` depends on it. */
-  onForbidden: () => void;
+  /** Stable: `load` depends on it. False when /me was already re-read; the 403 is then shown. */
+  onForbidden: () => boolean;
 }
 
 function AdminShell({ user, onLogout, onForbidden }: AdminShellProps) {
@@ -87,7 +94,8 @@ function AdminShell({ user, onLogout, onForbidden }: AdminShellProps) {
   const latest = useRef(0);
 
   // Only the latest load lands: an older answer arriving late would bring back the open round a reload just dropped.
-  const load = useCallback(async () => {
+  // Resolves to the rounds it applied.
+  const load = useCallback(async (): Promise<AdminRound[] | undefined> => {
     const mine = ++latest.current;
     setLoading(true);
     try {
@@ -96,17 +104,16 @@ function AdminShell({ user, onLogout, onForbidden }: AdminShellProps) {
         api<AdminCatalog>('GET', '/admin/catalog'),
         api<AdminUser[]>('GET', '/admin/users'),
       ]);
-      if (mine !== latest.current) return;
+      if (mine !== latest.current) return undefined;
       setData({ rounds, catalog, users });
       setError('');
+      return rounds;
     } catch (reason) {
-      if (mine !== latest.current) return;
-      if (reason instanceof ApiError && reason.status === 403) {
-        onForbidden();
-      } else {
-        setError(errorMessage(reason));
-        setAttempt((count) => count + 1);
-      }
+      if (mine !== latest.current) return undefined;
+      if (reason instanceof ApiError && reason.status === 403 && onForbidden()) return undefined;
+      setError(errorMessage(reason));
+      setAttempt((count) => count + 1);
+      return undefined;
     } finally {
       if (mine === latest.current) setLoading(false);
     }
@@ -131,6 +138,25 @@ function AdminShell({ user, onLogout, onForbidden }: AdminShellProps) {
   };
 
   const open = data?.rounds.find((round) => round.status === 'open');
+
+  // The Score tab lost its round. If the reload still lists that round as open (published and reopened meanwhile, or a
+  // 409 that a fresh card fixes), the editor remounts. A report from the editor's own load does that once per round,
+  // so a 409 that keeps coming back can't loop; the Reload page button does it every time.
+  const [scoreRun, setScoreRun] = useState(0);
+  const remountedFor = useRef<string | undefined>(undefined);
+  const openId = open?.id;
+  const refreshScore = useCallback(
+    (automatic: boolean) =>
+      void load().then((rounds) => {
+        if (!rounds?.some((round) => round.id === openId && round.status === 'open')) return;
+        if (automatic && remountedFor.current === openId) return;
+        if (automatic) remountedFor.current = openId;
+        setScoreRun((count) => count + 1);
+      }),
+    [load, openId],
+  );
+  const scoreClosed = useCallback(() => refreshScore(true), [refreshScore]);
+  const scoreReload = useCallback(() => refreshScore(false), [refreshScore]);
 
   return (
     <div className={styles.shell}>
@@ -162,8 +188,14 @@ function AdminShell({ user, onLogout, onForbidden }: AdminShellProps) {
           tab === 'score' &&
           (open ? (
             <div className={styles.scoreTab}>
-              {/* Keyed by the open round too: when onClosed's reload finds another open round, the editor refetches. */}
-              <ScorecardEditor key={`${user.id}:${open.id}`} user={user} reference={CURRENT} onClosed={reload} />
+              {/* Keyed by the open round too: when a reload finds another open round, the editor refetches. */}
+              <ScorecardEditor
+                key={`${user.id}:${open.id}:${scoreRun}`}
+                user={user}
+                reference={CURRENT}
+                onClosed={scoreClosed}
+                onReload={scoreReload}
+              />
             </div>
           ) : (
             <NewRoundForm rounds={data.rounds} onCreated={setRounds} />

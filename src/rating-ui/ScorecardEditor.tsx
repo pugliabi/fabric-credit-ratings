@@ -26,13 +26,15 @@ interface ScorecardEditorProps {
    * closed-round panel. Pass a stable function: a new one refetches the card.
    */
   onClosed?: () => void;
+  /** Takes the Reload page button's place after a failed save (a 409), instead of reloading the whole page. */
+  onReload?: () => void;
 }
 
 /**
  * The logged-in user's own card in the open round. Used by /rate and the admin Score tab. Key it by the user's id, so
  * the stored draft's key never changes under a mounted form.
  */
-export function ScorecardEditor({ user, reference, onClosed }: ScorecardEditorProps) {
+export function ScorecardEditor({ user, reference, onClosed, onReload }: ScorecardEditorProps) {
   const [load, setLoad] = useState<Load>({ kind: 'loading' });
 
   const fetchCard = useCallback(async () => {
@@ -68,6 +70,7 @@ export function ScorecardEditor({ user, reference, onClosed }: ScorecardEditorPr
       card={load.card}
       reference={reference}
       onSaved={(card) => setLoad({ kind: 'ready', catalog: load.catalog, card })}
+      onReload={onReload}
     />
   );
 }
@@ -113,10 +116,11 @@ interface CardFormProps {
    * replace(), so the draft's base and the saved card change as one.
    */
   onSaved: (card: MyScores) => void;
+  onReload?: () => void;
 }
 
 /** Exported for markup tests; pages use ScorecardEditor. */
-export function CardForm({ user, catalog, card, reference, onSaved }: CardFormProps) {
+export function CardForm({ user, catalog, card, reference, onSaved, onReload }: CardFormProps) {
   const { round, previous } = card;
   const saved = useMemo(() => draftFromScores(card.scores), [card.scores]);
   const ids = useMemo(() => new Set(catalog.artifacts.map((artifact) => artifact.id)), [catalog.artifacts]);
@@ -198,7 +202,11 @@ export function CardForm({ user, catalog, card, reference, onSaved }: CardFormPr
         </div>
         <div className={styles.toolbarActions}>
           {status.kind === 'error' && status.reload && (
-            <button type="button" className={styles.secondary} onClick={() => location.reload()}>
+            <button
+              type="button"
+              className={styles.secondary}
+              onClick={() => (onReload ? onReload() : location.reload())}
+            >
               Reload page
             </button>
           )}
