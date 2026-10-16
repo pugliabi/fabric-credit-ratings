@@ -91,7 +91,7 @@ function explain(error: unknown): Error {
     return friendly("ANTHROPIC_MODEL names a model this key can't use. Check the setting in the Function App.");
   }
   if (error instanceof Anthropic.RateLimitError) {
-    return friendly("Anthropic's rate limit for this key was reached. Wait a minute, then try again.");
+    return friendly("Anthropic's rate limit was reached. Wait a minute, then try again.");
   }
   if (error instanceof Anthropic.APIError && (error.status === 529 || error.type === 'overloaded_error')) {
     return friendly('Anthropic is overloaded right now. Try again in a minute.');

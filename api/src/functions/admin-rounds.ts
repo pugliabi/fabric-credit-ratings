@@ -3,18 +3,12 @@ import { pointFor, previousPoint } from '../../../src/domain/aggregate.ts';
 import type { Round } from '../../../src/domain/types.ts';
 import { buildReview } from '../domain/review.ts';
 import type { Config } from '../lib/config.ts';
-import {
-  CONSTRAINT_CONFLICT,
-  DatabaseUnavailableError,
-  db,
-  hasSqlNumber,
-  transaction,
-  type Db,
-} from '../lib/db.ts';
+import { DatabaseUnavailableError, db, transaction } from '../lib/db.ts';
 import { createDrafter, failureDetails } from '../lib/draft-why.ts';
 import { HttpError } from '../lib/errors.ts';
 import { startDeploy } from '../lib/github.ts';
 import { route } from '../lib/http.ts';
+import { CARD_ITEM_DELETED, saveForItems } from '../lib/item-saves.ts';
 import { cardWriteProblem } from '../lib/permissions.ts';
 import { ROUND_ID, USER_ID, isIsoDate, oneOf, text, today, validateScores } from '../lib/validate.ts';
 import { listArtifacts } from '../repo/catalog.ts';
@@ -59,17 +53,6 @@ async function reviewFor(roundId: string, config: Config): Promise<RoundReview> 
 async function knownArtifactIds(): Promise<Set<string>> {
   return new Set((await listArtifacts(db)).map((artifact) => artifact.id));
 }
-
-/** Runs a card or note save; a foreign key refusing it means the item was deleted after the route checked it. */
-async function saveForItems(deleted: string, work: (tx: Db) => Promise<void>): Promise<void> {
-  try {
-    await transaction(work);
-  } catch (error) {
-    if (hasSqlNumber(error, CONSTRAINT_CONFLICT)) throw new HttpError(409, deleted);
-    throw error;
-  }
-}
-
 route('adminRounds', 'GET', 'admin/rounds', 'admin', async () => listRoundsWithCounts(db));
 
 route('adminRoundCreate', 'POST', 'admin/rounds', 'admin', async (ctx) => {
@@ -136,7 +119,7 @@ route('adminScoresPut', 'PUT', 'admin/rounds/{id}/scores/{userId}', 'admin', asy
   if (!owner) throw new HttpError(404, 'That user does not exist.');
   const { scores, errors } = validateScores(ctx.body.scores, await knownArtifactIds());
   if (errors.length > 0) throw new HttpError(400, errors.join(' '));
-  await saveForItems('An item on this card was just deleted. Reload the page to get the current list.', async (tx) => {
+  await saveForItems(ctx.log, CARD_ITEM_DELETED, async (tx) => {
     const current = await lockRound(tx, round.id);
     if (!current) throw noSuchRound(round.id);
     const problem = cardWriteProblem(ctx.user, current, owner.id);
@@ -154,7 +137,7 @@ route('adminNotePut', 'PUT', 'admin/rounds/{id}/notes/{artifactId}', 'admin', as
   if (typeof ctx.body.body !== 'string') throw new HttpError(400, 'Send the write-up as text.');
   const body = ctx.body.body.trim();
   if (body.length > NOTE_MAX) throw new HttpError(400, 'Keep the write-up to 2,000 characters or fewer.');
-  await saveForItems('That item was just deleted. Reload the page to get the current list.', async (tx) => {
+  await saveForItems(ctx.log, 'That item was just deleted. Reload the page to get the current list.', async (tx) => {
     const current = await lockRound(tx, round.id);
     if (!current) throw noSuchRound(round.id);
     await saveNote(tx, round.id, artifactId, body, ctx.user.id);

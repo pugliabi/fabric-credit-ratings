@@ -213,7 +213,7 @@ describe('createDrafter', () => {
     [
       'a rate limit',
       new Anthropic.RateLimitError(429, { type: 'error' }, undefined, new Headers()),
-      "Anthropic's rate limit for this key was reached. Wait a minute, then try again.",
+      "Anthropic's rate limit was reached. Wait a minute, then try again.",
     ],
     [
       'an overload',
@@ -258,7 +258,7 @@ describe('failureDetails', () => {
       new Headers({ 'request-id': 'req_123' }),
       'rate_limit_error',
     );
-    const failure = new Error("Anthropic's rate limit for this key was reached.", { cause: provider });
+    const failure = new Error("Anthropic's rate limit was reached.", { cause: provider });
 
     expect(failureDetails(failure, settings)).toEqual({
       model: 'claude-test',

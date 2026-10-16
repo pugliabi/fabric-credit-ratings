@@ -433,6 +433,21 @@ describe('adminScoresPut', () => {
     expect(markChanged).not.toHaveBeenCalled();
     expect(committed).not.toHaveBeenCalled();
   });
+
+  it('answers 503 asking to try again, and logs it, when a card or note save loses a deadlock', async () => {
+    const raced = { status: 503, message: 'Someone was changing the catalog at the same moment. Try again.' };
+    const deadlock = sqlError(1205);
+    vi.mocked(replaceScorecard).mockRejectedValueOnce(deadlock);
+    await expect(call('adminScoresPut', { id: open.id, userId: '7' }, body)).rejects.toMatchObject(raced);
+    expect(log.warn).toHaveBeenCalledWith('Deadlock victim', deadlock);
+
+    const noteDeadlock = sqlError(1205);
+    vi.mocked(saveNote).mockRejectedValueOnce(noteDeadlock);
+    await expect(
+      call('adminNotePut', { id: open.id, artifactId: 'notebook' }, { body: 'Solid.' }),
+    ).rejects.toMatchObject(raced);
+    expect(log.warn).toHaveBeenCalledWith('Deadlock victim', noteDeadlock);
+  });
 });
 
 describe('adminNotePut', () => {
