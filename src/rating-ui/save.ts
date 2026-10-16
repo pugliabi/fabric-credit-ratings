@@ -201,8 +201,15 @@ export interface RaterSaveHandlers {
   live: () => Draft;
   /** The card is saved as it is on screen: close the editor. */
   saved: (review: RoundReview) => void;
-  /** Keep the editor open on the newer review, with the draft rebased onto it, and show `message`. */
-  refreshed: (review: RoundReview, draft: (current: Draft) => Draft, message: string) => void;
+  /**
+   * Keep the editor open on the newer review, with the draft rebased onto it, and show `message`. `saved`: the save
+   * went through (and edits made meanwhile are still unsaved), rather than being held back by a newer card.
+   */
+  refreshed: (
+    review: RoundReview,
+    draft: (current: Draft) => Draft,
+    message: { text: string; saved: boolean },
+  ) => void;
   failed: (message: string) => void;
 }
 
@@ -229,12 +236,13 @@ export async function pressRaterSave(form: RaterSaveForm, page: RaterSaveHandler
       const newer = card[id];
       return `${form.names[id] ?? id} (newer card: ${newer && !isBlank(newer) ? newer.join(' · ') : 'cleared'})`;
     });
-    const message = raterCardChanged(form.rater.name, described);
+    const message = { text: raterCardChanged(form.rater.name, described), saved: false };
     page.refreshed(outcome.review, (current) => rebase(form.saved, current, card), message);
   } else if (sameDraft(page.live(), form.sent)) {
     page.saved(outcome.review);
   } else {
-    page.refreshed(outcome.review, (current) => rebase(form.sent, current, card), CHANGED_WHILE_SAVING);
+    const message = { text: CHANGED_WHILE_SAVING, saved: true };
+    page.refreshed(outcome.review, (current) => rebase(form.sent, current, card), message);
   }
 }
 

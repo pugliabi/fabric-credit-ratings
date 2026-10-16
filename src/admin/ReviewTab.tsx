@@ -1,12 +1,21 @@
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { GradeBadge } from '../components/GradeBadge';
 import type { AdminCatalog, AdminRound, AdminUser, RoundReview } from '../domain/api-types';
-import type { RoundNotes } from '../domain/types';
-import { useWarnBeforeUnload } from '../hooks/useWarnBeforeUnload';
-import { api, ApiError, errorMessage } from '../lib/api';
+import { mayLeave, useUnsavedWork } from '../hooks/useUnsavedWork';
+import { api, errorMessage } from '../lib/api';
 import { formatScore } from '../lib/format';
-import { stopDrafting, TIMED_OUT } from './draft-loop';
-import { missingWhy, NOTE_TOO_LONG, noteTooLong, refreezeMissing } from './notes';
+import { draftBlanks, draftItem, requestDraft, type DraftPage } from './draft-loop';
+import {
+  afterSent,
+  createNoteSaver,
+  missingWhy,
+  NOTE_TOO_LONG,
+  notesToSend,
+  noteTooLong,
+  refreezeMissing,
+  withNote,
+  type Edits,
+} from './notes';
 import { RaterCardEditor } from './RaterCardEditor';
 import styles from './Admin.module.css';
 
@@ -30,7 +39,12 @@ export function ReviewTab({ rounds, catalog, users }: ReviewTabProps) {
     <div className={styles.reviewTab}>
       <label className={styles.roundPicker}>
         <span>Round</span>
-        <select value={roundId} onChange={(event) => setRoundId(event.target.value)}>
+        <select
+          value={roundId}
+          onChange={(event) => {
+            if (mayLeave()) setRoundId(event.target.value);
+          }}
+        >
           {ordered.map((round) => (
             <option key={round.id} value={round.id}>
               {round.label} ({round.status === 'open' ? 'open' : `published ${round.publishedOn ?? ''}`})
@@ -82,12 +96,6 @@ interface RoundReviewPanelProps {
   onReview: (review: RoundReview) => void;
 }
 
-interface Edits {
-  notes: RoundNotes;
-  /** Item ids whose text has not reached the server yet. */
-  dirty: ReadonlySet<string>;
-}
-
 /** Exported for markup tests; the page uses ReviewTab. */
 export function RoundReviewPanel({ review, catalog, users, onReview }: RoundReviewPanelProps) {
   const roundId = review.round.id;
@@ -102,15 +110,25 @@ export function RoundReviewPanel({ review, catalog, users, onReview }: RoundRevi
   const [progress, setProgress] = useState<{ done: number; total: number }>();
   const [editing, setEditing] = useState<{ userId: number; name: string }>();
   const [cardNotice, setCardNotice] = useState('');
+  const [cardChoice, setCardChoice] = useState('');
   const cancelRef = useRef(false);
-  /** One save batch at a time: two PUTs for the same note could commit out of order. */
-  const inFlight = useRef(false);
+  const [saver] = useState(() =>
+    createNoteSaver((id, body) => api('PUT', `/admin/rounds/${roundId}/notes/${id}`, { body })),
+  );
   const toolbar = useRef<HTMLDivElement>(null);
   const idPrefix = useId();
   const { notes } = edits;
 
   // Notes live only in this tab (a 401 or a reload loses them), so leaving with unsaved text asks first.
-  useWarnBeforeUnload(edits.dirty.size > 0);
+  useUnsavedWork(edits.dirty.size > 0);
+
+  // "Draft all blank" spends Anthropic tokens on every item: once the panel is gone, it asks for no more.
+  useEffect(
+    () => () => {
+      cancelRef.current = true;
+    },
+    [],
+  );
 
   // On arrival (after login, say) and back from the card editor, focus lands on the toolbar, not the page.
   useEffect(() => {
@@ -126,80 +144,47 @@ export function RoundReviewPanel({ review, catalog, users, onReview }: RoundRevi
   }, [review]);
 
   useEffect(() => {
-    if (edits.dirty.size === 0 || inFlight.current) return;
-    // A note over the limit stays unsaved, with its full text in the box, until it's shortened.
-    const sent = Object.fromEntries(
-      [...edits.dirty].map((id) => [id, edits.notes[id] ?? ''] as const).filter(([, body]) => !noteTooLong(body)),
-    );
+    const sent = notesToSend(edits);
     if (Object.keys(sent).length === 0) return;
     const timer = setTimeout(() => {
-      inFlight.current = true;
+      // Refused while a batch is out; that batch's setEdits brings this effect back, so text typed meanwhile goes next.
+      const batch = saver.send(sent);
+      if (!batch) return;
       setSaveState('saving');
-      void (async () => {
-        try {
-          for (const [id, body] of Object.entries(sent)) {
-            await api('PUT', `/admin/rounds/${roundId}/notes/${id}`, { body });
-          }
-          // Cleared first: this setEdits re-runs the effect, so text typed meanwhile goes out next.
-          inFlight.current = false;
-          setEdits((current) => ({
-            ...current,
-            dirty: new Set([...current.dirty].filter((id) => (current.notes[id] ?? '') !== sent[id])),
-          }));
+      batch.then(
+        () => {
+          setEdits((current) => afterSent(current, sent));
           setSaveState('saved');
-        } catch (reason) {
+        },
+        (reason: unknown) => {
           // Waits for Retry or the next keystroke, so a lasting error can't loop.
-          inFlight.current = false;
           setSaveError(errorMessage(reason));
           setSaveAttempt((count) => count + 1);
           setSaveState('error');
-        }
-      })();
+        },
+      );
     }, SAVE_DELAY);
     return () => clearTimeout(timer);
-  }, [edits, roundId]);
+  }, [edits, saver]);
 
   const setNote = useCallback((id: string, text: string) => {
-    setEdits((current) => ({ notes: { ...current.notes, [id]: text }, dirty: new Set(current.dirty).add(id) }));
+    setEdits((current) => withNote(current, id, text));
   }, []);
 
-  /** Resolves to the failure, or undefined once the draft is in the box. */
-  const draftOne = async (id: string, onlyIfBlank = false): Promise<unknown> => {
-    setBusy(id);
-    setDraftErrors(({ [id]: _, ...rest }) => rest);
-    try {
-      const path = `/admin/rounds/${roundId}/draft/${id}`;
-      const { text } = await api<{ text: string }>('POST', path, undefined, { wakeNotice: false });
-      // A draft lands as an edit, so the admin reads it before it autosaves like typed text.
-      setEdits((current) =>
-        onlyIfBlank && current.notes[id]?.trim()
-          ? current
-          : { notes: { ...current.notes, [id]: text }, dirty: new Set(current.dirty).add(id) },
-      );
-      return undefined;
-    } catch (reason) {
-      setDraftErrors((current) => ({ ...current, [id]: errorMessage(reason) }));
-      return reason;
-    } finally {
-      setBusy(undefined);
-    }
+  const draftPage: DraftPage = {
+    request: (id) => requestDraft(roundId, id),
+    busy: setBusy,
+    failed: (id, reason) =>
+      setDraftErrors(({ [id]: _, ...rest }) => (reason === undefined ? rest : { ...rest, [id]: errorMessage(reason) })),
+    edit: setEdits,
   };
 
   const blanks = review.items.filter(({ artifact }) => !notes[artifact.id]?.trim());
 
-  /** One item at a time; fills only boxes still blank, since the admin may type in one meanwhile. */
   const draftAllBlank = async () => {
     cancelRef.current = false;
     const queue = blanks.map(({ artifact }) => artifact.id);
-    setProgress({ done: 0, total: queue.length });
-    let timeouts = 0;
-    for (const [index, id] of queue.entries()) {
-      if (cancelRef.current) break;
-      const failure = await draftOne(id, true);
-      setProgress({ done: index + 1, total: queue.length });
-      timeouts = failure instanceof ApiError && failure.message === TIMED_OUT ? timeouts + 1 : 0;
-      if (failure !== undefined && stopDrafting(failure, timeouts)) break;
-    }
+    await draftBlanks(draftPage, queue, () => cancelRef.current, (done, total) => setProgress({ done, total }));
     setProgress(undefined);
   };
 
@@ -216,6 +201,7 @@ export function RoundReviewPanel({ review, catalog, users, onReview }: RoundRevi
     const choice = choices.find((item) => String(item.userId) === value);
     if (!choice) return;
     setCardNotice('');
+    setCardChoice('');
     setEditing({ userId: choice.userId, name: choice.name });
   };
 
@@ -284,14 +270,17 @@ export function RoundReviewPanel({ review, catalog, users, onReview }: RoundRevi
                 <input
                   type="checkbox"
                   checked={missingOnly !== undefined}
-                  onChange={(event) => setMissingOnly(event.target.checked ? missingWhy(review.items, notes) : undefined)}
+                  onChange={(event) =>
+                    setMissingOnly(event.target.checked ? missingWhy(review.items, notes) : undefined)
+                  }
                 />
                 Only missing a why
               </label>
+              {/* Opens on the button, not on change: arrow keys on a closed select fire change at once on Windows. */}
               <select
                 className={styles.select}
-                value=""
-                onChange={(event) => chooseCard(event.target.value)}
+                value={cardChoice}
+                onChange={(event) => setCardChoice(event.target.value)}
                 aria-label="Edit a rater's card"
               >
                 <option value="">Edit a rater's card…</option>
@@ -302,6 +291,14 @@ export function RoundReviewPanel({ review, catalog, users, onReview }: RoundRevi
                   </option>
                 ))}
               </select>
+              <button
+                type="button"
+                className={styles.secondary}
+                aria-disabled={!cardChoice}
+                onClick={() => chooseCard(cardChoice)}
+              >
+                Edit card
+              </button>
               {/* One button either way, so focus stays on it when the loop starts or ends. */}
               {progress ? (
                 <button type="button" className={styles.secondary} onClick={() => (cancelRef.current = true)}>
@@ -389,7 +386,7 @@ export function RoundReviewPanel({ review, catalog, users, onReview }: RoundRevi
                           onClick={() => {
                             if (!review.aiEnabled || drafting) return;
                             if (note.trim() && !confirm('Replace the current text with an AI draft?')) return;
-                            void draftOne(artifact.id);
+                            void draftItem(draftPage, artifact.id, false);
                           }}
                         >
                           {busy === artifact.id ? 'Drafting…' : note.trim() ? 'Redraft with AI' : 'Draft with AI'}

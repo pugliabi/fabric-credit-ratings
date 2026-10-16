@@ -4,15 +4,25 @@ import { createRoot } from 'react-dom/client';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
+const mounted = new Set<() => Promise<void>>();
+
 export async function render<P extends object>(component: ComponentType<P>, props: P) {
   const container = document.createElement('div');
   document.body.append(container);
   const root = createRoot(container);
   await act(async () => root.render(createElement(component, props)));
-  return {
-    container,
-    unmount: () => act(async () => root.unmount()),
+  const unmount = async () => {
+    if (!mounted.delete(unmount)) return;
+    await act(async () => root.unmount());
+    container.remove();
   };
+  mounted.add(unmount);
+  return { container, unmount };
+}
+
+/** Unmounts everything render() mounted, so effects (listeners, unsaved-work holds) don't leak into the next test. */
+export async function cleanup(): Promise<void> {
+  for (const unmount of [...mounted]) await unmount();
 }
 
 /** Lets pending promises and the effects they cause settle. */
@@ -46,7 +56,8 @@ export async function click(element: Element | null): Promise<void> {
 /** The first `selector` match whose text is `text` (trimmed). */
 export function find(root: ParentNode, selector: string, text: string | RegExp): HTMLElement | null {
   const matches = (value: string) => (typeof text === 'string' ? value === text : text.test(value));
-  return [...root.querySelectorAll<HTMLElement>(selector)].find((node) => matches(node.textContent?.trim() ?? '')) ?? null;
+  const nodes = [...root.querySelectorAll<HTMLElement>(selector)];
+  return nodes.find((node) => matches(node.textContent?.trim() ?? '')) ?? null;
 }
 
 /** Answers fetch from `routes` ("METHOD /api/path" → body, or a function), recording each call. */
@@ -58,7 +69,9 @@ export function fakeApi(routes: Record<string, unknown | ((body: unknown) => unk
     const body = typeof init?.body === 'string' ? JSON.parse(init.body) : undefined;
     calls.push({ method, path, body });
     const route = routes[`${method} ${path}`];
-    if (route === undefined) return new Response(JSON.stringify({ error: `no fake for ${method} ${path}` }), { status: 500 });
+    if (route === undefined) {
+      return new Response(JSON.stringify({ error: `no fake for ${method} ${path}` }), { status: 500 });
+    }
     const answer = typeof route === 'function' ? await route(body) : route;
     if (answer instanceof Response) return answer;
     return new Response(answer === null ? '' : JSON.stringify(answer), { status: answer === null ? 204 : 200 });

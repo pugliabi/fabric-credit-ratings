@@ -80,9 +80,10 @@ export function restoredDraft(
  * Only the rows a stored draft actually changed come back, re-applied on top of `initial`, so a save made
  * elsewhere is not hidden by an old draft. Each write records `initial` as the draft's base, so change
  * `initial` only together with `replace(...)` (as after a save) or by remounting. Remount (change the React
- * key) when `key` changes. `known` is the catalog's item ids, read once at mount.
+ * key) when `key` changes. `known` is the catalog's item ids, read once at mount: stored rows for other items are
+ * dropped, so a record can't outlive the items it holds.
  */
-export function usePersistentDraft(key: string, initial: Draft, known?: ReadonlySet<string>) {
+export function usePersistentDraft(key: string, initial: Draft, known: ReadonlySet<string>) {
   const [kept] = useState(() => restoredDraft(readDraft(key), initial, known));
   const [draft, setDraft] = useState<Draft>(kept ?? initial);
   const [restored, setRestored] = useState(kept !== undefined);

@@ -2,11 +2,12 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { AccountBar } from '../account/AccountBar';
 import { LoginForm } from '../account/LoginForm';
 import { Unavailable } from '../account/Unavailable';
-import { useSession } from '../account/useSession';
+import { adminNotice, useSession } from '../account/useSession';
 import { WakeNotice } from '../account/WakeNotice';
 import { currentValues } from '../data';
 import type { AdminCatalog, AdminRound, AdminUser, SessionUser } from '../domain/api-types';
 import { useFocusIfLost } from '../hooks/useFocusIfLost';
+import { mayLeave } from '../hooks/useUnsavedWork';
 import { api, ApiError, errorMessage } from '../lib/api';
 import { ScorecardEditor } from '../rating-ui/ScorecardEditor';
 import { NewRoundForm } from './NewRoundForm';
@@ -60,7 +61,7 @@ export function AdminPage() {
           </header>
           <main className={styles.loading}>
             {session.status === 'signed-out' ? (
-              <LoginForm title="Admin login" notice={session.notice} onLogin={login} />
+              <LoginForm title="Admin login" notice={adminNotice(session.notice)} onLogin={login} />
             ) : session.status === 'unavailable' ? (
               <Unavailable message={session.message} onRetry={() => void retry()} />
             ) : (
@@ -126,15 +127,21 @@ function AdminShell({ user, onLogout, onForbidden }: AdminShellProps) {
   }, [load]);
 
   useEffect(() => {
-    const follow = () => setTab(tabFromHash());
+    const follow = () => {
+      const next = tabFromHash();
+      if (next === tab) return;
+      if (mayLeave()) setTab(next);
+      else history.replaceState(null, '', `#${tab}`);
+    };
     addEventListener('hashchange', follow);
     return () => removeEventListener('hashchange', follow);
-  }, []);
+  }, [tab]);
 
   const reload = useCallback(() => void load(), [load]);
   const setRounds = useCallback((rounds: AdminRound[]) => setData((current) => current && { ...current, rounds }), []);
 
   const choose = (next: Tab) => {
+    if (next !== tab && !mayLeave()) return;
     setTab(next);
     history.replaceState(null, '', `#${next}`);
   };

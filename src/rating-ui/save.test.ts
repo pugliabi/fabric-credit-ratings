@@ -350,7 +350,7 @@ describe('pressRaterSave', () => {
     const [next, rebased, message] = handlers.refreshed.mock.calls[0] ?? [];
     expect(next).toEqual(after);
     expect(rebased(moved)).toEqual(moved);
-    expect(message).toBe(CHANGED_WHILE_SAVING);
+    expect(message).toEqual({ text: CHANGED_WHILE_SAVING, saved: true });
   });
 
   it("puts the admin's edits on top of the rater's newer card, without saving, and says so", async () => {
@@ -362,8 +362,8 @@ describe('pressRaterSave', () => {
     const [next, rebased, message] = handlers.refreshed.mock.calls[0] ?? [];
     expect(next).toEqual(newer);
     expect(rebased(edited)).toEqual({ notebook: [3, 5, 4], environment: [7, 7, 7] });
-    expect(message).toBe(raterCardChanged('P2 Rater A'));
-    expect(message).toMatch(/^P2 Rater A's card changed after you opened it/);
+    expect(message).toEqual({ text: raterCardChanged('P2 Rater A'), saved: false });
+    expect(message.text).toMatch(/^P2 Rater A's card changed after you opened it/);
   });
 
   it('names each row both sides changed, with the newer values the admin would override', async () => {
@@ -374,7 +374,7 @@ describe('pressRaterSave', () => {
     await pressRaterSave({ ...form(false), sent, scores: sent }, handlers);
     const [, rebased, message] = handlers.refreshed.mock.calls[0] ?? [];
     expect(rebased(sent)).toEqual(sent);
-    expect(message).toBe(
+    expect(message.text).toBe(
       "P2 Rater A's card changed after you opened it, on their page or in another admin window, including a row " +
         'you changed too: Environment (newer card: 3 · 4 · 6). Your values are kept on it, and the rest of the card ' +
         'shows the newer scores. Check it, then save again.',
@@ -388,11 +388,11 @@ describe('pressRaterSave', () => {
     const handlers = page(sent);
     await pressRaterSave({ ...form(false), sent, scores: sent }, handlers);
     const [, , message] = handlers.refreshed.mock.calls[0] ?? [];
-    expect(message).toContain(
+    expect(message.text).toContain(
       'including rows you changed too: Notebook (newer card: cleared) and Environment (newer card: 3 · 4 · 6). ' +
         'Your values are kept on them',
     );
-    expect(message).toMatch(/Check them, then save again\.$/);
+    expect(message.text).toMatch(/Check them, then save again\.$/);
   });
 
   it("shows a failed save in the server's words", async () => {

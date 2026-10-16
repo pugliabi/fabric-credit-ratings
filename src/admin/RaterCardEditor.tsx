@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { AdminCatalog, RoundReview } from '../domain/api-types';
 import { useFocusIfLost } from '../hooks/useFocusIfLost';
-import { useWarnBeforeUnload } from '../hooks/useWarnBeforeUnload';
+import { useUnsavedWork } from '../hooks/useUnsavedWork';
 import { api, errorMessage } from '../lib/api';
 import { hasChanges, rebase, sameDraft, summarize, type Draft, type DraftTriple } from '../rating-ui/draft';
 import { cardFromReview, pressRaterSave, raterCardArtifacts, raterCardWorkloads, saveBlocked } from '../rating-ui/save';
@@ -34,13 +34,21 @@ export function RaterCardEditor({ review, rater, catalog, onSaved, onRefreshed, 
   const [fresh, setFresh] = useState(false);
   const [freshNote, setFreshNote] = useState('');
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
+  const [message, setMessage] = useState<{ text: string; tone: 'error' | 'warn' }>();
   const [attempt, setAttempt] = useState(0);
   const latestDraft = useRef(draft);
   useEffect(() => {
     latestDraft.current = draft;
   }, [draft]);
   const opened = useRef(saved);
+  // A save still out after "Back to review" must not close, or announce over, whatever editor is open by then.
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
   const toolbar = useFocusIfLost<HTMLDivElement>();
 
   // The panel's review can be hours old, so the card is read again before Save is offered. Edits made meanwhile go on
@@ -58,7 +66,7 @@ export function RaterCardEditor({ review, rater, catalog, onSaved, onRefreshed, 
       (reason: unknown) => {
         if (controller.signal.aborted) return;
         // Save still reads the card before it writes, so it can go ahead.
-        setError(errorMessage(reason));
+        setMessage({ text: errorMessage(reason), tone: 'error' });
         setFresh(true);
       },
     );
@@ -76,7 +84,7 @@ export function RaterCardEditor({ review, rater, catalog, onSaved, onRefreshed, 
   const summary = summarize(draft, artifacts);
   const dirty = hasChanges(draft, saved, ids);
   const blocked = !fresh || saveBlocked(dirty, summary.partial.length, saving);
-  useWarnBeforeUnload(dirty);
+  useUnsavedWork(dirty);
 
   const setTriple = useCallback((artifactId: string, triple: DraftTriple) => {
     setDraft((current) => ({ ...current, [artifactId]: triple }));
@@ -90,18 +98,21 @@ export function RaterCardEditor({ review, rater, catalog, onSaved, onRefreshed, 
           setAttempt((count) => count + 1);
           setSaving(true);
           setFreshNote('');
-          setError('');
+          setMessage(undefined);
         },
         live: () => latestDraft.current,
-        saved: onSaved,
-        refreshed: (next, rebased, message) => {
+        saved: (next) => {
+          if (mounted.current) onSaved(next);
+        },
+        refreshed: (next, rebased, outcome) => {
+          if (!mounted.current) return;
           setDraft(rebased);
           onRefreshed(next);
-          setError(message);
+          setMessage({ text: outcome.text, tone: outcome.saved ? 'warn' : 'error' });
           setSaving(false);
         },
-        failed: (message) => {
-          setError(message);
+        failed: (text) => {
+          setMessage({ text, tone: 'error' });
           setSaving(false);
         },
       },
@@ -122,10 +133,10 @@ export function RaterCardEditor({ review, rater, catalog, onSaved, onRefreshed, 
           </strong>
           {summary.partial.length > 0 && <span className={styles.warn}> · {summary.partial.length} incomplete</span>}
           <span aria-live="polite">{status && <span className={styles.muted}> · {status}</span>}</span>
-          {error && (
-            <span key={attempt} className={styles.error} role="alert">
+          {message && (
+            <span key={attempt} className={message.tone === 'warn' ? styles.warn : styles.error} role="alert">
               {' '}
-              {error}
+              {message.text}
             </span>
           )}
         </div>
