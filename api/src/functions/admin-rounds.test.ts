@@ -599,6 +599,30 @@ describe('adminDraft', () => {
     }
   });
 
+  it('answers the database 503 when the load leaves under 10 s for Anthropic, and drafts with more', async () => {
+    vi.useFakeTimers();
+    try {
+      vi.mocked(loadDataset).mockImplementationOnce(async () => {
+        vi.advanceTimersByTime(190_001);
+        return scored;
+      });
+      const drafting = call('adminDraft', { id: open.id, artifactId: 'notebook' });
+      await expect(drafting).rejects.toBeInstanceOf(DatabaseUnavailableError);
+      await expect(drafting).rejects.toThrow('Loading the dataset for an AI draft took 190001 ms.');
+      expect(drafter).not.toHaveBeenCalled();
+
+      drafter.mockResolvedValue('Solid and complete.');
+      vi.mocked(loadDataset).mockImplementationOnce(async () => {
+        vi.advanceTimersByTime(189_999);
+        return scored;
+      });
+      const drafted = await call('adminDraft', { id: open.id, artifactId: 'notebook' });
+      expect(drafted).toEqual({ text: 'Solid and complete.' });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("drafts from the round's scores and returns the text", async () => {
     drafter.mockResolvedValue('Solid and complete.');
 

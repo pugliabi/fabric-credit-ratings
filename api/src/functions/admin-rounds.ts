@@ -35,6 +35,8 @@ import { findUserById } from '../repo/users.ts';
 const NOTE_MAX = 2000;
 /** Azure cuts HTTP functions off at about 230 seconds; this leaves time to answer. */
 const DRAFT_DEADLINE_MS = 200_000;
+/** Less than this left after the dataset load is too little for one real Anthropic call. */
+const DRAFT_MIN_CALL_MS = 10_000;
 
 const noSuchRound = (id: string) => new HttpError(404, `Round ${id} does not exist.`);
 
@@ -154,8 +156,11 @@ route('adminDraft', 'POST', 'admin/rounds/{id}/draft/{artifactId}', 'admin', asy
   if (!drafter) throw new HttpError(400, 'Set ANTHROPIC_API_KEY in the Function App settings to draft with AI.');
   const data = await loadDataset(db);
   const loadMs = Date.now() - started;
-  // The load can't be interrupted, so it may have used up the deadline; that's the database's time, not Anthropic's.
-  if (deadline.aborted) throw new DatabaseUnavailableError(`Loading the dataset for an AI draft took ${loadMs} ms.`);
+  // The load can't be interrupted, so it may have used up the deadline or left too little of it for a call. That's the
+  // database's time, not Anthropic's.
+  if (deadline.aborted || DRAFT_DEADLINE_MS - loadMs < DRAFT_MIN_CALL_MS) {
+    throw new DatabaseUnavailableError(`Loading the dataset for an AI draft took ${loadMs} ms.`);
+  }
   const target = data.rounds.find((item) => item.round.id === ctx.params.id);
   if (!target) throw noSuchRound(ctx.params.id ?? '');
   const artifact = data.artifacts.find((item) => item.id === ctx.params.artifactId);
