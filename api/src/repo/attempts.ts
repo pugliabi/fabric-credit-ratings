@@ -1,8 +1,6 @@
-import { sqlErrorNumber, transaction, varchar, type Db, type Param } from '../lib/db.ts';
+import { DEADLOCK_VICTIM, hasSqlNumber, transaction, varchar, type Db, type Param } from '../lib/db.ts';
 import { MAX_FAILURES, afterFailure, isLocked, type AttemptRow } from '../lib/lockout.ts';
 
-/** SQL Server's error number for the statement it rolled back to break a deadlock. */
-const DEADLOCK_VICTIM = 1205;
 const DEADLOCK_RETRIES = 2;
 
 export async function getAttempts(db: Db, keys: readonly string[]): Promise<Map<string, AttemptRow>> {
@@ -67,7 +65,7 @@ export async function reserveAttempt(
         return { locked: false, rows };
       });
     } catch (error) {
-      if (retries >= DEADLOCK_RETRIES || sqlErrorNumber(error) !== DEADLOCK_VICTIM) throw error;
+      if (retries >= DEADLOCK_RETRIES || !hasSqlNumber(error, DEADLOCK_VICTIM)) throw error;
     }
   }
 }

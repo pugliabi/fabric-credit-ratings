@@ -1,7 +1,15 @@
 import type { AdminCatalog } from '../../../src/domain/api-types.ts';
-import { db, transaction, type Db } from '../lib/db.ts';
+import {
+  CONSTRAINT_CONFLICT,
+  DEADLOCK_VICTIM,
+  DUPLICATE_KEY,
+  db,
+  hasSqlNumber,
+  transaction,
+  type Db,
+} from '../lib/db.ts';
 import { HttpError } from '../lib/errors.ts';
-import { CONSTRAINT_CONFLICT, DEADLOCK_VICTIM, DUPLICATE_KEY, hasSqlNumber, route } from '../lib/http.ts';
+import { route } from '../lib/http.ts';
 import { SLUG, isReservedId, oneOf, optionalInt, text } from '../lib/validate.ts';
 import {
   adminCatalog,

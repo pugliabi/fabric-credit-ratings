@@ -3,11 +3,18 @@ import { pointFor, previousPoint } from '../../../src/domain/aggregate.ts';
 import type { Round } from '../../../src/domain/types.ts';
 import { buildReview } from '../domain/review.ts';
 import type { Config } from '../lib/config.ts';
-import { DatabaseUnavailableError, db, transaction, type Db } from '../lib/db.ts';
+import {
+  CONSTRAINT_CONFLICT,
+  DatabaseUnavailableError,
+  db,
+  hasSqlNumber,
+  transaction,
+  type Db,
+} from '../lib/db.ts';
 import { createDrafter, failureDetails } from '../lib/draft-why.ts';
 import { HttpError } from '../lib/errors.ts';
 import { startDeploy } from '../lib/github.ts';
-import { CONSTRAINT_CONFLICT, hasSqlNumber, route } from '../lib/http.ts';
+import { route } from '../lib/http.ts';
 import { cardWriteProblem } from '../lib/permissions.ts';
 import { ROUND_ID, USER_ID, isIsoDate, oneOf, text, today, validateScores } from '../lib/validate.ts';
 import { listArtifacts } from '../repo/catalog.ts';

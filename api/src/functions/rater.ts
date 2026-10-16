@@ -1,8 +1,8 @@
 import type { MyScores } from '../../../src/domain/api-types.ts';
 import type { Round } from '../../../src/domain/types.ts';
-import { db, transaction } from '../lib/db.ts';
+import { CONSTRAINT_CONFLICT, db, hasSqlNumber, transaction } from '../lib/db.ts';
 import { HttpError } from '../lib/errors.ts';
-import { CONSTRAINT_CONFLICT, hasSqlNumber, route } from '../lib/http.ts';
+import { route } from '../lib/http.ts';
 import { cardWriteProblem } from '../lib/permissions.ts';
 import { validateScores } from '../lib/validate.ts';
 import { listArtifacts, listWorkloads } from '../repo/catalog.ts';
