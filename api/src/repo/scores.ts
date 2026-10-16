@@ -3,7 +3,7 @@ import { tuple, type ScoreRow } from '../domain/dataset.ts';
 import { varchar, type Db, type Param } from '../lib/db.ts';
 
 const COLUMNS = `s.round_id AS roundId, s.user_id AS userId, u.display_name AS name, s.artifact_id AS artifactId,
-  s.capability, s.ux, s.cost, s.updated_at AS updatedAt`;
+  s.capability, s.ux, s.cost, s.outlook, s.updated_at AS updatedAt`;
 
 export async function allScores(db: Db): Promise<ScoreRow[]> {
   return db.query<ScoreRow>(
@@ -20,7 +20,7 @@ export async function scoresFor(db: Db, roundId: string, userId: number): Promis
   );
 }
 
-export function toTriples(rows: readonly ScoreRow[]): Record<string, ScoreTuple> {
+export function toTuples(rows: readonly ScoreRow[]): Record<string, ScoreTuple> {
   return Object.fromEntries(rows.map((row) => [row.artifactId, tuple(row)]));
 }
 
@@ -43,15 +43,16 @@ export async function replaceScorecard(
   const entries = Object.entries(scores);
   if (entries.length === 0) return;
   const params: Record<string, Param> = { roundId: varchar(roundId), userId };
-  const rows = entries.map(([artifactId, [capability, ux, cost]], i) => {
+  const rows = entries.map(([artifactId, [capability, ux, cost, outlook]], i) => {
     params[`a${i}`] = varchar(artifactId);
     params[`c${i}`] = capability;
     params[`u${i}`] = ux;
     params[`k${i}`] = cost;
-    return `(@roundId, @userId, @a${i}, @c${i}, @u${i}, @k${i})`;
+    params[`o${i}`] = outlook;
+    return `(@roundId, @userId, @a${i}, @c${i}, @u${i}, @k${i}, @o${i})`;
   });
   await db.query(
-    `INSERT INTO scores (round_id, user_id, artifact_id, capability, ux, cost) VALUES ${rows.join(', ')}`,
+    `INSERT INTO scores (round_id, user_id, artifact_id, capability, ux, cost, outlook) VALUES ${rows.join(', ')}`,
     params,
   );
 }
@@ -68,5 +69,5 @@ export async function lastPublishedCard(
     { userId },
   );
   if (!round) return undefined;
-  return { roundLabel: round.label, scores: toTriples(await scoresFor(db, round.id, userId)) };
+  return { roundLabel: round.label, scores: toTuples(await scoresFor(db, round.id, userId)) };
 }

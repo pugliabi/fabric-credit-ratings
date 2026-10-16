@@ -5,7 +5,7 @@ import { ROUND_ID } from '../lib/validate.ts';
 import { useDevTarget } from '../test-target.ts';
 import { listArtifacts } from './catalog.ts';
 import { findLatestPublishedRound, lockRound } from './rounds.ts';
-import { replaceScorecard, scoresFor, toTriples } from './scores.ts';
+import { replaceScorecard, scoresFor, toTuples } from './scores.ts';
 import { createUser } from './users.ts';
 
 function answering(rows: object[]): { calls: { text: string; params: Params }[]; fake: Db } {
@@ -87,8 +87,8 @@ describe.skipIf(!process.env.FCR_DB_TESTS)('card writes against the dev database
     const [a = '', b = '', c = ''] = ids;
     // Overlapping on one item, so writes that interleave either collide on the key or merge into one card.
     const cards: Record<string, Record<string, ScoreTuple>> = {
-      rater: { [a]: [1, 1, 1], [b]: [1, 1, 1] },
-      admin: { [b]: [2, 2, 2], [c]: [2, 2, 2] },
+      rater: { [a]: [1, 1, 1, 1], [b]: [1, 1, 1, 1] },
+      admin: { [b]: [2, 2, 2, 2], [c]: [2, 2, 2, 2] },
     };
     const events: string[] = [];
     const save = (writer: string) =>
@@ -106,6 +106,6 @@ describe.skipIf(!process.env.FCR_DB_TESTS)('card writes against the dev database
     const first = events[0]?.startsWith('rater') ? 'rater' : 'admin';
     const second = first === 'rater' ? 'admin' : 'rater';
     expect(events).toEqual([`${first} locked`, `${first} wrote`, `${second} locked`, `${second} wrote`]);
-    expect(toTriples(await scoresFor(db, roundId, userId ?? 0))).toEqual(cards[second]);
+    expect(toTuples(await scoresFor(db, roundId, userId ?? 0))).toEqual(cards[second]);
   });
 });

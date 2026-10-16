@@ -60,7 +60,7 @@ describe('myScoresPut', () => {
   it('refuses with 409, writing nothing, when the round was published before the save locked it', async () => {
     vi.mocked(lockRound).mockResolvedValue({ ...round, status: 'published', publishedOn: '2026-10-15' });
 
-    const saving = save({ round: round.id, scores: { notebook: [6, 5, 4] } });
+    const saving = save({ round: round.id, scores: { notebook: [6, 5, 4, 4] } });
 
     await expect(saving).rejects.toBeInstanceOf(HttpError);
     await expect(saving).rejects.toMatchObject({
@@ -82,21 +82,22 @@ describe('myScoresPut', () => {
       capability: 6,
       ux: 5,
       cost: 4,
+      outlook: 4,
       updatedAt,
     };
     vi.mocked(scoresFor).mockResolvedValue([row]);
 
-    const result = await save({ round: round.id, scores: { notebook: [6, 5, 4] } });
+    const result = await save({ round: round.id, scores: { notebook: [6, 5, 4, 4] } });
 
     expect(transaction).toHaveBeenCalledTimes(1);
     expect(lockRound).toHaveBeenCalledWith(tx, round.id);
-    expect(replaceScorecard).toHaveBeenCalledWith(tx, round.id, 7, { notebook: [6, 5, 4] });
+    expect(replaceScorecard).toHaveBeenCalledWith(tx, round.id, 7, { notebook: [6, 5, 4, 4] });
     const [locked = 0] = vi.mocked(lockRound).mock.invocationCallOrder;
     const [replaced = 0] = vi.mocked(replaceScorecard).mock.invocationCallOrder;
     expect(locked).toBeLessThan(replaced);
     expect(result).toEqual({
       round,
-      scores: { notebook: [6, 5, 4] },
+      scores: { notebook: [6, 5, 4, 4] },
       updatedAt: updatedAt.toISOString(),
       previous: null,
     });
@@ -111,7 +112,7 @@ describe('myScoresPut', () => {
     vi.mocked(lockRound).mockResolvedValue(round);
     vi.mocked(replaceScorecard).mockRejectedValue(sqlError(547));
 
-    await expect(save({ round: round.id, scores: { notebook: [6, 5, 4] } })).rejects.toMatchObject({
+    await expect(save({ round: round.id, scores: { notebook: [6, 5, 4, 4] } })).rejects.toMatchObject({
       status: 409,
       message: 'An item on this card was just deleted. Reload the page to get the current list.',
     });
@@ -122,7 +123,7 @@ describe('myScoresPut', () => {
     const deadlock = sqlError(1205);
     vi.mocked(replaceScorecard).mockRejectedValue(deadlock);
 
-    await expect(save({ round: round.id, scores: { notebook: [6, 5, 4] } })).rejects.toMatchObject({
+    await expect(save({ round: round.id, scores: { notebook: [6, 5, 4, 4] } })).rejects.toMatchObject({
       status: 503,
       message: 'Someone was changing the catalog at the same moment. Try again.',
     });
@@ -136,7 +137,7 @@ describe('myScoresPut', () => {
     const deadlock = sqlError(1205);
     vi.mocked(replaceScorecard).mockRejectedValueOnce(deadlock).mockResolvedValueOnce(undefined);
 
-    expect(await save({ round: round.id, scores: { notebook: [6, 5, 4] } })).toMatchObject({ round });
+    expect(await save({ round: round.id, scores: { notebook: [6, 5, 4, 4] } })).toMatchObject({ round });
     expect(transaction).toHaveBeenCalledTimes(2);
     expect(replaceScorecard).toHaveBeenCalledTimes(2);
     expect(log.warn).toHaveBeenCalledTimes(1);
@@ -148,6 +149,6 @@ describe('myScoresPut', () => {
     const error = sqlError(2627);
     vi.mocked(replaceScorecard).mockRejectedValue(error);
 
-    await expect(save({ round: round.id, scores: { notebook: [6, 5, 4] } })).rejects.toBe(error);
+    await expect(save({ round: round.id, scores: { notebook: [6, 5, 4, 4] } })).rejects.toBe(error);
   });
 });

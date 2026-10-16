@@ -30,7 +30,7 @@ function isScore(value: unknown): value is Score {
   return typeof value === 'number' && Number.isInteger(value) && value >= 1 && value <= 7;
 }
 
-/** Checks a raw { itemId: [c, u, k] } object; unknown ids and bad triples become errors. */
+/** Checks a raw { itemId: [c, u, k, o] } object; unknown ids and bad cards become errors. */
 export function validateScores(
   raw: unknown,
   knownIds: ReadonlySet<string>,
@@ -40,17 +40,17 @@ export function validateScores(
   if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
     return { scores, errors: ['Scores must be an object keyed by item id.'] };
   }
-  for (const [id, triple] of Object.entries(raw)) {
+  for (const [id, tuple] of Object.entries(raw)) {
     if (!knownIds.has(id)) {
       errors.push(`Unknown item "${id}". Reload the page to get the current list.`);
       continue;
     }
-    if (!Array.isArray(triple) || triple.length !== 3 || !triple.every(isScore)) {
-      errors.push(`"${id}" needs three whole scores from 1 to 7.`);
+    if (!Array.isArray(tuple) || tuple.length !== 4 || !tuple.every(isScore)) {
+      errors.push(`"${id}" needs four whole scores from 1 to 7.`);
       continue;
     }
-    const [capability, ux, cost] = triple as [Score, Score, Score];
-    scores[id] = [capability, ux, cost];
+    const [capability, ux, cost, outlook] = tuple as [Score, Score, Score, Score];
+    scores[id] = [capability, ux, cost, outlook];
   }
   // A hand-made request can name thousands of ids; the answer and the log stay short.
   const MAX_ERRORS = 10;

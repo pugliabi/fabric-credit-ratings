@@ -356,7 +356,7 @@ describe('round ids', () => {
 });
 
 describe('adminScoresPut', () => {
-  const body = { scores: { notebook: [6, 5, 4] } };
+  const body = { scores: { notebook: [6, 5, 4, 4] } };
 
   it('locks the round, replaces the card, and marks the site changed when the locked round is published', async () => {
     vi.mocked(lockRound).mockResolvedValue(published);
@@ -365,7 +365,7 @@ describe('adminScoresPut', () => {
 
     expect(transaction).toHaveBeenCalledTimes(1);
     expect(lockRound).toHaveBeenCalledWith(tx, open.id);
-    expect(replaceScorecard).toHaveBeenCalledWith(tx, open.id, 7, { notebook: [6, 5, 4] });
+    expect(replaceScorecard).toHaveBeenCalledWith(tx, open.id, 7, { notebook: [6, 5, 4, 4] });
     expect(markChanged).toHaveBeenCalledWith(tx);
     expectAscending(
       callOrder(vi.mocked(lockRound), vi.mocked(replaceScorecard), vi.mocked(markChanged), committed),
@@ -378,7 +378,7 @@ describe('adminScoresPut', () => {
 
     await call('adminScoresPut', { id: open.id, userId: '7' }, body);
 
-    expect(replaceScorecard).toHaveBeenCalledWith(tx, open.id, 7, { notebook: [6, 5, 4] });
+    expect(replaceScorecard).toHaveBeenCalledWith(tx, open.id, 7, { notebook: [6, 5, 4, 4] });
     expect(markChanged).not.toHaveBeenCalled();
   });
 
@@ -417,7 +417,7 @@ describe('adminScoresPut', () => {
   it('refuses bad scores with 400 before any transaction', async () => {
     await expect(
       call('adminScoresPut', { id: open.id, userId: '7' }, { scores: { notebook: [9, 5, 4] } }),
-    ).rejects.toMatchObject({ status: 400, message: '"notebook" needs three whole scores from 1 to 7.' });
+    ).rejects.toMatchObject({ status: 400, message: '"notebook" needs four whole scores from 1 to 7.' });
     expect(transaction).not.toHaveBeenCalled();
   });
 
@@ -544,7 +544,7 @@ describe('adminDraft', () => {
       {
         round: open,
         notes: {},
-        scorecards: [{ rater: '7', submittedAt: '2026-10-15T12:00:00.000Z', scores: { notebook: [6, 5, 4] } }],
+        scorecards: [{ rater: '7', submittedAt: '2026-10-15T12:00:00.000Z', scores: { notebook: [6, 5, 4, 4] } }],
       },
     ],
   };
@@ -631,7 +631,7 @@ describe('adminDraft', () => {
       expect.objectContaining({
         artifact: notebook,
         roundLabel: 'Q4 2026',
-        scores: { capability: 6, ux: 5, cost: 4 },
+        scores: { capability: 6, ux: 5, cost: 4, outlook: 4 },
         raters: 1,
       }),
       expect.any(AbortSignal),

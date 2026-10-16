@@ -232,10 +232,10 @@ describe.skipIf(!BASE)('API against the dev database', () => {
     artifactId = (await rater.send('GET', '/api/catalog')).body.artifacts[0].id;
     const saved = await rater.send('PUT', '/api/rounds/open/my-scores', {
       round: roundId,
-      scores: { [artifactId]: [5, 6, 7] },
+      scores: { [artifactId]: [5, 6, 7, 7] },
     });
     expect(saved.status).toBe(200);
-    expect(saved.body.scores).toEqual({ [artifactId]: [5, 6, 7] });
+    expect(saved.body.scores).toEqual({ [artifactId]: [5, 6, 7, 7] });
     const stale = await rater.send('PUT', '/api/rounds/open/my-scores', { round: '1999-Q1', scores: {} });
     expect(stale.status).toBe(409);
   });
@@ -243,7 +243,7 @@ describe.skipIf(!BASE)('API against the dev database', () => {
   it('shows the card in the admin review', async () => {
     const review = await admin.send('GET', `/api/admin/rounds/${roundId}/review`);
     const item = review.body.items.find((entry: { artifact: { id: string } }) => entry.artifact.id === artifactId);
-    expect(item.breakdown).toContainEqual({ userId: raterId, name: 'Integration Rater', scores: [5, 6, 7] });
+    expect(item.breakdown).toContainEqual({ userId: raterId, name: 'Integration Rater', scores: [5, 6, 7, 7] });
   });
 
   it('serves the snapshot only with the build token', async () => {

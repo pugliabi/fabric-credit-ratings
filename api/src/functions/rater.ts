@@ -8,7 +8,7 @@ import { cardWriteProblem } from '../lib/permissions.ts';
 import { validateScores } from '../lib/validate.ts';
 import { listArtifacts, listWorkloads } from '../repo/catalog.ts';
 import { findOpenRound, lockRound } from '../repo/rounds.ts';
-import { lastPublishedCard, replaceScorecard, scoresFor, toTriples } from '../repo/scores.ts';
+import { lastPublishedCard, replaceScorecard, scoresFor, toTuples } from '../repo/scores.ts';
 
 async function requireOpenRound(): Promise<Round> {
   const round = await findOpenRound(db);
@@ -24,7 +24,7 @@ async function myScores(round: Round, userId: number): Promise<MyScores> {
   );
   return {
     round,
-    scores: toTriples(rows),
+    scores: toTuples(rows),
     updatedAt: newest?.toISOString() ?? null,
     previous: (await lastPublishedCard(db, userId)) ?? null,
   };

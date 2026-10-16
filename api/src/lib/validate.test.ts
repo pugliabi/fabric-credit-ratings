@@ -28,22 +28,29 @@ describe('isReservedId', () => {
 });
 
 describe('validateScores', () => {
-  it('keeps whole 1 to 7 triples for known items', () => {
-    expect(validateScores({ notebook: [7, 1, 4] }, known)).toEqual({ scores: { notebook: [7, 1, 4] }, errors: [] });
+  it('keeps whole 1 to 7 four-score cards for known items', () => {
+    expect(validateScores({ notebook: [7, 1, 4, 6] }, known)).toEqual({
+      scores: { notebook: [7, 1, 4, 6] },
+      errors: [],
+    });
   });
 
-  it('reports unknown items and bad triples', () => {
-    const { scores, errors } = validateScores({ ghost: [5, 5, 5], notebook: [0, 5, 5], pipeline: [5, 5] }, known);
+  it('reports unknown items and bad cards, including three- and five-entry ones', () => {
+    const { scores, errors } = validateScores(
+      { ghost: [5, 5, 5, 5], notebook: [0, 5, 5, 5], pipeline: [5, 5, 5], spare: [5, 5, 5, 5, 5] },
+      new Set([...known, 'spare']),
+    );
     expect(scores).toEqual({});
     expect(errors).toEqual([
       'Unknown item "ghost". Reload the page to get the current list.',
-      '"notebook" needs three whole scores from 1 to 7.',
-      '"pipeline" needs three whole scores from 1 to 7.',
+      '"notebook" needs four whole scores from 1 to 7.',
+      '"pipeline" needs four whole scores from 1 to 7.',
+      '"spare" needs four whole scores from 1 to 7.',
     ]);
   });
 
   it('reports at most ten problems and counts the rest', () => {
-    const raw = Object.fromEntries(Array.from({ length: 25 }, (_, i) => [`ghost-${i}`, [5, 5, 5]]));
+    const raw = Object.fromEntries(Array.from({ length: 25 }, (_, i) => [`ghost-${i}`, [5, 5, 5, 5]]));
     const { errors } = validateScores(raw, known);
     expect(errors).toHaveLength(11);
     expect(errors.at(-1)).toBe('…and 15 more problems.');
