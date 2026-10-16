@@ -109,6 +109,8 @@ describe.skipIf(!BASE)('API against the dev database', () => {
   let raterId = 0;
   let roundId = '';
   let artifactId = '';
+  // The throwaway item that is created for the not-applicable test; empty until it exists.
+  let naArtifactId = '';
   let onDevDatabase = false;
   let siteBefore: SiteState | undefined;
 
@@ -144,6 +146,12 @@ describe.skipIf(!BASE)('API against the dev database', () => {
     try {
       if (!onDevDatabase) return;
       const adminSession = sessionHash(admin);
+      // The throwaway item can only be deleted once no card holds it, so the rater's rows go first. Skipped when the
+      // test never created it; a failed delete leaves the item for a person to remove.
+      if (naArtifactId) {
+        await clearTestRows();
+        await admin.send('DELETE', `/api/admin/artifacts/${naArtifactId}`).catch(() => undefined);
+      }
       // Ends the admin's session, the one row the suite leaves that clearTestRows can't tell from a real one.
       const loggedOut = await admin.send('POST', '/api/auth/logout').then(
         (reply) => reply.status,
@@ -157,13 +165,14 @@ describe.skipIf(!BASE)('API against the dev database', () => {
                 (SELECT COUNT(*) FROM sessions WHERE token_hash = @adminSession) AS adminSessions`,
         { adminSession: varchar(adminSession) },
       );
-      // Every write in the suite goes to the open round, so neither stamp may move.
-      const site = siteBefore ? await siteState(db) : undefined;
+      // Every score write goes to the open round, so the snapshot stamp may not move. The throwaway catalog item
+      // stamps changed_at (create and delete both do), so that field can't be compared; lastSnapshotAt can.
+      const site = siteBefore ? { lastSnapshotAt: (await siteState(db)).lastSnapshotAt } : undefined;
       // One assertion, so a failed logout can't hide whether the cleanup worked, or the other way round.
       expect({ loggedOut, left, site }).toEqual({
         loggedOut: 204,
         left: { users: 0, attempts: 0, adminSessions: 0 },
-        site: siteBefore,
+        site: siteBefore ? { lastSnapshotAt: siteBefore.lastSnapshotAt } : undefined,
       });
     } finally {
       await closeDb();
@@ -244,6 +253,29 @@ describe.skipIf(!BASE)('API against the dev database', () => {
     const review = await admin.send('GET', `/api/admin/rounds/${roundId}/review`);
     const item = review.body.items.find((entry: { artifact: { id: string } }) => entry.artifact.id === artifactId);
     expect(item.breakdown).toContainEqual({ userId: raterId, name: 'Integration Rater', scores: [5, 6, 7, 3] });
+  });
+
+  it('skips factors an item marks not applicable', async () => {
+    const workload = (await rater.send('GET', '/api/catalog')).body.artifacts[0].workload;
+    naArtifactId = `itest-na-${stamp}`;
+    const created = await admin.send('POST', '/api/admin/artifacts', {
+      id: naArtifactId,
+      name: 'Integration N/A item',
+      workload,
+      status: 'preview',
+      naFactors: ['cost'],
+    });
+    expect(created.status, created.body?.error).toBe(200);
+    const url = '/api/rounds/open/my-scores';
+    const saved = await rater.send('PUT', url, { round: roundId, scores: { [naArtifactId]: [5, 6, null, 3] } });
+    expect(saved.status, saved.body?.error).toBe(200);
+    expect(saved.body.scores[naArtifactId]).toEqual([5, 6, null, 3]);
+    const refused = await rater.send('PUT', url, { round: roundId, scores: { [naArtifactId]: [5, 6, 4, 3] } });
+    expect(refused.status).toBe(400);
+    expect(refused.body.error).toContain('Feature Capability, User Experience, Outlook');
+    const review = await admin.send('GET', `/api/admin/rounds/${roundId}/review`);
+    const item = review.body.items.find((entry: { artifact: { id: string } }) => entry.artifact.id === naArtifactId);
+    expect(item.breakdown).toContainEqual({ userId: raterId, name: 'Integration Rater', scores: [5, 6, null, 3] });
   });
 
   it('serves the snapshot only with the build token', async () => {

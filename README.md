@@ -57,12 +57,15 @@ Vite proxies `/api` to the local API, so the session cookie works on localhost. 
 3. **Review.** The Review & why tab shows each item's averaged scores, grade, change from the last round, and every rater's scores. Write the why, or use **Draft with AI** for a first pass. The admin can edit any rater's card.
 4. **Publish** on the Publish tab. The site rebuilds with the new ratings.
 
+Delete round discards an open round and its scores; publishing is the only way a round becomes history.
+
 Edits to a published round (scores, whys, catalog) save right away and reach the site at the next **Update public site**. The admin creates rater accounts on the Users tab and hands over the password; raters can change it.
 
 ## How ratings are computed
 
 - For each published round, each of the four factors is averaged across the raters who scored the item, shown to one decimal.
 - The grade comes from the unrounded weighted average total (`api/src/domain/formula.ts`, server-side only; the weights are never published). Retired items are rated D.
+- Factors the admin marked not applicable for an item (Catalog tab) are skipped: raters don't score them, the site shows Not applicable, and the grade uses the remaining weights scaled up.
 - Each published round adds a point to the item's history. The newest point is the current rating, so an item skipped in a round keeps its last rating.
 
 See `api/src/domain/aggregate.ts`.
