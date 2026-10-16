@@ -204,7 +204,7 @@ describe('createCatalogWrites', () => {
     const watch = hooks();
     const writes = createCatalogWrites(watch);
     const a = artifact('a', 10);
-    await expect(writes.run(catalogActions.updateArtifact(a, { status: 'retired' }, [a]))).resolves.toBe(false);
+    await expect(writes.run(catalogActions.updateArtifact(a, { status: 'retired' }, catalog(a)))).resolves.toBe(false);
     expect(calls.calls()).toEqual(['PUT /api/admin/artifacts/a', 'GET /api/admin/catalog']);
     expect(watch.events).toEqual(['start', `error ${CONFLICT}`, 'catalog a', 'settled']);
   });
@@ -269,11 +269,14 @@ describe('createCatalogWrites', () => {
 
 describe('catalogActions', () => {
   it('updates an item with its whole row, keeping its place, or at the end of the workload it moves to', async () => {
+    // The end is measured in the workload it moves to, across the whole catalog: data-factory's own end would be 30.
     const pipeline = { ...artifact('pipeline', 10), referenced: true };
+    const copyJob = artifact('copy-job', 20);
     const report = { ...artifact('report', 30), workload: 'power-bi' };
+    const current = catalog(pipeline, copyJob, report);
     const calls = server(reply(200, catalog()), reply(200, catalog()));
-    await catalogActions.updateArtifact(pipeline, { status: 'preview' }, [pipeline, report])();
-    await catalogActions.updateArtifact(pipeline, { workload: 'power-bi' }, [pipeline, report])();
+    await catalogActions.updateArtifact(pipeline, { status: 'preview' }, current)();
+    await catalogActions.updateArtifact(pipeline, { workload: 'power-bi' }, current)();
     expect(calls.calls()).toEqual(['PUT /api/admin/artifacts/pipeline', 'PUT /api/admin/artifacts/pipeline']);
     expect(calls.bodies()).toEqual([
       { name: 'pipeline', workload: 'data-factory', status: 'preview', sortOrder: 10 },
@@ -321,8 +324,21 @@ describe('catalogActions', () => {
   it('moves items with one whole-row PUT per row that changes', async () => {
     const items = [artifact('a', 10), artifact('b', 20)];
     const calls = server(reply(200, catalog()), reply(200, catalog()));
-    await catalogActions.moveArtifacts(items, 1, 0, catalog(...items))();
+    await catalogActions.moveArtifacts(catalog(...items), 'data-factory', 1, 0)();
     expect(calls.calls()).toEqual(['PUT /api/admin/artifacts/b', 'PUT /api/admin/artifacts/a']);
     expect(calls.bodies().map(({ sortOrder }) => sortOrder)).toEqual([10, 20]);
+  });
+
+  it("renumbers only the moved item's workload, even when other workloads' items come first in the catalog", async () => {
+    const x = { ...artifact('x', 10), workload: 'power-bi' };
+    const y = { ...artifact('y', 20), workload: 'power-bi' };
+    const [a, b] = [artifact('a', 10), artifact('b', 20)];
+    const calls = server(reply(200, catalog()), reply(200, catalog()));
+    await catalogActions.moveArtifacts(catalog(x, y, a, b), 'data-factory', 1, 0)();
+    expect(calls.calls()).toEqual(['PUT /api/admin/artifacts/b', 'PUT /api/admin/artifacts/a']);
+    expect(calls.bodies()).toEqual([
+      { name: 'b', workload: 'data-factory', status: 'ga', sortOrder: 10 },
+      { name: 'a', workload: 'data-factory', status: 'ga', sortOrder: 20 },
+    ]);
   });
 });

@@ -248,8 +248,7 @@ function WorkloadBlock({ workload, catalog, busy, run, control, canMoveUp, canMo
               <ArtifactRowEditor
                 key={artifact.id}
                 artifact={artifact}
-                artifacts={catalog.artifacts}
-                workloads={catalog.workloads}
+                catalog={catalog}
                 busy={busy}
                 run={run}
                 control={control}
@@ -258,7 +257,7 @@ function WorkloadBlock({ workload, catalog, busy, run, control, canMoveUp, canMo
                 canMoveDown={index < items.length - 1}
                 onMove={(step) =>
                   void run(
-                    actions.moveArtifacts(items, index, index + step, catalog),
+                    actions.moveArtifacts(catalog, workload.id, index, index + step),
                     moveFocus(`item:${artifact.id}`, step),
                   )
                 }
@@ -316,16 +315,15 @@ function MoveButtons({ scope, name, busy, control, canMoveUp, canMoveDown, onMov
 
 interface ArtifactRowEditorProps extends MoveProps, WriteProps {
   artifact: AdminArtifact;
-  artifacts: readonly AdminArtifact[];
-  workloads: readonly AdminWorkload[];
+  /** The whole catalog: the module picks the rows a move to another workload is measured against. */
+  catalog: AdminCatalog;
   /** Where focus goes if a delete removes this row (catalog-focus.ts deleteFocus). */
   afterDelete: readonly string[];
 }
 
 export function ArtifactRowEditor({
   artifact,
-  artifacts,
-  workloads,
+  catalog,
   busy,
   run,
   control,
@@ -343,7 +341,7 @@ export function ArtifactRowEditor({
   }
 
   const update = (changes: ArtifactChanges, focusAfter: readonly string[]) =>
-    void run(actions.updateArtifact(artifact, changes, artifacts), focusAfter);
+    void run(actions.updateArtifact(artifact, changes, catalog), focusAfter);
 
   const remove = () => {
     if (busy) return;
@@ -405,7 +403,7 @@ export function ArtifactRowEditor({
           disabled={busy}
           aria-label={`${artifact.name} workload`}
         >
-          {workloads.map((workload) => (
+          {catalog.workloads.map((workload) => (
             <option key={workload.id} value={workload.id}>
               {workload.shortName}
             </option>

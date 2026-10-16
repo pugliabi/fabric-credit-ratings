@@ -37,8 +37,7 @@ function busyRow(artifact: AdminArtifact): string {
   return inTable(
     createElement(ArtifactRowEditor, {
       artifact,
-      artifacts: catalog.artifacts,
-      workloads: catalog.workloads,
+      catalog,
       busy: true,
       run,
       control,

@@ -148,13 +148,20 @@ export const catalogActions = {
   saveWorkload: (workload: AdminWorkload, fields: WorkloadFields) => () =>
     api<AdminCatalog>('PUT', `/admin/workloads/${workload.id}`, { ...trimmed(fields), sortOrder: workload.sortOrder }),
 
-  updateArtifact: (artifact: AdminArtifact, changes: ArtifactChanges, artifacts: readonly AdminArtifact[]) => () =>
-    api<AdminCatalog>('PUT', `/admin/artifacts/${artifact.id}`, artifactUpdate(artifact, changes, artifacts)),
+  /** A move to another workload lands at that workload's end, measured across the whole catalog. */
+  updateArtifact: (artifact: AdminArtifact, changes: ArtifactChanges, current: AdminCatalog) => () =>
+    api<AdminCatalog>('PUT', `/admin/artifacts/${artifact.id}`, artifactUpdate(artifact, changes, current.artifacts)),
 
   deleteArtifact: (artifact: AdminArtifact) => () => api<AdminCatalog>('DELETE', `/admin/artifacts/${artifact.id}`),
 
-  moveArtifacts: (items: readonly AdminArtifact[], from: number, to: number, current: AdminCatalog) => () =>
-    saveOrders('/admin/artifacts', reorder(items, from, to), artifactBody, current),
+  /** Renumbers only `workload`'s items, in the catalog's order; `from` and `to` index that list. */
+  moveArtifacts: (current: AdminCatalog, workload: string, from: number, to: number) => () =>
+    saveOrders(
+      '/admin/artifacts',
+      reorder(current.artifacts.filter((item) => item.workload === workload), from, to),
+      artifactBody,
+      current,
+    ),
 
   moveWorkloads: (current: AdminCatalog, from: number, to: number) => () =>
     saveOrders('/admin/workloads', reorder(current.workloads, from, to), workloadBody, current),
