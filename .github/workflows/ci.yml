@@ -43,7 +43,7 @@ jobs:
 
       - name: Check the site bundle for secrets and the grade formula
         run: |
-          if grep -rEl 'sk-ant-|ghp_[A-Za-z0-9]|gho_[A-Za-z0-9]|github_pat_|21:"AAA"' dist; then
+          if grep -rEl 'sk-ant-|ghp_[A-Za-z0-9]|gho_[A-Za-z0-9]|github_pat_|21:"AAA"|capability:\.4|outlook:\.1|ux:\.25|weightedUnits' dist; then
             echo "::error::dist/ contains a token shape or the grade formula."
             exit 1
           fi

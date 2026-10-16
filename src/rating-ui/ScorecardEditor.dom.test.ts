@@ -38,6 +38,16 @@ describe('CardForm', () => {
     expect(find(container, 'button', 'Discard changes')).toBeNull();
   });
 
+  it('flags a row with three scores until the Outlook slider is set', async () => {
+    const empty: MyScores = { ...card, scores: {}, updatedAt: null };
+    const { container } = await render(CardForm, { ...props, card: empty });
+    const input = (label: string) => container.querySelector(`input[aria-label="Notebook, ${label}"]`);
+    for (const label of ['Feature Capability', 'User Experience', 'CU / Token Cost']) await type(input(label), '5');
+    expect(container.textContent).toContain('Set all four, or clear');
+    await type(input('Outlook'), '5');
+    expect(container.textContent).not.toContain('Set all four, or clear');
+  });
+
   it('moves focus to the toolbar when Clear all removes itself', async () => {
     vi.stubGlobal('confirm', () => true);
     const { container } = await render(CardForm, props);

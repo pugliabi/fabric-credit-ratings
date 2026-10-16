@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DEPRECATED_GRADE, FACTOR_WEIGHTS, gradeForTotal, totalOf } from './formula.ts';
+import { DEPRECATED_GRADE, FACTOR_WEIGHTS, WEIGHT_UNITS, gradeForTotal, totalOf } from './formula.ts';
 
 describe('gradeForTotal', () => {
   it('maps whole totals to notches', () => {
@@ -36,6 +36,8 @@ describe('totalOf', () => {
 
   it('exposes the weights, which sum to one', () => {
     expect(Object.values(FACTOR_WEIGHTS).reduce((a, b) => a + b, 0)).toBeCloseTo(1, 10);
+    expect(FACTOR_WEIGHTS).toEqual({ capability: 0.4, ux: 0.25, cost: 0.25, outlook: 0.1 });
+    expect(Object.values(WEIGHT_UNITS).reduce((a, b) => a + b, 0)).toBe(100);
     expect(DEPRECATED_GRADE).toBe('D');
   });
 });

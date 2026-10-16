@@ -9,7 +9,7 @@ const BANDS = ['investment', 'lowInvestment', 'speculative', 'distressed'] as co
 
 const BAND_COPY: Readonly<Record<(typeof BANDS)[number], string>> = {
   investment: 'The item does its job well. You can build on it.',
-  lowInvestment: 'Does the job today, with rough edges or costs to plan around.',
+  lowInvestment: 'Does the job today, with rough edges or costs to budget for.',
   speculative: 'Usable, with gaps you should plan around.',
   distressed: 'Falling behind, or the wrong tool for new work.',
 };

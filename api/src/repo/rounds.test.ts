@@ -87,8 +87,8 @@ describe.skipIf(!process.env.FCR_DB_TESTS)('card writes against the dev database
     const [a = '', b = '', c = ''] = ids;
     // Overlapping on one item, so writes that interleave either collide on the key or merge into one card.
     const cards: Record<string, Record<string, ScoreTuple>> = {
-      rater: { [a]: [1, 1, 1, 1], [b]: [1, 1, 1, 1] },
-      admin: { [b]: [2, 2, 2, 2], [c]: [2, 2, 2, 2] },
+      rater: { [a]: [1, 2, 3, 4], [b]: [1, 2, 3, 4] },
+      admin: { [b]: [2, 3, 4, 5], [c]: [2, 3, 4, 5] },
     };
     const events: string[] = [];
     const save = (writer: string) =>

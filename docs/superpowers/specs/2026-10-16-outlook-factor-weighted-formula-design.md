@@ -19,12 +19,12 @@ The public site shows Outlook like the other factors (averages, bars, a How it w
 |---|---|
 | Factor model | The fixed factor set grows to four (`FactorId` gains `outlook`); no factors table, no editable weights |
 | Score tuple | `ScoreTuple` = four `Score`s in `FACTORS` order: capability, ux, cost, outlook. The name `ScoreTriple` goes away |
-| Formula | `totalOf(values) = 3 × (0.40·capability + 0.25·ux + 0.25·cost + 0.10·outlook)`, so totals still run 3 to 21 and the 19-notch `TOTAL_TO_GRADE` table and `gradeForTotal` (round to the nearest notch) are unchanged. 7 everywhere is AAA, 1 everywhere is C |
+| Formula | `totalOf(values) = 3 × (0.40·capability + 0.25·ux + 0.25·cost + 0.10·outlook)`, so totals still run 3 to 21 and the 19-notch `TOTAL_TO_GRADE` table and `gradeForTotal` (round to the nearest notch) are unchanged. The arithmetic uses integer hundredth-units (40/25/25/10) with one final division, so whole scores give exact totals. 7 everywhere is AAA, 1 everywhere is C |
 | Averaging | Unchanged: per factor across the raters who scored the item, display rounded to one decimal, grade from the unrounded weighted total |
 | Bands | `Band` = `investment` (AAA–A-), `lowInvestment` (BBB+–BBB-), `speculative` (BB+–B-), `distressed` (CCC–C), `deprecated` (D). `isInvestmentGrade` is true for both investment bands |
 | Deprecated | `Grade` swaps `E` for `D`. `DEPRECATED_GRADE = 'D'` replaces `WITHDRAWN_GRADE`. Labels: "Deprecated". CSS tokens `--band-deprecated*` replace `--band-withdrawn*`; a new `--band-low-investment*` pair sits between the investment green and the speculative amber |
 | Outlook copy | `factors.ts`: label "Outlook", question "Where is it headed over the next year?", low "Stalled or on its way out", high "Clear momentum and investment" |
-| Database | `scores.outlook tinyint NOT NULL CHECK (outlook BETWEEN 1 AND 7)`, added by an idempotent batch with a temporary default of 4 (so existing rows survive), followed by a batch that drops the default. Grades are never stored, so bands and D need no data change |
+| Database | `scores.outlook tinyint NOT NULL CHECK (outlook BETWEEN 1 AND 7)`, added by an idempotent batch with a default of 4 (so existing rows survive). The default is kept: there is no drop batch, and an ensure-default batch restores it on a database migrated by an earlier draft. The API always writes the column. Grades are never stored, so bands and D need no data change |
 | Existing data | Production `fcr` has no score rows. `fcr-dev`'s test rows get outlook 4 from the default; they are test data |
 | API | Shapes keep their structure; tuples have four entries and `FactorValues` four keys everywhere (rater card, admin review, snapshot, history points). `validateScores` requires exactly four whole numbers 1–7 per item. The AI draft prompt lists Outlook with the other factors |
 | Snapshot | `scores` objects carry `outlook`; `snapshot-checks.ts` requires it. The committed empty snapshot stays valid |
@@ -49,7 +49,7 @@ The public site shows Outlook like the other factors (averages, bars, a How it w
 
 ## Testing
 
-- Formula: 7/7/7/7 → 21 → AAA; 1/1/1/1 → 3 → C; a mixed card where the weights decide the notch (e.g. 7/1/1/7 = 3 × (2.8 + 0.25 + 0.25 + 0.7) = 12.0 → BBB-, where the old three-factor sum 9 gave BB-; and 7/7/1/1 = 3 × (2.8 + 1.75 + 0.25 + 0.1) = 14.7 → A- where the old sum 15 gave A-); averaged fractional totals round to the nearest notch; retired → D.
+- Formula: 7/7/7/7 → 21 → AAA; 1/1/1/1 → 3 → C; a mixed card where the weights decide the notch (e.g. 7/1/1/7 = 3 × (2.8 + 0.25 + 0.25 + 0.7) = 12.0 → BBB-, where the old three-factor sum 9 gave BB-; and 1/7/7/1 = 3 × (0.4 + 1.75 + 1.75 + 0.1) = 12.0 → BBB-, where the old three-factor sum 15 gave A-); averaged fractional totals round to the nearest notch; retired → D.
 - Bands: A- investment, BBB+ and BBB- low investment, BB+ speculative, C distressed, D deprecated; `isInvestmentGrade` for both investment bands.
 - Validation: a three-entry card and a five-entry card are refused; the error names the item.
 - Repo: `replaceScorecard` round-trips four values (opt-in DB test against `fcr-dev`).

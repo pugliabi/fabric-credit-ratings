@@ -27,18 +27,15 @@ export const TOTAL_TO_GRADE: Readonly<Record<number, Grade>> = {
 
 export const DEPRECATED_GRADE: Grade = 'D';
 
-/** Share of each factor in the grade. The site never shows these, or any total. */
-export const FACTOR_WEIGHTS: Readonly<Record<FactorId, number>> = {
-  capability: 0.4,
-  ux: 0.25,
-  cost: 0.25,
-  outlook: 0.1,
-};
-
-const FACTOR_IDS = Object.keys(FACTOR_WEIGHTS) as FactorId[];
-
 /** The weights in hundredths, so whole scores give whole units and the arithmetic stays exact. */
-const WEIGHT_UNITS: Readonly<Record<FactorId, number>> = { capability: 40, ux: 25, cost: 25, outlook: 10 };
+export const WEIGHT_UNITS: Readonly<Record<FactorId, number>> = { capability: 40, ux: 25, cost: 25, outlook: 10 };
+
+const FACTOR_IDS = Object.keys(WEIGHT_UNITS) as FactorId[];
+
+/** Share of each factor in the grade, derived from WEIGHT_UNITS. The site never shows these, or any total. */
+export const FACTOR_WEIGHTS = Object.fromEntries(FACTOR_IDS.map((id) => [id, WEIGHT_UNITS[id] / 100])) as Readonly<
+  Record<FactorId, number>
+>;
 
 /** 40·capability + 25·ux + 25·cost + 10·outlook: an integer for whole scores. */
 export function weightedUnits(scores: FactorValues): number {
