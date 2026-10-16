@@ -117,12 +117,14 @@ describe.skipIf(!BASE)('API against the dev database', () => {
       FCR_ADMIN_LOGIN: ADMIN_LOGIN,
       FCR_ADMIN_PASSWORD: ADMIN_PASSWORD,
       FCR_SNAPSHOT_TOKEN: SNAPSHOT_TOKEN,
+      // A deployed API refuses the local default origin, so a remote run must name the site.
+      ...(isRemoteRun() ? { FCR_ORIGIN: process.env.FCR_ORIGIN ?? '' } : {}),
     })
       .filter(([, value]) => !value)
       .map(([name]) => name);
     // Before any request, so a missing password can't count as a failed admin login that the cleanup can't undo.
     if (missing.length > 0) throw new Error(`Set ${missing.join(', ')} before running the integration suite.`);
-    useDevTarget();
+    useDevTarget({ remote: isRemoteRun() });
     onDevDatabase = true;
     await clearTestRows();
     siteBefore = await siteState(db);
