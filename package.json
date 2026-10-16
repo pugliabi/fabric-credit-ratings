@@ -11,7 +11,8 @@
     "test": "vitest run",
     "api": "npm --prefix api start",
     "db:apply": "node db/apply.ts",
-    "db:seed": "node db/seed.ts"
+    "db:seed": "node db/seed.ts",
+    "snapshot": "node scripts/snapshot.ts"
   },
   "dependencies": {
     "react": "^19.3.0",
