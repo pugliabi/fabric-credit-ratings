@@ -1,0 +1,83 @@
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { closeDb, db, transaction, varchar, type Db, type Params } from '../lib/db.ts';
+import { useDevTarget } from '../test-target.ts';
+import { countActiveAdminsLocked, createUser, replacePasswordHash } from './users.ts';
+
+function answering(rows: object[]): { calls: { text: string; params: Params }[]; fake: Db } {
+  const calls: { text: string; params: Params }[] = [];
+  const fake: Db = {
+    query<T>(text: string, params: Params = {}): Promise<T[]> {
+      calls.push({ text, params });
+      return Promise.resolve(rows as T[]);
+    },
+  };
+  return { calls, fake };
+}
+
+describe('countActiveAdminsLocked', () => {
+  it('counts active admins with locks held until commit, so concurrent admin changes take turns', async () => {
+    const { calls, fake } = answering([{ n: 2 }]);
+    expect(await countActiveAdminsLocked(fake)).toBe(2);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.text).toBe(
+      `SELECT COUNT(*) AS n FROM users WITH (UPDLOCK, HOLDLOCK) WHERE role = 'admin' AND active = 1`,
+    );
+    expect(calls[0]?.params).toEqual({});
+  });
+
+  it('answers 0 when no row comes back', async () => {
+    const { fake } = answering([]);
+    expect(await countActiveAdminsLocked(fake)).toBe(0);
+  });
+});
+
+describe('replacePasswordHash', () => {
+  it('sets the new hash only for a still-active user with the verified hash, and says it did', async () => {
+    const { calls, fake } = answering([{ id: 7 }]);
+
+    expect(await replacePasswordHash(fake, 7, 'scrypt$verified', 'scrypt$next')).toBe(true);
+    expect(calls).toHaveLength(1);
+    const text = calls[0]?.text.replace(/\s+/g, ' ') ?? '';
+    expect(text).toBe(
+      'UPDATE users SET password_hash = @next, password_changed_at = SYSUTCDATETIME() OUTPUT inserted.id ' +
+        'WHERE id = @id AND active = 1 AND password_hash = @verified',
+    );
+    expect(calls[0]?.params).toEqual({ id: 7, verified: varchar('scrypt$verified'), next: varchar('scrypt$next') });
+  });
+
+  it('reports false when a reset or disable got there first, so nothing changed', async () => {
+    const { fake } = answering([]);
+    expect(await replacePasswordHash(fake, 7, 'scrypt$old', 'scrypt$next')).toBe(false);
+  });
+});
+
+describe.skipIf(!process.env.FCR_DB_TESTS)('the admin-count lock against the dev database', () => {
+  const login = `itest-count-${Date.now().toString(36)}`;
+  let raterId: number | undefined;
+
+  beforeAll(async () => {
+    useDevTarget();
+    raterId = await createUser(db, { login, displayName: `itest ${login}`, role: 'rater', passwordHash: 'unset' });
+  }, 120_000);
+
+  afterAll(async () => {
+    try {
+      if (raterId !== undefined) await db.query('DELETE FROM users WHERE id = @id', { id: raterId });
+    } finally {
+      await closeDb();
+    }
+  });
+
+  // A rater's row, so even a broken lock changes no admin; the no-op update writes nothing either way.
+  it('holds every users row until commit, so a write to any user waits', { timeout: 120_000 }, async () => {
+    await transaction(async (tx) => {
+      await countActiveAdminsLocked(tx);
+      await expect(
+        db.query(
+          'SET LOCK_TIMEOUT 1000; UPDATE users SET display_name = display_name WHERE id = @id; SET LOCK_TIMEOUT -1;',
+          { id: raterId ?? 0 },
+        ),
+      ).rejects.toMatchObject({ number: 1222 });
+    });
+  });
+});

@@ -98,68 +98,6 @@
   color: var(--ink-muted);
 }
 
-.formula {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-wrap: wrap;
-  gap: 12px;
-  padding: 20px;
-  border-radius: var(--radius-lg);
-  background: linear-gradient(90deg, #117865 0%, #2e8c78 30%, #8ccbbb 70%, #e6f3ef 100%);
-}
-
-.formulaPart {
-  display: contents;
-}
-
-.formulaTerm {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-  min-width: 92px;
-  padding: 10px 14px;
-  border-radius: var(--radius-md);
-  background: var(--white);
-  box-shadow: var(--shadow-sm);
-}
-
-.formulaLabel {
-  color: var(--ink-muted);
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-align: center;
-  text-transform: uppercase;
-}
-
-.formulaValue {
-  color: var(--ink);
-  font-family: var(--font-display);
-  font-size: 30px;
-  font-weight: 700;
-  line-height: 1;
-}
-
-.formulaMax {
-  color: var(--ink-muted);
-  font-size: 15px;
-  font-weight: 500;
-}
-
-.formulaOp {
-  display: inline-grid;
-  place-items: center;
-  width: 30px;
-  height: 30px;
-  border-radius: 999px;
-  background: rgb(255 255 255 / 0.85);
-  color: var(--fabric-green-deep);
-  font-size: 17px;
-  font-weight: 700;
-}
-
 .block {
   padding: 20px;
   border: 1px solid var(--rule);
@@ -178,117 +116,54 @@
   font-size: 14px;
 }
 
-.table {
+.bands {
   display: grid;
-  grid-template-columns: repeat(19, minmax(0, 1fr));
-  gap: 3px;
-  margin-top: 16px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 14px;
 }
 
-.cell {
+.bands li {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: 2px;
-  padding: 8px 0;
-  border-radius: 6px;
+  gap: 4px;
+  padding: 14px;
+  border-radius: var(--radius-md);
   background: var(--cell-bg);
+}
+
+.bandName {
   color: var(--cell-color);
-  font-variant-numeric: tabular-nums;
+  font-weight: 700;
 }
 
-.cell[data-floor='true'] {
-  box-shadow: inset 0 0 0 2px var(--cell-color);
-}
-
-.cellTotal {
+.bandRange {
   color: var(--ink);
   font-size: 13px;
-  font-weight: 700;
-}
-
-.cellGrade {
-  font-family: var(--font-display);
-  font-size: 12px;
-  font-weight: 700;
-}
-
-.tableLegend {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px 20px;
-  margin-top: 12px;
-  font-size: 13px;
-}
-
-.tableLegend li {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--cell-color);
   font-weight: 600;
-}
-
-.tableLegend li::before {
-  content: '';
-  width: 10px;
-  height: 10px;
-  border-radius: 3px;
-  background: var(--cell-color);
-}
-
-.tableLegend span {
-  color: var(--ink-faint);
-  font-weight: 500;
 }
 
 .grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
   gap: 14px;
 }
 
-.flags {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-
-.flags li {
+.withdrawn {
   display: flex;
   align-items: center;
   gap: 14px;
 }
 
-.flags li > :first-child {
+.withdrawn > :first-child {
   min-width: 36px;
-}
-
-.flagName {
-  font-weight: 650;
-}
-
-.outlooks {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.outlooks li {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 3px;
 }
 
 @media (max-width: 900px) {
   .factors,
+  .bands,
   .grid {
     grid-template-columns: minmax(0, 1fr);
-  }
-
-  .table {
-    grid-template-columns: repeat(7, minmax(0, 1fr));
   }
 }
 

@@ -9,19 +9,6 @@
   padding: 56px 24px 8px;
 }
 
-.eyebrow {
-  display: inline-block;
-  margin-bottom: 14px;
-  padding: 4px 10px;
-  border: 1px solid rgb(255 255 255 / 0.35);
-  border-radius: 999px;
-  color: rgb(255 255 255 / 0.92);
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
-
 .title {
   max-width: 14ch;
   color: var(--white);

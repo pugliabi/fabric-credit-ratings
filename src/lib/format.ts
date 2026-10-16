@@ -5,6 +5,12 @@ const fullDate = new Intl.DateTimeFormat('en-US', {
   year: 'numeric',
   timeZone: 'UTC',
 });
+const timestamp = new Intl.DateTimeFormat('en-US', {
+  month: 'short',
+  day: 'numeric',
+  hour: 'numeric',
+  minute: '2-digit',
+});
 const monthOnly = new Intl.DateTimeFormat('en-US', { month: 'short', timeZone: 'UTC' });
 
 export function parseDate(iso: string): Date {
@@ -23,6 +29,16 @@ export function formatMonth(date: Date): string {
   return monthOnly.format(date);
 }
 
+/** 6 -> "6", 6.5 -> "6.5". Averaged scores carry at most one decimal. */
+export function formatScore(value: number): string {
+  return Number.isInteger(value) ? String(value) : value.toFixed(1);
+}
+
 export function pluralize(count: number, singular: string, plural = `${singular}s`): string {
   return `${count} ${count === 1 ? singular : plural}`;
+}
+
+/** "Oct 15, 3:42 PM" in the reader's time zone. */
+export function formatTimestamp(iso: string): string {
+  return timestamp.format(new Date(iso));
 }

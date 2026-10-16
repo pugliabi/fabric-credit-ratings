@@ -1,4 +1,4 @@
-import type { Factor } from '../domain/types';
+import type { Factor } from '../domain/types.ts';
 
 export const FACTORS: readonly Factor[] = [
   {

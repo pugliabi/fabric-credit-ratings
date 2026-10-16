@@ -1,5 +1,5 @@
 import { useRef, type KeyboardEvent } from 'react';
-import { gradeIndex, isInvestmentGrade, medianGrade } from '../domain/scale';
+import { gradeIndex, isInvestmentGrade, medianGrade } from '../domain/grades';
 import type { Rating, Workload } from '../domain/types';
 import { pluralize } from '../lib/format';
 import { ArtifactRow } from './ArtifactRow';
@@ -72,17 +72,21 @@ export function WorkloadSection({
             </span>
           </span>
           <span className={styles.summary}>
-            <span className={styles.summaryText}>
-              <span className={styles.summaryStrong}>{investment}</span> of {sorted.length} investment grade
-            </span>
-            <DistributionBar grades={grades} />
+            {sorted.length > 0 ? (
+              <>
+                <span className={styles.summaryText}>
+                  <span className={styles.summaryStrong}>{investment}</span> of {sorted.length} investment grade
+                </span>
+                <DistributionBar grades={grades} />
+              </>
+            ) : (
+              <span className={styles.summaryText}>Not yet rated</span>
+            )}
           </span>
-          {median && (
-            <span className={styles.median}>
-              <span className={styles.medianLabel}>Median</span>
-              <GradeBadge grade={median} size="md" />
-            </span>
-          )}
+          <span className={styles.median}>
+            <span className={styles.medianLabel}>Median</span>
+            {median ? <GradeBadge grade={median} size="md" /> : <span className={styles.medianNone}>NR</span>}
+          </span>
           <Chevron open={open} />
         </button>
       </h2>

@@ -20,7 +20,7 @@
 
 .trigger {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto 64px 128px auto;
+  grid-template-columns: minmax(0, 1fr) 128px auto;
   align-items: center;
   gap: 16px;
   width: 100%;
@@ -75,29 +75,6 @@
   color: var(--band-withdrawn);
 }
 
-.total {
-  justify-self: end;
-  color: var(--ink-muted);
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-
-.totalValue {
-  color: var(--ink);
-  font-family: var(--font-display);
-  font-size: 18px;
-  font-weight: 700;
-}
-
-.totalMax {
-  font-size: 13px;
-}
-
-.total[data-overridden='true'] {
-  opacity: 0.55;
-  text-decoration: line-through;
-}
-
 .gradeCell {
   display: flex;
   justify-content: center;
@@ -108,13 +85,9 @@
 
 @media (max-width: 640px) {
   .trigger {
-    grid-template-columns: minmax(0, 1fr) auto 84px auto;
+    grid-template-columns: minmax(0, 1fr) 84px auto;
     gap: 10px;
     padding: 10px 10px 10px 14px;
-  }
-
-  .total {
-    display: none;
   }
 
   .name {

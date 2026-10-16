@@ -98,6 +98,14 @@
   text-transform: uppercase;
 }
 
+.medianNone {
+  color: var(--ink-faint);
+  font-family: var(--font-display);
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1;
+}
+
 .rows {
   display: flex;
   flex-direction: column;

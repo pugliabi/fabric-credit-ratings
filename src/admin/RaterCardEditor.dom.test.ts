@@ -1,0 +1,254 @@
+// @vitest-environment happy-dom
+import { createElement, useState } from 'react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { AdminCatalog, RoundReview } from '../domain/api-types';
+import type { Artifact, Round, ScoreTriple } from '../domain/types';
+import { mayLeave } from '../hooks/useUnsavedWork';
+import { CHANGED_WHILE_SAVING } from '../rating-ui/save';
+import { cleanup, click, fakeApi, find, render, settle, type } from '../test/dom';
+import { RaterCardEditor, SAVE_ON_ITS_WAY } from './RaterCardEditor';
+
+const q4: Round = { id: '2026-Q4', label: 'Q4 2026', status: 'open', publishedOn: null };
+const rater = { userId: 9, name: 'P2 Rater A' };
+const catalog: AdminCatalog = {
+  workloads: [{ id: 'data-engineering', name: 'Data Engineering', shortName: 'Data Eng', blurb: '', sortOrder: 1 }],
+  artifacts: [
+    { id: 'notebook', name: 'Notebook', workload: 'data-engineering', status: 'ga', sortOrder: 1, referenced: true },
+    {
+      id: 'environment',
+      name: 'Environment',
+      workload: 'data-engineering',
+      status: 'ga',
+      sortOrder: 2,
+      referenced: true,
+    },
+  ],
+};
+const addedLater: Artifact = { id: 'added-later', name: 'Added later', workload: 'data-engineering', status: 'ga' };
+
+function review(card: Record<string, ScoreTriple>): RoundReview {
+  const known = [...catalog.artifacts, addedLater];
+  return {
+    round: q4,
+    raters: [rater],
+    items: Object.entries(card).map(([id, scores]) => ({
+      artifact: known.find((artifact) => artifact.id === id) ?? addedLater,
+      point: {
+        round: q4.id,
+        roundLabel: q4.label,
+        date: '2026-10-15',
+        scores: { capability: scores[0], ux: scores[1], cost: scores[2] },
+        raters: 1,
+        grade: 'BBB',
+        note: '',
+      },
+      previous: null,
+      change: { kind: 'new', text: 'First rating' },
+      breakdown: [{ ...rater, scores }],
+    })),
+    notes: {},
+    aiEnabled: false,
+  };
+}
+
+const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200 });
+
+/** Holds the review the way RoundReviewPanel does, so onRefreshed feeds back into the editor. */
+function Host({
+  initial,
+  onSaved,
+  onCancel = () => {},
+}: {
+  initial: RoundReview;
+  onSaved: (next: RoundReview) => void;
+  onCancel?: () => void;
+}) {
+  const [current, setCurrent] = useState(initial);
+  return createElement(RaterCardEditor, {
+    review: current,
+    rater,
+    catalog,
+    onSaved,
+    onRefreshed: setCurrent,
+    onCancel,
+  });
+}
+
+const slider = (root: ParentNode, name: string) =>
+  root.querySelector<HTMLInputElement>(`input[type="range"][aria-label="${name}"]`);
+const value = (root: ParentNode, name: string) => slider(root, name)?.getAttribute('aria-valuetext');
+const status = (root: ParentNode) => root.querySelector('[aria-live="polite"]')?.textContent ?? '';
+
+beforeEach(() => {
+  vi.stubEnv('VITE_API_URL', '');
+});
+
+afterEach(async () => {
+  await cleanup();
+  vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
+  document.body.innerHTML = '';
+});
+
+describe('RaterCardEditor', () => {
+  it('reads the card again on open, blocks Save and says so until it is in, then keeps edits on top', async () => {
+    let answer: (response: Response) => void = () => {};
+    const opened = review({ notebook: [2, 5, 4], environment: [3, 4, 7] });
+    const newer = review({ notebook: [2, 5, 4], environment: [3, 4, 6] });
+    const api = fakeApi({
+      'GET /api/admin/rounds/2026-Q4/review': () => new Promise<Response>((resolve) => (answer = resolve)),
+    });
+    vi.stubGlobal('fetch', api.fetchMock);
+    const onSaved = vi.fn();
+    const { container } = await render(Host, { initial: opened, onSaved });
+    const save = find(container, 'button', 'Save card');
+
+    expect(save?.getAttribute('aria-disabled')).toBe('true');
+    expect(status(container)).toContain('Checking for newer scores…');
+    await type(slider(container, 'Notebook, Feature Capability'), '3');
+    expect(save?.getAttribute('aria-disabled')).toBe('true');
+
+    answer(json(newer));
+    await settle();
+    expect(value(container, 'Environment, CU / Token Cost')).toBe('6');
+    expect(value(container, 'Notebook, Feature Capability')).toBe('3');
+    expect(save?.getAttribute('aria-disabled')).toBe('false');
+    expect(status(container)).toContain('Newer scores loaded');
+
+    api.calls.length = 0;
+    const routes = fakeApi({
+      'GET /api/admin/rounds/2026-Q4/review': newer,
+      'PUT /api/admin/rounds/2026-Q4/scores/9': (body: unknown) => json({ ...newer, sentBack: body }),
+    });
+    vi.stubGlobal('fetch', routes.fetchMock);
+    await click(save);
+    await settle();
+    expect(routes.calls.at(-1)?.body).toEqual({ scores: { notebook: [3, 5, 4], environment: [3, 4, 6] } });
+    expect(onSaved).toHaveBeenCalledOnce();
+  });
+
+  it('names a clash when a row moved during the open-time read is one the rater changed too', async () => {
+    let answer: (response: Response) => void = () => {};
+    const opened = review({ notebook: [2, 5, 4], environment: [3, 4, 7] });
+    const newer = review({ notebook: [2, 5, 4], environment: [3, 4, 6] });
+    const api = fakeApi({
+      'GET /api/admin/rounds/2026-Q4/review': () => new Promise<Response>((resolve) => (answer = resolve)),
+    });
+    vi.stubGlobal('fetch', api.fetchMock);
+    const { container } = await render(Host, { initial: opened, onSaved: vi.fn() });
+    await type(slider(container, 'Environment, User Experience'), '5');
+
+    answer(json(newer));
+    await settle();
+    const alert = container.querySelector('[role="alert"]');
+    expect(alert?.textContent).toContain('Environment (newer card: 3 · 4 · 6)');
+    expect(alert?.textContent).toMatch(/^\s*P2 Rater A's card changed after you opened it/);
+    expect(alert?.className).toMatch(/error/);
+    expect(value(container, 'Environment, User Experience')).toBe('5');
+    expect(value(container, 'Environment, CU / Token Cost')).toBe('7');
+  });
+
+  it('says a save in flight will still land when Back to review is pressed, and lets the admin go', async () => {
+    const opened = review({ notebook: [2, 5, 4] });
+    const routes = fakeApi({
+      'GET /api/admin/rounds/2026-Q4/review': opened,
+      'PUT /api/admin/rounds/2026-Q4/scores/9': () => new Promise<Response>(() => {}),
+    });
+    vi.stubGlobal('fetch', routes.fetchMock);
+    const answers = [false, true];
+    const ask = vi.fn(() => answers.shift());
+    vi.stubGlobal('confirm', ask);
+    const onCancel = vi.fn();
+    const { container } = await render(Host, { initial: opened, onSaved: vi.fn(), onCancel });
+    await settle();
+    await type(slider(container, 'Notebook, Feature Capability'), '3');
+    await click(find(container, 'button', 'Save card'));
+    await settle();
+    expect(status(container)).toContain('Saving…');
+
+    await click(find(container, 'button', 'Back to review'));
+    expect(ask).toHaveBeenLastCalledWith(SAVE_ON_ITS_WAY);
+    expect(onCancel).not.toHaveBeenCalled();
+    await click(find(container, 'button', 'Back to review'));
+    expect(onCancel).toHaveBeenCalledOnce();
+    expect(ask).toHaveBeenCalledTimes(2);
+  });
+
+  it('shows "Saved. You changed scores…" as a warning, not an error, and keeps the move made meanwhile', async () => {
+    const opened = review({ notebook: [2, 5, 4], environment: [3, 4, 7] });
+    let finish: (response: Response) => void = () => {};
+    const routes = fakeApi({
+      'GET /api/admin/rounds/2026-Q4/review': opened,
+      'PUT /api/admin/rounds/2026-Q4/scores/9': () => new Promise<Response>((resolve) => (finish = resolve)),
+    });
+    vi.stubGlobal('fetch', routes.fetchMock);
+    const { container } = await render(Host, { initial: opened, onSaved: vi.fn() });
+    await settle();
+    await type(slider(container, 'Notebook, Feature Capability'), '3');
+    await click(find(container, 'button', 'Save card'));
+    await settle();
+    await type(slider(container, 'Environment, CU / Token Cost'), '6');
+    finish(json(review({ notebook: [3, 5, 4], environment: [3, 4, 7] })));
+    await settle();
+    const alert = container.querySelector('[role="alert"]');
+    expect(alert?.textContent?.trim()).toBe(CHANGED_WHILE_SAVING);
+    expect(alert?.className).toMatch(/warn/);
+    expect(alert?.className).not.toMatch(/error/);
+    expect(value(container, 'Environment, CU / Token Cost')).toBe('6');
+  });
+
+  it('a save that lands after the editor closed never closes anything', async () => {
+    const opened = review({ notebook: [2, 5, 4] });
+    let finish: (response: Response) => void = () => {};
+    const routes = fakeApi({
+      'GET /api/admin/rounds/2026-Q4/review': opened,
+      'PUT /api/admin/rounds/2026-Q4/scores/9': () => new Promise<Response>((resolve) => (finish = resolve)),
+    });
+    vi.stubGlobal('fetch', routes.fetchMock);
+    const onSaved = vi.fn();
+    const { container, unmount } = await render(Host, { initial: opened, onSaved });
+    await settle();
+    await type(slider(container, 'Notebook, Feature Capability'), '3');
+    await click(find(container, 'button', 'Save card'));
+    await settle();
+    await unmount();
+    finish(json(review({ notebook: [3, 5, 4] })));
+    await settle();
+    expect(onSaved).not.toHaveBeenCalled();
+  });
+
+  it('asks before the page drops unsaved card edits', async () => {
+    const opened = review({ notebook: [2, 5, 4] });
+    vi.stubGlobal('fetch', fakeApi({ 'GET /api/admin/rounds/2026-Q4/review': opened }).fetchMock);
+    const { container } = await render(Host, { initial: opened, onSaved: vi.fn() });
+    await settle();
+    const ask = vi.fn(() => false);
+    expect(mayLeave(ask)).toBe(true);
+    await type(slider(container, 'Notebook, Feature Capability'), '3');
+    expect(mayLeave(ask)).toBe(false);
+    expect(ask).toHaveBeenCalledOnce();
+  });
+
+  it('keeps a reviewed item the page has not loaded, so a save never drops its score', async () => {
+    const opened = review({ notebook: [2, 5, 4], 'added-later': [4, 4, 4] });
+    const routes = fakeApi({
+      'GET /api/admin/rounds/2026-Q4/review': opened,
+      'PUT /api/admin/rounds/2026-Q4/scores/9': opened,
+    });
+    vi.stubGlobal('fetch', routes.fetchMock);
+    const { container } = await render(Host, { initial: opened, onSaved: vi.fn() });
+    await settle();
+    const save = find(container, 'button', 'Save card');
+
+    expect(container.textContent).toContain('2 of 3 rated');
+    expect(value(container, 'Added later, Feature Capability')).toBe('4');
+    expect(save?.getAttribute('aria-disabled')).toBe('true');
+
+    await type(slider(container, 'Notebook, Feature Capability'), '3');
+    await click(save);
+    await settle();
+    expect(routes.calls.find((call) => call.method === 'PUT')?.body).toEqual({
+      scores: { notebook: [3, 5, 4], 'added-later': [4, 4, 4] },
+    });
+  });
+});

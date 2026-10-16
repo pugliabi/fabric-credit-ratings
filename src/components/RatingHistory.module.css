@@ -53,9 +53,12 @@
   color: var(--band-investment);
 }
 
-.action[data-kind='downgrade'],
-.action[data-kind='flag'] {
+.action[data-kind='downgrade'] {
   color: var(--band-distressed);
+}
+
+.action[data-kind='withdrawn'] {
+  color: var(--band-withdrawn);
 }
 
 .scores {

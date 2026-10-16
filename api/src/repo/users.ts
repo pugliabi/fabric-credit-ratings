@@ -1,0 +1,110 @@
+import type { AdminUser, Role, SessionUser } from '../../../src/domain/api-types.ts';
+import { varchar, type Db, type Param } from '../lib/db.ts';
+
+export interface UserRecord extends SessionUser {
+  active: boolean;
+  passwordHash: string;
+}
+
+const COLUMNS = 'id, login, display_name AS displayName, role, active, password_hash AS passwordHash';
+
+export async function findUserByLogin(db: Db, login: string): Promise<UserRecord | undefined> {
+  const [row] = await db.query<UserRecord>(`SELECT ${COLUMNS} FROM users WHERE login = @login`, {
+    login: varchar(login),
+  });
+  return row;
+}
+
+export async function findUserById(db: Db, id: number): Promise<UserRecord | undefined> {
+  const [row] = await db.query<UserRecord>(`SELECT ${COLUMNS} FROM users WHERE id = @id`, { id });
+  return row;
+}
+
+export function toSessionUser({ id, login, displayName, role }: SessionUser): SessionUser {
+  return { id, login, displayName, role };
+}
+
+export async function listUsers(db: Db): Promise<AdminUser[]> {
+  const rows = await db.query<Omit<AdminUser, 'createdAt'> & { createdAt: Date }>(
+    `SELECT u.id, u.login, u.display_name AS displayName, u.role, u.active, u.created_at AS createdAt,
+            (SELECT MAX(s.round_id) FROM scores s WHERE s.user_id = u.id) AS lastScoredRound
+     FROM users u
+     ORDER BY u.active DESC, u.display_name`,
+  );
+  return rows.map((row) => ({ ...row, createdAt: row.createdAt.toISOString() }));
+}
+
+export async function createUser(
+  db: Db,
+  user: { login: string; displayName: string; role: Role; passwordHash: string },
+): Promise<number> {
+  const [row] = await db.query<{ id: number }>(
+    `INSERT INTO users (login, display_name, role, password_hash)
+     OUTPUT inserted.id
+     VALUES (@login, @displayName, @role, @passwordHash)`,
+    {
+      login: varchar(user.login),
+      displayName: user.displayName,
+      role: varchar(user.role),
+      passwordHash: varchar(user.passwordHash),
+    },
+  );
+  if (!row) throw new Error('Creating the user returned no id.');
+  return row.id;
+}
+
+export interface UserChanges {
+  displayName?: string;
+  role?: Role;
+  active?: boolean;
+  passwordHash?: string;
+}
+
+export async function updateUser(db: Db, id: number, changes: UserChanges): Promise<void> {
+  const sets: string[] = [];
+  const params: Record<string, Param> = { id };
+  if (changes.displayName !== undefined) {
+    sets.push('display_name = @displayName');
+    params.displayName = changes.displayName;
+  }
+  if (changes.role !== undefined) {
+    sets.push('role = @role');
+    params.role = varchar(changes.role);
+  }
+  if (changes.active !== undefined) {
+    sets.push('active = @active');
+    params.active = changes.active;
+  }
+  if (changes.passwordHash !== undefined) {
+    sets.push('password_hash = @passwordHash', 'password_changed_at = SYSUTCDATETIME()');
+    params.passwordHash = varchar(changes.passwordHash);
+  }
+  if (sets.length === 0) return;
+  await db.query(`UPDATE users SET ${sets.join(', ')} WHERE id = @id`, params);
+}
+
+/**
+ * Sets a new password hash only if the user is still active with the hash the caller just verified, and reports
+ * whether it did. A reset or disable that commits first wins, and this changes nothing.
+ */
+export async function replacePasswordHash(db: Db, id: number, verified: string, next: string): Promise<boolean> {
+  const rows = await db.query<{ id: number }>(
+    `UPDATE users SET password_hash = @next, password_changed_at = SYSUTCDATETIME()
+     OUTPUT inserted.id
+     WHERE id = @id AND active = 1 AND password_hash = @verified`,
+    { id, verified: varchar(verified), next: varchar(next) },
+  );
+  return rows.length === 1;
+}
+
+/**
+ * Locks every users row and blocks inserts until commit, so two admins demoting or deactivating each other take turns
+ * instead of both seeing the other still active. Use inside a transaction, before reading the user being changed, and
+ * keep the rest of it short: no hashing or network calls.
+ */
+export async function countActiveAdminsLocked(tx: Db): Promise<number> {
+  const [row] = await tx.query<{ n: number }>(
+    `SELECT COUNT(*) AS n FROM users WITH (UPDLOCK, HOLDLOCK) WHERE role = 'admin' AND active = 1`,
+  );
+  return row?.n ?? 0;
+}

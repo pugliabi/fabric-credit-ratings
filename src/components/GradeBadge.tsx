@@ -1,5 +1,5 @@
 import type { CSSProperties } from 'react';
-import { BAND_META, bandOf, spokenGrade } from '../domain/scale';
+import { BAND_META, bandOf, spokenGrade } from '../domain/grades';
 import type { Grade } from '../domain/types';
 import styles from './GradeBadge.module.css';
 

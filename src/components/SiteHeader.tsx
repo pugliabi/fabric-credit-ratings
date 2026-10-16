@@ -1,4 +1,4 @@
-import { isInvestmentGrade, medianGrade } from '../domain/scale';
+import { isInvestmentGrade, medianGrade } from '../domain/grades';
 import type { Rating } from '../domain/types';
 import { formatFullDate } from '../lib/format';
 import { GradeBadge } from './GradeBadge';
@@ -18,7 +18,6 @@ export function SiteHeader({ ratings, asOf }: SiteHeaderProps) {
   return (
     <div id="top" className={styles.header}>
       <div className={styles.inner}>
-        <p className={styles.eyebrow}>Example ratings for design review</p>
         <h1 className={styles.title}>Microsoft Fabric Credit Ratings</h1>
         <p className={styles.lede}>
           A bond-style rating for every Fabric item, from <strong>AAA</strong> down to <strong>E</strong>. Each item is
@@ -30,13 +29,15 @@ export function SiteHeader({ ratings, asOf }: SiteHeaderProps) {
             <dt>Items rated</dt>
             <dd>{ratings.length}</dd>
           </div>
-          <div className={styles.stat}>
-            <dt>Investment grade</dt>
-            <dd>
-              {investment}
-              <span className={styles.statSub}> of {ratings.length}</span>
-            </dd>
-          </div>
+          {ratings.length > 0 && (
+            <div className={styles.stat}>
+              <dt>Investment grade</dt>
+              <dd>
+                {investment}
+                <span className={styles.statSub}> of {ratings.length}</span>
+              </dd>
+            </div>
+          )}
           {median && (
             <div className={styles.stat}>
               <dt>Median rating</dt>
@@ -45,10 +46,12 @@ export function SiteHeader({ ratings, asOf }: SiteHeaderProps) {
               </dd>
             </div>
           )}
-          <div className={styles.stat}>
-            <dt>Ratings as of</dt>
-            <dd className={styles.statDate}>{formatFullDate(asOf)}</dd>
-          </div>
+          {asOf && (
+            <div className={styles.stat}>
+              <dt>Ratings as of</dt>
+              <dd className={styles.statDate}>{formatFullDate(asOf)}</dd>
+            </div>
+          )}
         </dl>
 
         <ScaleLegend />

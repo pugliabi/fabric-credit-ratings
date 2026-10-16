@@ -1,60 +1,35 @@
-import { gradeFor, totalOf } from '../domain/scale';
-import type { Artifact, Rating, RatingPoint, Submission, Workload, WorkloadId } from '../domain/types';
-import { ARTIFACTS } from './artifacts';
-import { SUBMISSIONS } from './submissions.mock';
-import { WORKLOADS } from './workloads';
+import type { Snapshot } from '../domain/api-types';
+import type { FactorValues, Rating, Workload, WorkloadId } from '../domain/types';
 
-function toPoint(submission: Submission): RatingPoint {
-  return {
-    date: submission.date,
-    scores: submission.scores,
-    total: totalOf(submission.scores),
-    grade: gradeFor(submission.scores, submission.flag),
-    outlook: submission.outlook,
-    note: submission.note,
-    flag: submission.flag,
-  };
-}
+const EMPTY: Snapshot = { generatedAt: '', asOf: '', workloads: [], ratings: [] };
 
-export function buildRatings(artifacts: readonly Artifact[], submissions: readonly Submission[]): Rating[] {
-  const byArtifact = new Map<string, Submission[]>();
-  for (const submission of submissions) {
-    const list = byArtifact.get(submission.artifactId) ?? [];
-    list.push(submission);
-    byArtifact.set(submission.artifactId, list);
-  }
+// Typed through the glob so TypeScript never infers a type from the (large) JSON file.
+const files = import.meta.glob<Snapshot>('./snapshot.json', { eager: true, import: 'default' });
 
-  const ratings: Rating[] = [];
-  for (const artifact of artifacts) {
-    const entries = (byArtifact.get(artifact.id) ?? []).sort((a, b) => a.date.localeCompare(b.date));
-    const latest = entries.at(-1);
-    if (!latest) continue;
-    ratings.push({
-      artifact,
-      current: toPoint(latest),
-      upside: latest.upside ?? [],
-      downside: latest.downside ?? [],
-      history: entries.map(toPoint),
-    });
-  }
-  return ratings;
-}
+/** Published rounds only. `npm run snapshot` refreshes it from the API; the deploy workflow runs that first. */
+const SNAPSHOT = files['./snapshot.json'] ?? EMPTY;
 
 export function getRatings(): Rating[] {
-  return buildRatings(ARTIFACTS, SUBMISSIONS);
+  return SNAPSHOT.ratings;
 }
 
+/** Workloads with at least one published rating. */
 export function getWorkloads(): readonly Workload[] {
-  return WORKLOADS;
+  return SNAPSHOT.workloads;
 }
 
-export function groupByWorkload(ratings: Rating[]): Map<WorkloadId, Rating[]> {
-  const groups = new Map<WorkloadId, Rating[]>(WORKLOADS.map((w) => [w.id, []]));
-  for (const rating of ratings) groups.get(rating.artifact.workload)?.push(rating);
+export function groupByWorkload<T>(items: readonly T[], workloadOf: (item: T) => WorkloadId): Map<WorkloadId, T[]> {
+  const groups = new Map<WorkloadId, T[]>(SNAPSHOT.workloads.map((workload) => [workload.id, []]));
+  for (const item of items) groups.get(workloadOf(item))?.push(item);
   return groups;
 }
 
-/** Most recent submission date across all artifacts. */
-export function asOfDate(ratings: Rating[]): string {
-  return ratings.reduce((latest, r) => (r.current.date > latest ? r.current.date : latest), '');
+/** Publication date of the newest published round, or '' before the first one. */
+export function asOfDate(): string {
+  return SNAPSHOT.asOf;
+}
+
+/** Published averages per item id, used to prefill score sliders. */
+export function currentValues(): Record<string, FactorValues> {
+  return Object.fromEntries(SNAPSHOT.ratings.map((rating) => [rating.artifact.id, rating.current.scores]));
 }

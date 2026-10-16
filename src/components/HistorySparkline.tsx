@@ -1,4 +1,4 @@
-import { BAND_META, BAND_ORDER, GRADES, bandOf, gradeIndex, spokenGrade } from '../domain/scale';
+import { BAND_META, BAND_ORDER, GRADES, bandOf, gradeIndex, spokenGrade } from '../domain/grades';
 import type { Grade, RatingPoint } from '../domain/types';
 import { formatMonth, formatMonthYear, parseDate } from '../lib/format';
 import styles from './HistorySparkline.module.css';
@@ -121,7 +121,7 @@ export function HistorySparkline({ history, asOf }: HistorySparklineProps) {
           className={styles.dot}
           fill={BAND_META[bandOf(p.grade)].color}
         >
-          <title>{`${formatMonthYear(p.date)}: ${p.grade}${p.flag ? '' : ` (${p.total}/21)`}`}</title>
+          <title>{`${formatMonthYear(p.date)}: ${p.grade}`}</title>
         </circle>
       ))}
     </svg>

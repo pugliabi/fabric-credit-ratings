@@ -1,0 +1,19 @@
+{
+  "IsEncrypted": false,
+  "Values": {
+    "FUNCTIONS_WORKER_RUNTIME": "node",
+    "AzureWebJobsStorage": "",
+    "SQL_SERVER": "<id>.database.fabric.microsoft.com",
+    "SQL_DATABASE": "fcr-dev-<guid>",
+    "ALLOWED_ORIGINS": "http://localhost:5173,http://localhost:5174,http://localhost:5175",
+    "COOKIE_SECURE": "false",
+    "SNAPSHOT_TOKEN": "dev-snapshot-token",
+    "ANTHROPIC_API_KEY": "",
+    "ANTHROPIC_WORKSPACE_ID": "",
+    "ANTHROPIC_MODEL": "",
+    "GITHUB_DISPATCH_TOKEN": "",
+    "GITHUB_REPO": "pugliabi/fabric-credit-ratings",
+    "GITHUB_BRANCH": "main",
+    "GITHUB_WORKFLOW": "deploy.yml"
+  }
+}

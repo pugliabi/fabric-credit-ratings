@@ -30,10 +30,19 @@
   line-height: 1.6;
 }
 
-.meta {
+.rationale + .meta {
   margin-top: 6px;
+}
+
+.meta {
   color: var(--ink-faint);
   font-size: 12.5px;
+}
+
+.retiredNote {
+  margin-top: 10px;
+  color: var(--ink-muted);
+  font-size: 14px;
 }
 
 @media (max-width: 760px) {
