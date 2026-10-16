@@ -78,7 +78,9 @@ async function clearTestRows(): Promise<void> {
     { pattern },
   );
   // Deleting these would change a published round without stamping site_state; that needs a person.
-  if (published?.n) throw new Error('An itest- card is in a published round. Remove it by hand, then stamp site_state.');
+  if (published?.n) {
+    throw new Error('An itest- card is in a published round. Remove it by hand, then stamp site_state.');
+  }
   await db.query(`DELETE FROM scores WHERE user_id IN (${testUsers})`, { pattern });
   await db.query(`DELETE FROM notes WHERE updated_by IN (${testUsers})`, { pattern });
   await db.query(`DELETE FROM sessions WHERE user_id IN (${testUsers})`, { pattern });
