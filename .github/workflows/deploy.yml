@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
   pages: write
   id-token: write
 
@@ -15,8 +15,11 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  build:
+  deploy:
     runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
 
@@ -24,8 +27,36 @@ jobs:
         with:
           node-version: 24
           cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            api/package-lock.json
 
       - run: npm ci
+
+      # npm run build typechecks api/ (tsc -p api), which needs the API's own packages. Install scripts are skipped:
+      # Core Tools' postinstall downloads a ~585 MB zip that the build never uses.
+      - run: npm ci --prefix api --ignore-scripts
+
+      - name: Fetch the published ratings
+        id: snapshot
+        if: ${{ vars.API_URL != '' }}
+        env:
+          FCR_API_URL: ${{ vars.API_URL }}
+          SNAPSHOT_TOKEN: ${{ secrets.SNAPSHOT_TOKEN }}
+        run: npm run snapshot
+
+      - name: Commit the snapshot if it changed
+        run: |
+          if git diff --quiet -- src/data/snapshot.json; then exit 0; fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/data/snapshot.json
+          git commit -m "Snapshot $(node -p "require('./src/data/snapshot.json').asOf || 'empty'")"
+          for _ in 1 2 3; do
+            if git pull --rebase origin "$GITHUB_REF_NAME" && git push origin "HEAD:$GITHUB_REF_NAME"; then exit 0; fi
+            sleep 5
+          done
+          echo "::warning::Could not push the snapshot commit. This deploy still uses it."
 
       - run: npm run build
 
@@ -35,12 +66,19 @@ jobs:
         with:
           path: dist
 
-  deploy:
-    needs: build
-    runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
       - id: deployment
         uses: actions/deploy-pages@v4
+
+      - name: Tell the API which snapshot is live
+        if: ${{ steps.snapshot.outputs.generatedAt != '' }}
+        env:
+          FCR_API_URL: ${{ vars.API_URL }}
+          SNAPSHOT_TOKEN: ${{ secrets.SNAPSHOT_TOKEN }}
+          GENERATED_AT: ${{ steps.snapshot.outputs.generatedAt }}
+        run: |
+          body=$(jq -cn --arg at "$GENERATED_AT" '{generatedAt: $at}')
+          if ! curl -sS --fail-with-body --max-time 200 --retry 2 -X POST \
+              "${FCR_API_URL%/}/api/build/snapshot/deployed" \
+              -H "Authorization: Bearer $SNAPSHOT_TOKEN" -H 'Content-Type: application/json' --data "$body"; then
+            echo "::warning::The site is live, but the API wasn't told. The admin page shows it as behind until the next deploy."
+          fi
