@@ -153,6 +153,10 @@ export const catalogActions = {
   updateArtifact: (artifact: AdminArtifact, changes: ArtifactChanges, current: AdminCatalog) => () =>
     api<AdminCatalog>('PUT', `/admin/artifacts/${artifact.id}`, artifactUpdate(artifact, changes, current.artifacts)),
 
+  /** The description has its own route: it is admin-only prompt context, not part of the item's whole row. */
+  saveDescription: (artifact: AdminArtifact, description: string) => () =>
+    api<AdminCatalog>('PUT', `/admin/artifacts/${artifact.id}/description`, { description: description.trim() }),
+
   deleteArtifact: (artifact: AdminArtifact) => () => api<AdminCatalog>('DELETE', `/admin/artifacts/${artifact.id}`),
 
   /** Renumbers only `workload`'s items, in the catalog's order; `from` and `to` index that list. */

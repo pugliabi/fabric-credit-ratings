@@ -14,6 +14,7 @@ const artifact = (id: string, sortOrder: number): AdminArtifact => ({
   naFactors: [],
   sortOrder,
   referenced: false,
+  description: '',
 });
 
 const catalog = (...artifacts: AdminArtifact[]): AdminCatalog => ({
@@ -325,6 +326,13 @@ describe('catalogActions', () => {
     await catalogActions.deleteArtifact(artifact('copy-job', 20))();
     expect(calls.calls()).toEqual(['PUT /api/admin/workloads/data-factory', 'DELETE /api/admin/artifacts/copy-job']);
     expect(calls.bodies()).toEqual([{ name: 'Data Factory', shortName: 'Factory', blurb: 'Pipes.', sortOrder: 10 }]);
+  });
+
+  it('saves an item description on its own route, trimmed, without the rest of the row', async () => {
+    const calls = server(reply(200, catalog()));
+    await catalogActions.saveDescription(artifact('copy-job', 20), '  Moves data.  ')();
+    expect(calls.calls()).toEqual(['PUT /api/admin/artifacts/copy-job/description']);
+    expect(calls.bodies()).toEqual([{ description: 'Moves data.' }]);
   });
 
   it('moves items with one whole-row PUT per row that changes', async () => {

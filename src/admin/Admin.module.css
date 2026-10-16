@@ -472,6 +472,39 @@
   gap: 6px;
 }
 
+.descriptionEditor {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.descriptionEditor textarea {
+  width: 100%;
+  max-width: 640px;
+  padding: 6px 8px;
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--radius-sm);
+  font: inherit;
+  resize: vertical;
+}
+
+.descriptionActions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.counter {
+  color: var(--ink-faint);
+  font-size: 12.5px;
+}
+
+.counter[data-over='true'] {
+  color: var(--band-distressed);
+  font-weight: 600;
+}
+
 .code {
   font-family: ui-monospace, 'Cascadia Code', Consolas, monospace;
   font-size: 12.5px;

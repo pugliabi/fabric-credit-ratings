@@ -85,6 +85,7 @@ describe('artifactUpdate', () => {
     naFactors: [],
     sortOrder,
     referenced: false,
+    description: '',
   });
   const artifacts = [
     item('pipeline', 'data-factory', 10),

@@ -20,6 +20,7 @@ const catalog: AdminCatalog = {
       naFactors: [],
       sortOrder: 1,
       referenced: true,
+      description: '',
     },
   ],
 };

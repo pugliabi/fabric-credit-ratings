@@ -12,6 +12,7 @@ const item = (id: string, name: string, sortOrder: number, referenced = false): 
   naFactors: [],
   sortOrder,
   referenced,
+  description: '',
 });
 
 const catalog: AdminCatalog = {
@@ -93,6 +94,7 @@ describe('CatalogTab', () => {
       ['select', 'Copy job status'],
       ['select', 'Copy job workload'],
       ['button', 'Delete Copy job'],
+      ['button', 'Copy job description'],
       ['button', 'Move Copy job up'],
       ['input', 'Data Factory workload name'],
       ['input', 'Data Factory short name'],

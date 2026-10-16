@@ -61,6 +61,8 @@ export interface AdminArtifact extends Artifact {
   sortOrder: number;
   /** True when any score or note points at the item, so it can only be retired. */
   referenced: boolean;
+  /** Admin-only context for the AI draft; never on the public site, the snapshot or GET /api/catalog. */
+  description: string;
 }
 
 export interface AdminCatalog {

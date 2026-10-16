@@ -17,6 +17,7 @@ const catalog: AdminCatalog = {
       naFactors: [],
       sortOrder: 1,
       referenced: true,
+      description: '',
     },
     {
       id: 'old',
@@ -26,6 +27,7 @@ const catalog: AdminCatalog = {
       naFactors: [],
       sortOrder: 2,
       referenced: true,
+      description: '',
     },
   ],
 };

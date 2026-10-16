@@ -18,12 +18,14 @@ import {
   createArtifact,
   createWorkload,
   deleteArtifact,
+  setArtifactDescription,
   updateArtifact,
   updateWorkload,
 } from '../repo/catalog.ts';
 import { markChanged } from '../repo/site.ts';
 
 const RELEASE_STATUSES = ['ga', 'preview', 'retired'] as const;
+const DESCRIPTION_MAX = 600;
 
 function slug(body: Record<string, unknown>, label: string): string {
   const id = text(body, 'id', label, 64);
@@ -121,6 +123,23 @@ route('adminArtifactUpdate', 'PUT', 'admin/artifacts/{id}', 'admin', async (ctx)
   const sortOrder = optionalInt(ctx.body, 'sortOrder', 'Order') ?? current.sortOrder;
   const fields = artifactFields(ctx.body, catalog, current);
   return saveCatalog((tx) => updateArtifact(tx, current.id, { ...fields, sortOrder }));
+});
+
+/**
+ * An item's description is prompt context for the AI draft and is never published, so this is a plain write: no
+ * transaction, and no site-changed mark.
+ */
+route('adminArtifactDescription', 'PUT', 'admin/artifacts/{id}/description', 'admin', async (ctx) => {
+  const current = (await adminCatalog(db)).artifacts.find((item) => item.id === ctx.params.id);
+  if (!current) throw new HttpError(404, 'That item does not exist.');
+  const raw = ctx.body.description;
+  if (typeof raw !== 'string') throw new HttpError(400, 'Send the description as text.');
+  const description = raw.trim();
+  if (description.length > DESCRIPTION_MAX) {
+    throw new HttpError(400, `Descriptions use at most ${DESCRIPTION_MAX} characters.`);
+  }
+  await setArtifactDescription(db, current.id, description);
+  return adminCatalog(db);
 });
 
 route('adminArtifactDelete', 'DELETE', 'admin/artifacts/{id}', 'admin', async (ctx) => {

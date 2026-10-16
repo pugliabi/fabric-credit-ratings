@@ -24,6 +24,7 @@ export async function adminCatalog(db: Db): Promise<AdminCatalog> {
     ),
     db.query<AdminArtifact>(
       `SELECT a.id, a.name, a.workload_id AS workload, a.status, a.na_factors AS naFactors, a.sort_order AS sortOrder,
+              a.description,
               CAST(CASE WHEN EXISTS (SELECT 1 FROM scores s WHERE s.artifact_id = a.id)
                           OR EXISTS (SELECT 1 FROM notes n WHERE n.artifact_id = a.id)
                         THEN 1 ELSE 0 END AS bit) AS referenced
@@ -104,6 +105,22 @@ export async function updateArtifact(
       naFactors: varchar(serializeNaFactors(fields.naFactors)),
     },
   );
+}
+
+/** Admin-only prompt context for the AI draft. It isn't published, so callers don't mark the site changed. */
+export async function setArtifactDescription(db: Db, id: string, description: string): Promise<void> {
+  await db.query('UPDATE artifacts SET description = @description, updated_at = SYSUTCDATETIME() WHERE id = @id', {
+    id: varchar(id),
+    description,
+  });
+}
+
+/** The item's description, or '' when it has none or the id is unknown. */
+export async function findArtifactDescription(db: Db, id: string): Promise<string> {
+  const [row] = await db.query<{ description: string }>('SELECT description FROM artifacts WHERE id = @id', {
+    id: varchar(id),
+  });
+  return row?.description ?? '';
 }
 
 export async function deleteArtifact(db: Db, id: string): Promise<void> {

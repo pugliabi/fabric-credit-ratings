@@ -18,6 +18,7 @@ CREATE TABLE dbo.artifacts (
   workload_id varchar(64) NOT NULL CONSTRAINT fk_artifacts_workload REFERENCES dbo.workloads (id),
   status varchar(10) NOT NULL CONSTRAINT ck_artifacts_status CHECK (status IN ('ga', 'preview', 'retired')),
   na_factors varchar(40) NOT NULL CONSTRAINT df_artifacts_na_factors DEFAULT '',
+  description nvarchar(600) NOT NULL CONSTRAINT df_artifacts_description DEFAULT '',
   sort_order int NOT NULL,
   updated_at datetime2 NOT NULL CONSTRAINT df_artifacts_updated DEFAULT SYSUTCDATETIME()
 );
@@ -25,6 +26,10 @@ GO
 
 IF COL_LENGTH('dbo.artifacts', 'na_factors') IS NULL
 ALTER TABLE dbo.artifacts ADD na_factors varchar(40) NOT NULL CONSTRAINT df_artifacts_na_factors DEFAULT '';
+GO
+
+IF COL_LENGTH('dbo.artifacts', 'description') IS NULL
+ALTER TABLE dbo.artifacts ADD description nvarchar(600) NOT NULL CONSTRAINT df_artifacts_description DEFAULT '';
 GO
 
 IF OBJECT_ID('dbo.users') IS NULL

@@ -1,13 +1,14 @@
 import sql from 'mssql';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AdminArtifact, AdminCatalog, AdminWorkload, SessionUser } from '../../../src/domain/api-types.ts';
-import { transaction, type Db } from '../lib/db.ts';
+import { db, transaction, type Db } from '../lib/db.ts';
 import type { UserCtx } from '../lib/http.ts';
 import {
   adminCatalog,
   createArtifact,
   createWorkload,
   deleteArtifact,
+  setArtifactDescription,
   updateArtifact,
   updateWorkload,
 } from '../repo/catalog.ts';
@@ -30,6 +31,7 @@ vi.mock(import('../repo/catalog.ts'), () => ({
   createArtifact: vi.fn(),
   createWorkload: vi.fn(),
   deleteArtifact: vi.fn(),
+  setArtifactDescription: vi.fn(),
   updateArtifact: vi.fn(),
   updateWorkload: vi.fn(),
 }));
@@ -50,6 +52,7 @@ const notebook: AdminArtifact = {
   naFactors: [],
   sortOrder: 10,
   referenced: false,
+  description: '',
 };
 const catalog: AdminCatalog = { workloads: [workload], artifacts: [notebook] };
 const admin: SessionUser = { id: 1, login: 'admin', displayName: 'Admin', role: 'admin' };
@@ -147,6 +150,56 @@ describe('adminArtifactDelete', () => {
       message: 'That item does not exist.',
     });
     expect(transaction).not.toHaveBeenCalled();
+  });
+});
+
+describe('adminArtifactDescription', () => {
+  it('saves the trimmed description with a plain write: no transaction, no site-changed mark', async () => {
+    const described: AdminCatalog = { ...catalog, artifacts: [{ ...notebook, description: 'Runs Spark code.' }] };
+    vi.mocked(adminCatalog).mockResolvedValueOnce(catalog).mockResolvedValueOnce(described);
+
+    const answer = await call('adminArtifactDescription', { id: 'notebook' }, { description: '  Runs Spark code.  ' });
+
+    expect(answer).toEqual(described);
+
+    expect(setArtifactDescription).toHaveBeenCalledWith(db, 'notebook', 'Runs Spark code.');
+    expect(transaction).not.toHaveBeenCalled();
+    expect(markChanged).not.toHaveBeenCalled();
+  });
+
+  it('clears the description when it is empty or only spaces', async () => {
+    await call('adminArtifactDescription', { id: 'notebook' }, { description: '   ' });
+
+    expect(setArtifactDescription).toHaveBeenCalledWith(db, 'notebook', '');
+  });
+
+  it('accepts exactly 600 characters after trimming, and refuses 601 with 400', async () => {
+    await call('adminArtifactDescription', { id: 'notebook' }, { description: ` ${'a'.repeat(600)} ` });
+    expect(setArtifactDescription).toHaveBeenCalledWith(db, 'notebook', 'a'.repeat(600));
+
+    vi.mocked(setArtifactDescription).mockClear();
+    await expect(
+      call('adminArtifactDescription', { id: 'notebook' }, { description: 'a'.repeat(601) }),
+    ).rejects.toMatchObject({ status: 400, message: 'Descriptions use at most 600 characters.' });
+    expect(setArtifactDescription).not.toHaveBeenCalled();
+  });
+
+  it('refuses a description that is not text with 400', async () => {
+    for (const body of [{}, { description: 7 }, { description: null }, { description: ['a'] }]) {
+      await expect(call('adminArtifactDescription', { id: 'notebook' }, body)).rejects.toMatchObject({
+        status: 400,
+        message: 'Send the description as text.',
+      });
+    }
+    expect(setArtifactDescription).not.toHaveBeenCalled();
+  });
+
+  it('answers 404 for an item that does not exist, writing nothing', async () => {
+    await expect(call('adminArtifactDescription', { id: 'nope' }, { description: 'Hi.' })).rejects.toMatchObject({
+      status: 404,
+      message: 'That item does not exist.',
+    });
+    expect(setArtifactDescription).not.toHaveBeenCalled();
   });
 });
 

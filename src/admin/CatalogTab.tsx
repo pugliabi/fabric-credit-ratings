@@ -9,6 +9,12 @@ import { followServer, slugify, workloadBody, type ArtifactChanges, type Workloa
 import { catalogActions as actions, createCatalogWrites } from './catalog-write';
 import styles from './Admin.module.css';
 
+/** The server's limit on an item description, for the counter. The server refuses anything longer. */
+const DESCRIPTION_MAX = 600;
+
+/** The item table's columns, which an editor row spans. */
+const ITEM_COLUMNS = 6;
+
 const STATUSES: { id: ReleaseStatus; label: string }[] = [
   { id: 'ga', label: 'GA' },
   { id: 'preview', label: 'Preview' },
@@ -345,8 +351,28 @@ export function ArtifactRowEditor({
     setName((current) => followServer(current, shown, artifact.name));
   }
 
+  const [describing, setDescribing] = useState(false);
+  const [description, setDescription] = useState(artifact.description);
+  const [shownDescription, setShownDescription] = useState(artifact.description);
+  // A description saved elsewhere replaces an untouched text instead of offering to undo it.
+  if (artifact.description !== shownDescription) {
+    setShownDescription(artifact.description);
+    setDescription((current) => followServer(current, shownDescription, artifact.description));
+  }
+  // The server trims, so compare trimmed values: Save would otherwise stay after saving "Text ".
+  const descriptionLength = description.trim().length;
+  const descriptionChanged = description.trim() !== artifact.description;
+
   const update = (changes: ArtifactChanges, focusAfter: readonly string[]) =>
     void run(actions.updateArtifact(artifact, changes, catalog), focusAfter);
+
+  const saveDescription = () => {
+    if (busy || !descriptionChanged) return;
+    void run(actions.saveDescription(artifact, description), [
+      keys.descriptionText(artifact.id),
+      keys.description(artifact.id),
+    ]);
+  };
 
   const remove = () => {
     if (busy) return;
@@ -356,114 +382,155 @@ export function ArtifactRowEditor({
   };
 
   return (
-    <tr>
-      <td>
-        <form
-          className={styles.inline}
-          onSubmit={(event) => {
-            event.preventDefault();
-            update({ name: name.trim() }, [keys.name(artifact.id)]);
-          }}
-        >
-          <input
-            ref={control(keys.name(artifact.id))}
-            value={name}
-            onChange={(event) => setName(event.target.value)}
-            aria-label={`${artifact.name} name`}
-            required
-          />
-          {name.trim() !== artifact.name && (
-            <button
-              type="submit"
-              className={styles.small}
-              aria-disabled={busy}
-              aria-label={`Save ${artifact.name} name`}
-            >
-              Save
-            </button>
-          )}
-        </form>
-      </td>
-      <td className={styles.code}>{artifact.id}</td>
-      <td>
-        <select
-          ref={control(keys.status(artifact.id))}
-          value={artifact.status}
-          onChange={(event) => update({ status: event.target.value as ReleaseStatus }, [keys.status(artifact.id)])}
-          disabled={busy}
-          aria-label={`${artifact.name} status`}
-        >
-          {STATUSES.map((status) => (
-            <option key={status.id} value={status.id}>
-              {status.label}
-            </option>
-          ))}
-        </select>
-      </td>
-      <td>
-        <select
-          ref={control(keys.place(artifact.id))}
-          value={artifact.workload}
-          onChange={(event) => update({ workload: event.target.value }, [keys.place(artifact.id)])}
-          disabled={busy}
-          aria-label={`${artifact.name} workload`}
-        >
-          {catalog.workloads.map((workload) => (
-            <option key={workload.id} value={workload.id}>
-              {workload.shortName}
-            </option>
-          ))}
-        </select>
-      </td>
-      <td>
-        <fieldset className={styles.naFactors} disabled={busy}>
-          <legend className="visually-hidden">{`${artifact.name} not applicable`}</legend>
-          {FACTORS.map((factor) => (
-            <label key={factor.id} className={styles.check}>
-              <input
-                type="checkbox"
-                checked={naFactorsOf(artifact).includes(factor.id)}
-                onChange={(event) => {
-                  const next = FACTORS.map((f) => f.id).filter((id) =>
-                    id === factor.id ? event.target.checked : naFactorsOf(artifact).includes(id),
-                  );
-                  if (next.length >= FACTORS.length) return;
-                  update({ naFactors: next }, [keys.na(artifact.id, factor.id)]);
-                }}
-                ref={control(keys.na(artifact.id, factor.id))}
-                aria-label={`${artifact.name}: ${factor.label} not applicable`}
-              />
-              {factor.label}
-            </label>
-          ))}
-        </fieldset>
-      </td>
-      <td>
-        <div className={styles.rowActions}>
-          <MoveButtons
-            scope={`item:${artifact.id}`}
-            name={artifact.name}
-            busy={busy}
-            control={control}
-            canMoveUp={canMoveUp}
-            canMoveDown={canMoveDown}
-            onMove={onMove}
-          />
-          <button
-            ref={control(keys.remove(artifact.id))}
-            type="button"
-            className={styles.small}
-            onClick={remove}
-            disabled={artifact.referenced}
-            aria-disabled={busy}
-            aria-label={`Delete ${artifact.name}`}
-            title={artifact.referenced ? 'Has scores or notes. Mark it retired instead.' : undefined}
+    <>
+      <tr>
+        <td>
+          <form
+            className={styles.inline}
+            onSubmit={(event) => {
+              event.preventDefault();
+              update({ name: name.trim() }, [keys.name(artifact.id)]);
+            }}
           >
-            Delete
-          </button>
-        </div>
-      </td>
-    </tr>
+            <input
+              ref={control(keys.name(artifact.id))}
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+              aria-label={`${artifact.name} name`}
+              required
+            />
+            {name.trim() !== artifact.name && (
+              <button
+                type="submit"
+                className={styles.small}
+                aria-disabled={busy}
+                aria-label={`Save ${artifact.name} name`}
+              >
+                Save
+              </button>
+            )}
+          </form>
+        </td>
+        <td className={styles.code}>{artifact.id}</td>
+        <td>
+          <select
+            ref={control(keys.status(artifact.id))}
+            value={artifact.status}
+            onChange={(event) => update({ status: event.target.value as ReleaseStatus }, [keys.status(artifact.id)])}
+            disabled={busy}
+            aria-label={`${artifact.name} status`}
+          >
+            {STATUSES.map((status) => (
+              <option key={status.id} value={status.id}>
+                {status.label}
+              </option>
+            ))}
+          </select>
+        </td>
+        <td>
+          <select
+            ref={control(keys.place(artifact.id))}
+            value={artifact.workload}
+            onChange={(event) => update({ workload: event.target.value }, [keys.place(artifact.id)])}
+            disabled={busy}
+            aria-label={`${artifact.name} workload`}
+          >
+            {catalog.workloads.map((workload) => (
+              <option key={workload.id} value={workload.id}>
+                {workload.shortName}
+              </option>
+            ))}
+          </select>
+        </td>
+        <td>
+          <fieldset className={styles.naFactors} disabled={busy}>
+            <legend className="visually-hidden">{`${artifact.name} not applicable`}</legend>
+            {FACTORS.map((factor) => (
+              <label key={factor.id} className={styles.check}>
+                <input
+                  type="checkbox"
+                  checked={naFactorsOf(artifact).includes(factor.id)}
+                  onChange={(event) => {
+                    const next = FACTORS.map((f) => f.id).filter((id) =>
+                      id === factor.id ? event.target.checked : naFactorsOf(artifact).includes(id),
+                    );
+                    if (next.length >= FACTORS.length) return;
+                    update({ naFactors: next }, [keys.na(artifact.id, factor.id)]);
+                  }}
+                  ref={control(keys.na(artifact.id, factor.id))}
+                  aria-label={`${artifact.name}: ${factor.label} not applicable`}
+                />
+                {factor.label}
+              </label>
+            ))}
+          </fieldset>
+        </td>
+        <td>
+          <div className={styles.rowActions}>
+            <button
+              ref={control(keys.description(artifact.id))}
+              type="button"
+              className={styles.small}
+              onClick={() => setDescribing(!describing)}
+              aria-expanded={describing}
+              aria-label={`${artifact.name} description`}
+            >
+              {artifact.description ? 'Description ✓' : 'Description'}
+            </button>
+            <MoveButtons
+              scope={`item:${artifact.id}`}
+              name={artifact.name}
+              busy={busy}
+              control={control}
+              canMoveUp={canMoveUp}
+              canMoveDown={canMoveDown}
+              onMove={onMove}
+            />
+            <button
+              ref={control(keys.remove(artifact.id))}
+              type="button"
+              className={styles.small}
+              onClick={remove}
+              disabled={artifact.referenced}
+              aria-disabled={busy}
+              aria-label={`Delete ${artifact.name}`}
+              title={artifact.referenced ? 'Has scores or notes. Mark it retired instead.' : undefined}
+            >
+              Delete
+            </button>
+          </div>
+        </td>
+      </tr>
+      {describing && (
+        <tr>
+          <td colSpan={ITEM_COLUMNS}>
+            <div className={styles.descriptionEditor}>
+              <textarea
+                ref={control(keys.descriptionText(artifact.id))}
+                value={description}
+                onChange={(event) => setDescription(event.target.value)}
+                rows={4}
+                aria-label={`${artifact.name} description text`}
+              />
+              <div className={styles.descriptionActions}>
+                <span className={styles.counter} data-over={descriptionLength > DESCRIPTION_MAX}>
+                  {descriptionLength}/{DESCRIPTION_MAX}
+                </span>
+                <button
+                  type="button"
+                  className={styles.small}
+                  onClick={saveDescription}
+                  aria-disabled={busy || !descriptionChanged}
+                  aria-label={`Save ${artifact.name} description`}
+                >
+                  Save
+                </button>
+              </div>
+            </div>
+          </td>
+        </tr>
+      )}
+    </>
   );
 }
 

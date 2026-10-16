@@ -21,6 +21,7 @@ const catalog: AdminCatalog = {
       naFactors: [],
       sortOrder: 1,
       referenced: true,
+      description: '',
     },
     {
       id: 'environment',
@@ -30,6 +31,7 @@ const catalog: AdminCatalog = {
       naFactors: [],
       sortOrder: 2,
       referenced: true,
+      description: '',
     },
   ],
 };
