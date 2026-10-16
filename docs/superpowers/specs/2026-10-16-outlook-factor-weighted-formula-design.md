@@ -28,6 +28,8 @@ The public site shows Outlook like the other factors (averages, bars, a How it w
 | Existing data | Production `fcr` has no score rows. `fcr-dev`'s test rows get outlook 4 from the default; they are test data |
 | API | Shapes keep their structure; tuples have four entries and `FactorValues` four keys everywhere (rater card, admin review, snapshot, history points). `validateScores` requires exactly four whole numbers 1–7 per item. The AI draft prompt lists Outlook with the other factors |
 | Snapshot | `scores` objects carry `outlook`; `snapshot-checks.ts` requires it. The committed empty snapshot stays valid |
+| Live preview while rating | None. No preview route, no client-side formula: the Function App is called only to load and save the card, as today. The rating form gets one helper sentence under the matrix ("Your four scores combine into the item's grade; the public site shows the grade and the averaged factor scores, never a total.") with no weights |
+| Numeric totals | Never shown in any UI, logged in or not. Where a derived value appears (the admin's Review & why tab), it is the grade only, as today |
 | Protected strings | "The model kept mentioning scores or grades. Write this one by hand." and "Anthropic did not answer in time. Try again." are unchanged |
 | Rollout | One push to `main` after `db:apply` on `fcr-dev` and `fcr`; `api-deploy.yml` deploys the API and then rebuilds the site, so the site never sees a snapshot the API cannot produce |
 
@@ -57,4 +59,4 @@ The public site shows Outlook like the other factors (averages, bars, a How it w
 
 ## Out of scope
 
-Editable weights, historical re-grading (no published rounds exist), per-factor weighting in the public site's copy.
+Editable weights, historical re-grading (no published rounds exist), per-factor weighting in the public site's copy, a live weighted-score preview while rating (decided against: it would either publish the weights in the site bundle or add an API call per edit).
