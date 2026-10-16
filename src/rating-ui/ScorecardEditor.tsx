@@ -3,7 +3,8 @@ import type { Catalog, MyScores, SessionUser } from '../domain/api-types';
 import type { FactorValues } from '../domain/types';
 import { api, ApiError, errorMessage } from '../lib/api';
 import { formatTimestamp } from '../lib/format';
-import { draftFromScores, draftFromValues, sameDraft, summarize, type Draft } from './draft';
+import { draftFromScores, draftFromValues, rebase, sameDraft, summarize, type Draft } from './draft';
+import { CHANGED_ELSEWHERE, saveCard } from './save';
 import { ScoreMatrix } from './ScoreMatrix';
 import { usePersistentDraft } from './usePersistentDraft';
 import styles from './Editor.module.css';
@@ -92,7 +93,10 @@ interface CardFormProps {
   catalog: Catalog;
   card: MyScores;
   reference: Readonly<Record<string, FactorValues>>;
-  /** Called right after a save, together with replace(), so the draft's base and the saved card change as one. */
+  /**
+   * Called with the server's newer card (after a save, or when a save found it changed elsewhere), together with
+   * replace(), so the draft's base and the saved card change as one.
+   */
   onSaved: (card: MyScores) => void;
 }
 
@@ -112,11 +116,21 @@ function CardForm({ user, catalog, card, reference, onSaved }: CardFormProps) {
   const hasReference = Object.keys(reference).length > 0;
 
   const save = async () => {
+    const sent = draft;
     setStatus({ kind: 'saving' });
     try {
-      const next = await api<MyScores>('PUT', '/rounds/open/my-scores', { round: round.id, scores: summary.scores });
-      replace(draftFromScores(next.scores));
-      onSaved(next);
+      const outcome = await saveCard(round.id, saved, summary.scores);
+      const next = draftFromScores(outcome.card.scores);
+      // Rebased, not replaced: slider moves made while the request was out must survive its answer.
+      if (outcome.kind === 'changed') {
+        replace((current) => rebase(saved, current, next));
+        onSaved(outcome.card);
+        const nothingLeft = sameDraft(rebase(saved, sent, next), next);
+        setStatus(nothingLeft ? { kind: 'idle' } : { kind: 'error', message: CHANGED_ELSEWHERE });
+        return;
+      }
+      replace((current) => rebase(sent, current, next));
+      onSaved(outcome.card);
       setStatus({ kind: 'idle' });
     } catch (reason) {
       // The stored draft stays put on every failure; a 401 unmounts this form and the login notice says so.

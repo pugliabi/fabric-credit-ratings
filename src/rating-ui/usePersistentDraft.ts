@@ -42,8 +42,8 @@ export function usePersistentDraft(key: string, initial: Draft) {
     setDraft((current) => ({ ...current, [artifactId]: triple }));
   }, []);
 
-  /** Replace the whole draft, e.g. after saving or when prefilling. */
-  const replace = useCallback((next: Draft) => {
+  /** Replace the whole draft, e.g. after saving or when prefilling. Pass a function to build it from the current one. */
+  const replace = useCallback((next: Draft | ((current: Draft) => Draft)) => {
     setDraft(next);
     setRestored(false);
   }, []);

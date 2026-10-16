@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Artifact } from '../domain/types';
-import { draftFromValues, parseStoredDraft, restorable, sameDraft, summarize, type Draft } from './draft';
+import { draftFromValues, parseStoredDraft, rebase, restorable, sameDraft, summarize, type Draft } from './draft';
 
 const artifacts: Artifact[] = [
   { id: 'notebook', name: 'Notebook', workload: 'data-engineering', status: 'ga' },
@@ -80,6 +80,31 @@ describe('restorable', () => {
 
   it('drops edits that a newer save already holds', () => {
     expect(restorable({ base: { notebook: [3, 3, 3] }, draft: saved }, saved)).toBeUndefined();
+  });
+});
+
+describe('rebase', () => {
+  const sent: Draft = { notebook: [5, 5, 5] };
+
+  it('keeps edits made while a save was in flight', () => {
+    const current: Draft = { notebook: [5, 5, 5], lakehouse: [6, 6, 6] };
+    expect(rebase(sent, current, sent)).toEqual(current);
+  });
+
+  it('is the new card when nothing changed since the base', () => {
+    const card: Draft = { notebook: [7, 7, 7] };
+    expect(rebase(sent, sent, card)).toBe(card);
+  });
+
+  it("puts this tab's edits on top of a card saved elsewhere", () => {
+    const base: Draft = { notebook: [3, 3, 3], lakehouse: [4, 4, 4] };
+    const current: Draft = { ...base, notebook: [7, 3, 3] };
+    const elsewhere: Draft = { notebook: [3, 3, 3], lakehouse: [6, 6, 6] };
+    expect(rebase(base, current, elsewhere)).toEqual({ notebook: [7, 3, 3], lakehouse: [6, 6, 6] });
+  });
+
+  it('keeps a row cleared during the save cleared', () => {
+    expect(rebase(sent, { notebook: [null, null, null] }, sent)).toEqual({ notebook: [null, null, null] });
   });
 });
 

@@ -72,6 +72,14 @@ export function restorable(stored: StoredDraft | undefined, saved: Draft): Draft
   return sameDraft(merged, saved) ? undefined : merged;
 }
 
+/**
+ * The draft once the saved card under it has changed (this tab's save, another window, or an admin edit): rows changed
+ * since `base` stay as they are, and every other row takes the new card.
+ */
+export function rebase(base: Draft, current: Draft, card: Draft): Draft {
+  return restorable({ base, draft: current }, card) ?? card;
+}
+
 function isRow(value: unknown): value is DraftTriple {
   return (
     Array.isArray(value) &&
