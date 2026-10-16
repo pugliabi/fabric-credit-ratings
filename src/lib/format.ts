@@ -34,6 +34,11 @@ export function formatScore(value: number): string {
   return Number.isInteger(value) ? String(value) : value.toFixed(1);
 }
 
+/** Like formatScore, but a factor that does not apply (null) reads "n/a". */
+export function formatScoreOrNa(value: number | null): string {
+  return value === null ? 'n/a' : formatScore(value);
+}
+
 export function pluralize(count: number, singular: string, plural = `${singular}s`): string {
   return `${count} ${count === 1 ? singular : plural}`;
 }

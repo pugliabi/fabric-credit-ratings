@@ -24,6 +24,16 @@ export function FactorBars({ scores }: { scores: FactorValues }) {
     <ul className={styles.list}>
       {FACTORS.map((factor) => {
         const score = scores[factor.id];
+        if (score === null) {
+          return (
+            <li key={factor.id} className={styles.factor} data-na>
+              <div className={styles.header}>
+                <span className={styles.label}>{factor.label}</span>
+                <span className={styles.value}>Not applicable</span>
+              </div>
+            </li>
+          );
+        }
         return (
           <li key={factor.id} className={styles.factor}>
             <div className={styles.header}>

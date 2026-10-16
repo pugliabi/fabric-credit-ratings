@@ -44,6 +44,16 @@ describe('snapshotProblem', () => {
     expect(isSnapshot(valid())).toBe(true);
   });
 
+  it('accepts a not-applicable (null) score and still refuses text', () => {
+    const snapshot = valid();
+    (snapshot.ratings[0]!.current.scores as Record<string, unknown>).cost = null;
+    expect(snapshotProblem(snapshot)).toBeUndefined();
+    (snapshot.ratings[0]!.current.scores as Record<string, unknown>).cost = 'x';
+    expect(snapshotProblem(snapshot)).toBe(
+      'snapshot.ratings[0].current.scores.cost is not a score from 1 to 7 or null',
+    );
+  });
+
   it('accepts the empty snapshot, including its blank generatedAt', () => {
     expect(snapshotProblem({ generatedAt: '', asOf: '', workloads: [], ratings: [] })).toBeUndefined();
   });
@@ -68,8 +78,8 @@ describe('snapshotProblem', () => {
     ['a workload without a short name', (s) => delete s.workloads[0].shortName, 'snapshot.workloads[0].shortName is missing'],
     ['an unknown release status', (s) => (s.ratings[0].artifact.status = 'beta'), 'snapshot.ratings[0].artifact.status is not ga, preview, or retired'],
     ['an unknown grade', (s) => (s.ratings[0].current.grade = 'Z'), 'snapshot.ratings[0].current.grade is not a grade'],
-    ['a score sent as text', (s) => (s.ratings[0].current.scores.ux = '5'), 'snapshot.ratings[0].current.scores.ux is not a score from 1 to 7'],
-    ['a score out of range', (s) => (s.ratings[0].history[0].scores.cost = 9), 'snapshot.ratings[0].history[0].scores.cost is not a score from 1 to 7'],
+    ['a score sent as text', (s) => (s.ratings[0].current.scores.ux = '5'), 'snapshot.ratings[0].current.scores.ux is not a score from 1 to 7 or null'],
+    ['a score out of range', (s) => (s.ratings[0].history[0].scores.cost = 9), 'snapshot.ratings[0].history[0].scores.cost is not a score from 1 to 7 or null'],
     ['no raters', (s) => (s.ratings[0].current.raters = 0), 'snapshot.ratings[0].current.raters is not a whole number of raters'],
     ['a fractional rater count', (s) => (s.ratings[0].current.raters = 1.5), 'snapshot.ratings[0].current.raters is not a whole number of raters'],
     ['an impossible date', (s) => (s.ratings[0].history[1].date = '2026-02-30'), 'snapshot.ratings[0].history[1].date is not a YYYY-MM-DD date'],

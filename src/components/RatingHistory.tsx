@@ -1,7 +1,7 @@
 import { FACTORS } from '../data/factors';
 import { notchDelta } from '../domain/grades';
 import type { RatingPoint } from '../domain/types';
-import { formatFullDate, formatScore, pluralize } from '../lib/format';
+import { formatFullDate, formatScoreOrNa, pluralize } from '../lib/format';
 import { GradeBadge } from './GradeBadge';
 import styles from './RatingHistory.module.css';
 
@@ -22,8 +22,10 @@ export function RatingHistory({ history }: { history: RatingPoint[] }) {
   return (
     <ol className={styles.list}>
       {entries.map(({ point, action }, i) => {
-        const scoreText = FACTORS.map((factor) => formatScore(point.scores[factor.id])).join(' · ');
-        const scoreLabel = FACTORS.map((factor) => `${factor.label} ${formatScore(point.scores[factor.id])}`).join(', ');
+        const scoreText = FACTORS.map((factor) => formatScoreOrNa(point.scores[factor.id])).join(' · ');
+        const scoreLabel = FACTORS.map((factor) => `${factor.label} ${formatScoreOrNa(point.scores[factor.id])}`).join(
+          ', ',
+        );
         return (
           <li key={point.round} className={styles.entry} data-current={i === 0}>
             <div className={styles.top}>

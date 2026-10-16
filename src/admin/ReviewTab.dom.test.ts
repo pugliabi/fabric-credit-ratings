@@ -113,6 +113,22 @@ describe('RoundReviewPanel', () => {
     expect(container.textContent).toContain('1 missing a why');
   });
 
+  it('shows n/a for a not-applicable factor on the card and in the breakdown', async () => {
+    const base = review({});
+    const withNa: RoundReview = {
+      ...base,
+      items: base.items.map((item) => ({
+        ...item,
+        point: { ...item.point, scores: { capability: 6, ux: 5, cost: null, outlook: 4 } },
+        breakdown: [{ userId: 9, name: 'Ann', scores: [6, 5, null, 4] as ScoreTuple }],
+      })),
+    };
+    const { container } = await render(RoundReviewPanel, { review: withNa, catalog, users: [], onReview: () => {} });
+    const text = container.textContent ?? '';
+    expect(text).toContain('6 · 5 · n/a · 4');
+    expect(text).toContain('Ann 6 · 5 · n/a · 4');
+  });
+
   it("opens a rater's card only from Edit card, not from moving through the list", async () => {
     vi.stubGlobal('fetch', fakeApi({ 'GET /api/admin/rounds/2026-Q4/review': review({}) }).fetchMock);
     const { container } = await render(RoundReviewPanel, panelProps());

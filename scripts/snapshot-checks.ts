@@ -25,9 +25,10 @@ function isCalendarDate(value: unknown): boolean {
 
 const text = leaf((value) => typeof value === 'string', 'is not text');
 const date = leaf(isCalendarDate, 'is not a YYYY-MM-DD date');
-const score = leaf(
-  (value) => typeof value === 'number' && value >= MIN_SCORE && value <= MAX_SCORE,
-  `is not a score from ${MIN_SCORE} to ${MAX_SCORE}`,
+/** null is a factor that does not apply to the item. */
+const scoreOrNa = leaf(
+  (value) => value === null || (typeof value === 'number' && value >= MIN_SCORE && value <= MAX_SCORE),
+  `is not a score from ${MIN_SCORE} to ${MAX_SCORE} or null`,
 );
 const raters = leaf((value) => Number.isInteger(value) && (value as number) >= 1, 'is not a whole number of raters');
 const oneOf = (allowed: readonly string[], what: string) =>
@@ -62,7 +63,7 @@ const point = object({
   round: text,
   roundLabel: text,
   date,
-  scores: object({ capability: score, ux: score, cost: score, outlook: score }),
+  scores: object({ capability: scoreOrNa, ux: scoreOrNa, cost: scoreOrNa, outlook: scoreOrNa }),
   raters,
   grade: oneOf(GRADES, 'a grade'),
   note: text,

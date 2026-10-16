@@ -4,7 +4,7 @@ import { FACTORS } from '../data/factors';
 import type { AdminCatalog, AdminRound, AdminUser, RoundReview } from '../domain/api-types';
 import { mayLeave, useUnsavedWork } from '../hooks/useUnsavedWork';
 import { api, errorMessage } from '../lib/api';
-import { formatScore } from '../lib/format';
+import { formatScoreOrNa } from '../lib/format';
 import { raterCardWorkloads } from '../rating-ui/save';
 import { draftBlanks, draftItem, requestDraft, type DraftPage } from './draft-loop';
 import {
@@ -341,7 +341,7 @@ export function RoundReviewPanel({ review, catalog, users, onReview }: RoundRevi
               <section key={workload.id} className={styles.reviewGroup}>
                 <h2 className={styles.groupTitle}>{workload.name}</h2>
                 {group.map(({ artifact, point, change, breakdown }) => {
-                  const scoreText = FACTORS.map((factor) => formatScore(point.scores[factor.id])).join(' · ');
+                  const scoreText = FACTORS.map((factor) => formatScoreOrNa(point.scores[factor.id])).join(' · ');
                   const note = notes[artifact.id] ?? '';
                   const tooLong = noteTooLong(note);
                   const limitId = `${idPrefix}-${artifact.id}-limit`;
@@ -360,7 +360,9 @@ export function RoundReviewPanel({ review, catalog, users, onReview }: RoundRevi
                         <GradeBadge grade={point.grade} size="md" variant="pill" />
                       </header>
                       <p className={styles.breakdown}>
-                        {breakdown.map((row) => `${row.name} ${row.scores.join(' · ')}`).join('   |   ')}
+                        {breakdown
+                          .map((row) => `${row.name} ${row.scores.map(formatScoreOrNa).join(' · ')}`)
+                          .join('   |   ')}
                       </p>
                       {/* No maxLength: it would cut a paste short without saying so, and count untrimmed text. */}
                       <textarea
