@@ -1,15 +1,18 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { MyScores, RoundReview } from '../domain/api-types';
-import type { Round, ScoreTriple } from '../domain/types';
+import type { Artifact, Round, ScoreTriple } from '../domain/types';
 import { ApiError } from '../lib/api';
-import type { Draft } from './draft';
+import { hasChanges, summarize, type Draft } from './draft';
 import {
   cardFromReview,
   CHANGED_ELSEWHERE,
   CHANGED_WHILE_SAVING,
+  clashingRows,
   pressRaterSave,
   pressSave,
+  raterCardArtifacts,
   raterCardChanged,
+  raterCardWorkloads,
   saveBlocked,
   saveCard,
   saveFailureMessage,
@@ -221,6 +224,46 @@ describe('cardFromReview', () => {
   });
 });
 
+describe("the admin card editor's item list", () => {
+  const catalog: Artifact[] = [
+    { id: 'notebook', name: 'Notebook', workload: 'data-engineering', status: 'ga' },
+    { id: 'old', name: 'Old item', workload: 'data-engineering', status: 'retired' },
+  ];
+  const latest = review({ 9: { notebook: [2, 5, 4], 'added-later': [4, 4, 4] } });
+
+  it('holds the whole catalog, retired items too, plus reviewed items this page has not loaded', () => {
+    const artifacts = raterCardArtifacts(catalog, latest);
+    expect(artifacts.map((artifact) => artifact.id)).toEqual(['notebook', 'old', 'added-later']);
+    const card: Draft = { ...cardFromReview(latest, 9), old: [1, 1, 1] };
+    expect(summarize(card, artifacts).scores).toEqual(card);
+  });
+
+  it('leaves an unedited card clean, where the catalog alone would mark it changed', () => {
+    const saved = cardFromReview(latest, 9);
+    const known = (artifacts: readonly Artifact[]) => new Set(artifacts.map((artifact) => artifact.id));
+    expect(hasChanges(saved, saved, known(catalog))).toBe(true);
+    expect(hasChanges(saved, saved, known(raterCardArtifacts(catalog, latest)))).toBe(false);
+  });
+
+  it("adds a group for an item whose workload this page hasn't loaded", () => {
+    const workloads = [{ id: 'data-engineering', name: 'Data Engineering', shortName: 'Data Eng', blurb: '' }];
+    const artifacts: Artifact[] = [...catalog, { id: 'x', name: 'X', workload: 'brand-new', status: 'ga' }];
+    expect(raterCardWorkloads(workloads, artifacts)).toEqual([
+      ...workloads,
+      { id: 'brand-new', name: 'brand-new', shortName: 'brand-new', blurb: '' },
+    ]);
+  });
+});
+
+describe('clashingRows', () => {
+  it('lists the rows both sides changed since the card opened, to different values', () => {
+    const saved: Draft = { notebook: [2, 5, 4], environment: [3, 4, 7], lakehouse: [1, 1, 1], pipeline: [2, 2, 2] };
+    const sent: Draft = { notebook: [3, 5, 4], environment: [3, 5, 7], lakehouse: [1, 1, 1], pipeline: [3, 3, 3] };
+    const card: Draft = { notebook: [3, 5, 4], environment: [3, 4, 6], lakehouse: [2, 2, 2] };
+    expect(clashingRows(saved, sent, card)).toEqual(['environment', 'pipeline']);
+  });
+});
+
 describe('saveRaterCard', () => {
   it('saves when the review still has the card the editor opened with', async () => {
     const after = review({ 9: edited, 2: adminCard });
@@ -272,8 +315,10 @@ describe('pressRaterSave', () => {
     return { saving: vi.fn(), live: () => live, saved: vi.fn(), refreshed: vi.fn(), failed: vi.fn() };
   }
 
+  const names = { notebook: 'Notebook', environment: 'Environment' };
+
   function form(blocked: boolean) {
-    return { blocked, roundId: round.id, rater: raterA, saved: opened, sent: edited, scores: edited };
+    return { blocked, roundId: round.id, rater: raterA, saved: opened, sent: edited, scores: edited, names };
   }
 
   it('does nothing while Save is blocked', async () => {
@@ -319,6 +364,35 @@ describe('pressRaterSave', () => {
     expect(rebased(edited)).toEqual({ notebook: [3, 5, 4], environment: [7, 7, 7] });
     expect(message).toBe(raterCardChanged('P2 Rater A'));
     expect(message).toMatch(/^P2 Rater A's card changed after you opened it/);
+  });
+
+  it('names each row both sides changed, with the newer values the admin would override', async () => {
+    const newer = review({ 9: { notebook: [2, 5, 4], environment: [3, 4, 6] } });
+    server(newer, () => reply(200, newer));
+    const sent = { notebook: [2, 5, 4], environment: [3, 5, 7] } as const;
+    const handlers = page(sent);
+    await pressRaterSave({ ...form(false), sent, scores: sent }, handlers);
+    const [, rebased, message] = handlers.refreshed.mock.calls[0] ?? [];
+    expect(rebased(sent)).toEqual(sent);
+    expect(message).toBe(
+      "P2 Rater A's card changed after you opened it, on their page or in another admin window, including a row " +
+        'you changed too: Environment (newer card: 3 · 4 · 6). Your values are kept on it, and the rest of the card ' +
+        'shows the newer scores. Check it, then save again.',
+    );
+  });
+
+  it('lists several clashing rows in catalog order, and says when the newer card cleared one', async () => {
+    const newer = review({ 9: { environment: [3, 4, 6] } });
+    server(newer, () => reply(200, newer));
+    const sent = { notebook: [3, 5, 4], environment: [3, 5, 7] } as const;
+    const handlers = page(sent);
+    await pressRaterSave({ ...form(false), sent, scores: sent }, handlers);
+    const [, , message] = handlers.refreshed.mock.calls[0] ?? [];
+    expect(message).toContain(
+      'including rows you changed too: Notebook (newer card: cleared) and Environment (newer card: 3 · 4 · 6). ' +
+        'Your values are kept on them',
+    );
+    expect(message).toMatch(/Check them, then save again\.$/);
   });
 
   it("shows a failed save in the server's words", async () => {

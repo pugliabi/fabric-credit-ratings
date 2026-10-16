@@ -1,8 +1,18 @@
 import type { MyScores, RoundReview } from '../domain/api-types';
-import type { ScoreTriple } from '../domain/types';
+import type { Artifact, ScoreTriple, Workload } from '../domain/types';
 import { api, ApiError, errorMessage } from '../lib/api';
 import { formatTimestamp } from '../lib/format';
-import { draftFromScores, hasChanges, rebase, sameDraft, type Draft, type DraftTriple } from './draft';
+import {
+  draftFromScores,
+  EMPTY_TRIPLE,
+  hasChanges,
+  isBlank,
+  rebase,
+  sameDraft,
+  sameTriple,
+  type Draft,
+  type DraftTriple,
+} from './draft';
 
 export const CHANGED_ELSEWHERE =
   'Your scores were changed somewhere else after this page opened, in another window or by an admin. ' +
@@ -94,10 +104,22 @@ export async function pressSave(form: SaveForm, page: SaveHandlers): Promise<voi
   page.saved(outcome.card, settleSave(outcome, form.saved, form.sent, form.ids));
 }
 
-/** The admin's card editor, when the rater's card changed after the editor opened. */
-export const raterCardChanged = (name: string) =>
-  `${name}'s card changed after you opened it, on their page or in another admin window. ` +
-  'Your edits here are kept on top of it. Check the sliders, then save again.';
+/**
+ * The admin's card editor, when the rater's card changed after the editor opened. `clashes` describes each row both
+ * sides changed: there the admin's whole row wins, so the message has to say what it overrides.
+ */
+export function raterCardChanged(name: string, clashes: readonly string[] = []): string {
+  const where = `${name}'s card changed after you opened it, on their page or in another admin window`;
+  if (clashes.length === 0) {
+    return `${where}. Your edits here are kept on top of it. Check the sliders, then save again.`;
+  }
+  const one = clashes.length === 1;
+  return (
+    `${where}, including ${one ? 'a row' : 'rows'} you changed too: ${new Intl.ListFormat('en').format(clashes)}. ` +
+    `Your values are kept on ${one ? 'it' : 'them'}, and the rest of the card shows the newer scores. ` +
+    `Check ${one ? 'it' : 'them'}, then save again.`
+  );
+}
 export const CHANGED_WHILE_SAVING =
   'Saved. You changed scores while it was saving, and those changes are not saved yet. Save again to keep them.';
 
@@ -109,6 +131,34 @@ export function cardFromReview(review: RoundReview, userId: number): Draft {
     if (entry) card[item.artifact.id] = entry.scores;
   }
   return card;
+}
+
+/**
+ * Every item an admin's view of a card can hold: the whole catalog (retired items included) plus any reviewed item
+ * this page's catalog lacks (added after it loaded). A save replaces the whole card, so a missing item drops its score.
+ */
+export function raterCardArtifacts<A extends Artifact>(catalog: readonly A[], review: RoundReview): (A | Artifact)[] {
+  const known = new Set(catalog.map((artifact) => artifact.id));
+  return [...catalog, ...review.items.map((item) => item.artifact).filter((artifact) => !known.has(artifact.id))];
+}
+
+/** The catalog's workloads, plus a group named by its id for any item whose workload this page hasn't loaded. */
+export function raterCardWorkloads(workloads: readonly Workload[], artifacts: readonly Artifact[]): Workload[] {
+  const known = new Set(workloads.map((workload) => workload.id));
+  const missing = [...new Set(artifacts.map((artifact) => artifact.workload))].filter((id) => !known.has(id));
+  return [...workloads, ...missing.map((id) => ({ id, name: id, shortName: id, blurb: '' }))];
+}
+
+/** Rows that both `sent` and the newer `card` changed since `saved`, to different values. */
+export function clashingRows(saved: Draft, sent: Draft, card: Draft): string[] {
+  const ids = new Set([...Object.keys(saved), ...Object.keys(sent), ...Object.keys(card)]);
+  const row = (draft: Draft, id: string) => draft[id] ?? EMPTY_TRIPLE;
+  return [...ids].filter((id) => {
+    const was = row(saved, id);
+    const mine = row(sent, id);
+    const theirs = row(card, id);
+    return !sameTriple(mine, was) && !sameTriple(theirs, was) && !sameTriple(mine, theirs);
+  });
 }
 
 export type RaterSaveOutcome = { kind: 'saved' | 'changed'; review: RoundReview };
@@ -141,6 +191,8 @@ export interface RaterSaveForm {
   /** The draft at the moment Save was pressed. */
   sent: Draft;
   scores: Readonly<Record<string, ScoreTriple>>;
+  /** Item names by id, in the order the editor lists them, for naming clashing rows. */
+  names: Readonly<Record<string, string>>;
 }
 
 export interface RaterSaveHandlers {
@@ -171,7 +223,14 @@ export async function pressRaterSave(form: RaterSaveForm, page: RaterSaveHandler
   }
   const card = cardFromReview(outcome.review, form.rater.userId);
   if (outcome.kind === 'changed') {
-    page.refreshed(outcome.review, (current) => rebase(form.saved, current, card), raterCardChanged(form.rater.name));
+    const clashes = clashingRows(form.saved, form.sent, card);
+    const ordered = [...new Set([...Object.keys(form.names), ...clashes])].filter((id) => clashes.includes(id));
+    const described = ordered.map((id) => {
+      const newer = card[id];
+      return `${form.names[id] ?? id} (newer card: ${newer && !isBlank(newer) ? newer.join(' · ') : 'cleared'})`;
+    });
+    const message = raterCardChanged(form.rater.name, described);
+    page.refreshed(outcome.review, (current) => rebase(form.saved, current, card), message);
   } else if (sameDraft(page.live(), form.sent)) {
     page.saved(outcome.review);
   } else {

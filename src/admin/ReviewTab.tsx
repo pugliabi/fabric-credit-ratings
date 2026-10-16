@@ -6,7 +6,7 @@ import { useWarnBeforeUnload } from '../hooks/useWarnBeforeUnload';
 import { api, ApiError, errorMessage } from '../lib/api';
 import { formatScore } from '../lib/format';
 import { stopDrafting, TIMED_OUT } from './draft-loop';
-import { NOTE_TOO_LONG, noteTooLong } from './notes';
+import { missingWhy, NOTE_TOO_LONG, noteTooLong, refreezeMissing } from './notes';
 import { RaterCardEditor } from './RaterCardEditor';
 import styles from './Admin.module.css';
 
@@ -97,7 +97,8 @@ export function RoundReviewPanel({ review, catalog, users, onReview }: RoundRevi
   const [saveAttempt, setSaveAttempt] = useState(0);
   const [busy, setBusy] = useState<string>();
   const [draftErrors, setDraftErrors] = useState<Record<string, string>>({});
-  const [onlyMissing, setOnlyMissing] = useState(false);
+  /** What "Only missing a why" shows, or undefined while it's off. Frozen, so a box being filled in stays put. */
+  const [missingOnly, setMissingOnly] = useState<ReadonlySet<string>>();
   const [progress, setProgress] = useState<{ done: number; total: number }>();
   const [editing, setEditing] = useState<{ userId: number; name: string }>();
   const [cardNotice, setCardNotice] = useState('');
@@ -115,6 +116,14 @@ export function RoundReviewPanel({ review, catalog, users, onReview }: RoundRevi
   useEffect(() => {
     if (!editing && (!document.activeElement || document.activeElement === document.body)) toolbar.current?.focus();
   }, [editing]);
+
+  const notesNow = useRef(edits.notes);
+  useEffect(() => {
+    notesNow.current = edits.notes;
+  }, [edits.notes]);
+  useEffect(() => {
+    setMissingOnly((shown) => shown && refreezeMissing(shown, review.items, notesNow.current));
+  }, [review]);
 
   useEffect(() => {
     if (edits.dirty.size === 0 || inFlight.current) return;
@@ -211,7 +220,7 @@ export function RoundReviewPanel({ review, catalog, users, onReview }: RoundRevi
   };
 
   const drafting = busy !== undefined;
-  const visible = onlyMissing ? blanks : review.items;
+  const visible = missingOnly ? review.items.filter(({ artifact }) => missingOnly.has(artifact.id)) : review.items;
   const saveText = saveState === 'saving' ? 'Saving…' : edits.dirty.size > 0 ? 'Unsaved' : 'All notes saved';
 
   return (
@@ -274,8 +283,8 @@ export function RoundReviewPanel({ review, catalog, users, onReview }: RoundRevi
               <label className={styles.check}>
                 <input
                   type="checkbox"
-                  checked={onlyMissing}
-                  onChange={(event) => setOnlyMissing(event.target.checked)}
+                  checked={missingOnly !== undefined}
+                  onChange={(event) => setMissingOnly(event.target.checked ? missingWhy(review.items, notes) : undefined)}
                 />
                 Only missing a why
               </label>

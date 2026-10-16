@@ -133,12 +133,12 @@ describe('RaterCardEditor', () => {
     expect(html).toContain('Old item');
   });
 
-  it('keeps Save card focusable when there is nothing to save, with the live region already there', () => {
+  it('keeps Save card focusable but refused while it reads the card again, saying so in the live region', () => {
     const html = editor();
     const save = button(html, /Save card/);
     expect(save).toContain('aria-disabled="true"');
     expect(save).not.toMatch(/\sdisabled[\s=>]/);
-    expect(html).toContain('<span aria-live="polite"></span>');
+    expect(html).toMatch(/<span aria-live="polite"><span[^>]*> · (<!-- -->)?Checking for newer scores…<\/span><\/span>/);
   });
 
   it('warns that a published round changes the public averages at the next site update', () => {
