@@ -84,7 +84,7 @@ describe('promptFor', () => {
 });
 
 describe('createDrafter', () => {
-  const settings = { apiKey: 'k', workspaceId: '', model: '' };
+  const settings = { apiKey: 'sk-ant-unit-test-key', workspaceId: '', model: '' };
 
   /** The client the drafter built, with its messages.create stubbed. */
   function stubbedCreate() {
@@ -108,7 +108,7 @@ describe('createDrafter', () => {
     createDrafter({ ...settings, workspaceId: 'ws' });
     expect(clients).toHaveLength(1);
     expect(clients[0]?.options).toMatchObject({
-      apiKey: 'k',
+      apiKey: 'sk-ant-unit-test-key',
       // So the client can't pick up ANTHROPIC_AUTH_TOKEN from the environment and send it as well.
       authToken: null,
       timeout: 40_000,
@@ -246,16 +246,19 @@ describe('createDrafter', () => {
     expect((failure as Error).cause).toBe(error);
   });
 
-  describe('a key a request header cannot carry', () => {
+  describe('a key that is not in Anthropic key form', () => {
     const refused =
-      "ANTHROPIC_API_KEY has a line break or another character a request header can't carry. " +
-      'Paste the key again in the Function App settings.';
+      "ANTHROPIC_API_KEY doesn't look like an Anthropic key: it's too short, or it has spaces, quotes, line breaks, " +
+      'or other characters a key never has. Paste the key again in the Function App settings.';
 
     it.each([
-      ['an interior line break', 'sk-ant-unit\ntest-secret'],
-      ['a NUL', 'sk-ant-unit\u0000test-secret'],
-      ['an interior space', 'sk-ant-unit test-secret'],
-    ])('is refused for %s before any client exists, and nothing quotes it', async (_, apiKey) => {
+      ['an interior line break', 'sk-ant-unit\ntest-secret', ['sk-ant-unit', 'test-secret']],
+      ['a NUL', 'sk-ant-unit\u0000test-secret', ['sk-ant-unit', 'test-secret']],
+      ['an interior space', 'sk-ant-unit test-secret', ['sk-ant-unit', 'test-secret']],
+      ['surrounding quotes', '"sk-ant-unit-test-secret"', ['sk-ant-unit-test-secret']],
+      ['a backslash', 'sk-ant-unit\\test-secret', ['sk-ant-unit', 'test-secret']],
+      ['a length no real key has', 'sk-ant-short', ['sk-ant-short']],
+    ])('is refused for %s before any client exists, and nothing quotes it', async (_, apiKey, parts) => {
       const keySettings = { ...settings, apiKey };
       const draft = createDrafter(keySettings);
 
@@ -263,15 +266,15 @@ describe('createDrafter', () => {
       expect((failure as Error).message).toBe(refused);
       expect(clients).toEqual([]);
       const logged = JSON.stringify(failureDetails(failure, keySettings));
-      for (const part of ['sk-ant-unit', 'test-secret']) {
+      for (const part of parts) {
         expect((failure as Error).message).not.toContain(part);
         expect(logged).not.toContain(part);
       }
     });
 
-    it('is taken once its outer whitespace is trimmed, if that leaves nothing a header refuses', () => {
-      createDrafter({ ...settings, apiKey: '  sk-ant-unit-ok \n' });
-      expect(clients[0]?.options).toMatchObject({ apiKey: 'sk-ant-unit-ok' });
+    it('is taken once its outer whitespace is trimmed, if what is left is in key form', () => {
+      createDrafter({ ...settings, apiKey: '  sk-ant-unit-test-ok \n' });
+      expect(clients[0]?.options).toMatchObject({ apiKey: 'sk-ant-unit-test-ok' });
     });
   });
 

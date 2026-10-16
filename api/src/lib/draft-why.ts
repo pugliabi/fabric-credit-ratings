@@ -75,11 +75,14 @@ Rules:
 - Never mention scores, totals, letter grades, rater counts, or arithmetic. The reader must not be able to reconstruct the rating from the paragraph.`;
 }
 
-/** Printable ASCII with no space: a request header can't carry anything else, and the error for it quotes the value. */
-const SENDABLE_KEY = /^[\x21-\x7e]+$/;
+/**
+ * Anthropic keys are sk-ant-… in this alphabet. Anything else is a bad paste, and no JSON or URL escaping can change a
+ * key in this form, so redaction always finds it in error text.
+ */
+const ANTHROPIC_KEY = /^[A-Za-z0-9_-]{16,}$/;
 const KEY_NOT_SENDABLE =
-  "ANTHROPIC_API_KEY has a line break or another character a request header can't carry. " +
-  'Paste the key again in the Function App settings.';
+  "ANTHROPIC_API_KEY doesn't look like an Anthropic key: it's too short, or it has spaces, quotes, line breaks, " +
+  'or other characters a key never has. Paste the key again in the Function App settings.';
 
 /** Replaces the key, as set and trimmed, wherever error text quotes it. */
 export function redactKey(text: string, apiKey: string): string {
@@ -158,7 +161,7 @@ function textOf(message: Anthropic.Message): string {
 export function createDrafter(settings: AnthropicSettings) {
   const apiKey = settings.apiKey.trim();
   if (!apiKey) return undefined;
-  if (!SENDABLE_KEY.test(apiKey)) {
+  if (!ANTHROPIC_KEY.test(apiKey)) {
     // Never handed to the SDK, whose header error would quote the whole key.
     return async function draft(_input: DraftInput, _signal?: AbortSignal): Promise<string> {
       throw new Error(KEY_NOT_SENDABLE);
