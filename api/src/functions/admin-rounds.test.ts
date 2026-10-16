@@ -209,6 +209,15 @@ describe('adminRoundUpdate: publish', () => {
     expect(startDeploy).not.toHaveBeenCalled();
   });
 
+  it('publishes on any date when the latest published round has none', async () => {
+    const undated: Round = { id: '2026-Q3', label: 'Q3 2026', status: 'published', publishedOn: null };
+    vi.mocked(countScorecards).mockResolvedValue(2);
+    vi.mocked(findLatestPublishedRound).mockResolvedValue(undated);
+
+    await call('adminRoundUpdate', { id: open.id }, { status: 'published', publishedOn: '2026-01-01' });
+    expect(publishRound).toHaveBeenCalledWith(tx, open.id, '2026-01-01');
+  });
+
   it("accepts the latest published round's own date and future dates", async () => {
     const q3: Round = { id: '2026-Q3', label: 'Q3 2026', status: 'published', publishedOn: '2026-07-15' };
     vi.mocked(countScorecards).mockResolvedValue(2);

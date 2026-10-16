@@ -139,10 +139,14 @@ describe.skipIf(!BASE)('API against the dev database', () => {
                 (SELECT COUNT(*) FROM sessions WHERE token_hash = @adminSession) AS adminSessions`,
         { adminSession: varchar(adminSession) },
       );
-      expect(loggedOut).toBe(204);
-      expect(left).toEqual({ users: 0, attempts: 0, adminSessions: 0 });
       // Every write in the suite goes to the open round, so neither stamp may move.
-      if (siteBefore) expect(await siteState(db)).toEqual(siteBefore);
+      const site = siteBefore ? await siteState(db) : undefined;
+      // One assertion, so a failed logout can't hide whether the cleanup worked, or the other way round.
+      expect({ loggedOut, left, site }).toEqual({
+        loggedOut: 204,
+        left: { users: 0, attempts: 0, adminSessions: 0 },
+        site: siteBefore,
+      });
     } finally {
       await closeDb();
     }
@@ -256,9 +260,12 @@ describe.skipIf(!BASE)('API against the dev database', () => {
     expect((await rater.send('GET', '/api/me')).body).toMatchObject({ login: raterLogin });
   });
 
-  it('ends sessions when an admin disables the user', async () => {
+  // Only ever the suite's own rater, created above.
+  it('ends sessions when an admin disables the user, who then cannot log in', async () => {
     expect((await admin.send('PUT', `/api/admin/users/${raterId}`, { active: false })).status).toBe(200);
     expect((await rater.send('GET', '/api/me')).status).toBe(401);
+    const disabled = await new Client().send('POST', '/api/auth/login', { login: raterLogin, password: nextPassword });
+    expect(disabled.status).toBe(401);
   });
 
   // Last: the locked login key stays locked until afterAll clears it.

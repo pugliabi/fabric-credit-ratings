@@ -14,10 +14,13 @@ import './auth.ts';
 type Handler = (ctx: UserCtx) => Promise<unknown>;
 
 const handlers = vi.hoisted(() => new Map<string, Handler>());
+/** "<method> <path> <access>" per route name. */
+const registrations = vi.hoisted(() => new Map<string, string>());
 
 vi.mock(import('../lib/http.ts'), () => ({
-  route: (name: string, _method: string, _path: string, _access: string, handler: Handler) => {
+  route: (name: string, method: string, path: string, access: string, handler: Handler) => {
     handlers.set(name, handler);
+    registrations.set(name, `${method} ${path} ${access}`);
   },
 }));
 vi.mock(import('../lib/db.ts'), async (importOriginal) => ({ ...(await importOriginal()), transaction: vi.fn() }));
@@ -290,6 +293,15 @@ describe('changePassword', () => {
       order(vi.mocked(fn)),
     );
     expect(steps).toEqual([...steps].sort((a, b) => a - b));
+  });
+
+  it('is a user route, so a request without a session cookie gets 401 before the handler runs', () => {
+    expect(registrations.get('changePassword')).toBe('PUT me/password user');
+  });
+
+  it('ends every session when the request carries no session cookie of its own', async () => {
+    expect(await change({ current: PASSWORD, next: NEXT })).toBeUndefined();
+    expect(deleteUserSessions).toHaveBeenCalledWith(tx, 7, '');
   });
 
   it('changes nothing when an admin reset the password or disabled the user after the check', async () => {

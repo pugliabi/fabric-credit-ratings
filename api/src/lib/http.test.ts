@@ -102,6 +102,12 @@ describe('mutation checks', () => {
     expect(handler).not.toHaveBeenCalled();
   });
 
+  it('answers a user write with no session cookie with 401, without running the handler', async () => {
+    const reply = await post('testUserPost', { ...json, origin: 'https://fabriccreditratings.com' });
+    expect(reply).toMatchObject({ status: 401, jsonBody: { error: 'Log in to continue.' } });
+    expect(handler).not.toHaveBeenCalled();
+  });
+
   it('refuses user and public POSTs without an allowed Origin', async () => {
     for (const name of ['testUserPost', 'testPublicPost']) {
       expect((await post(name, json)).status).toBe(403);
