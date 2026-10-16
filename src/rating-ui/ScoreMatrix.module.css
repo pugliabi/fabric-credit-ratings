@@ -115,8 +115,8 @@
 }
 
 .status[data-status='retired'] {
-  background: var(--band-withdrawn-bg);
-  color: var(--band-withdrawn);
+  background: var(--band-deprecated-bg);
+  color: var(--band-deprecated);
 }
 
 .reference,

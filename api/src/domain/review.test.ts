@@ -8,7 +8,7 @@ describe('buildReview', () => {
     expect(review?.items.map((item) => item.artifact.id)).toEqual(['lakehouse']);
     const item = review?.items[0];
     expect(item?.change).toEqual({ kind: 'up', text: 'Up 6 notches from A- (Q3 2026)' });
-    expect(item?.breakdown).toEqual([{ userId: 1, name: 'Ann', scores: [7, 7, 7] }]);
+    expect(item?.breakdown).toEqual([{ userId: 1, name: 'Ann', scores: [7, 7, 7, 7] }]);
     expect(review?.notes).toEqual({ lakehouse: 'Now the default store.' });
   });
 

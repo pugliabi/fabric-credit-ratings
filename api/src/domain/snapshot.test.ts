@@ -19,9 +19,9 @@ describe('buildSnapshot', () => {
       ['2026-Q3', 'A-', 2],
       ['2026-Q4', 'AAA', 1],
     ]);
-    expect(lakehouse?.history[0]?.scores).toEqual({ capability: 5.5, ux: 5, cost: 4 });
+    expect(lakehouse?.history[0]?.scores).toEqual({ capability: 5.5, ux: 5, cost: 4, outlook: 5 });
     expect(lakehouse?.current.note).toBe('Now the default store.');
-    expect(legacy?.current.grade).toBe('E');
+    expect(legacy?.current.grade).toBe('D');
   });
 
   it('dates the snapshot and the ratings', () => {

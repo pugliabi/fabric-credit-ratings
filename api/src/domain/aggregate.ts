@@ -1,47 +1,62 @@
-import { WITHDRAWN_GRADE, gradeForTotal } from './formula.ts';
-import type { Artifact, FactorId, FactorValues, Rating, RatingPoint, RoundData, ScoreTriple } from '../../../src/domain/types.ts';
+import { DEPRECATED_GRADE, gradeForTotal, totalOf } from './formula.ts';
+import type {
+  Artifact,
+  FactorId,
+  FactorValues,
+  Rating,
+  RatingPoint,
+  RoundData,
+  ScoreTuple,
+} from '../../../src/domain/types.ts';
 
-/** Position of each factor inside a ScoreTriple. */
-export const FACTOR_ORDER: readonly FactorId[] = ['capability', 'ux', 'cost'];
+/** Position of each factor inside a ScoreTuple. */
+export const FACTOR_ORDER: readonly FactorId[] = ['capability', 'ux', 'cost', 'outlook'];
 
 function roundTo1(value: number): number {
   return Math.round(value * 10) / 10;
 }
 
-export function triplesFor(artifactId: string, data: RoundData): ScoreTriple[] {
+export function tuplesFor(artifactId: string, data: RoundData): ScoreTuple[] {
   return data.scorecards.flatMap((card) => {
-    const triple = card.scores[artifactId];
-    return triple ? [triple] : [];
+    const tuple = card.scores[artifactId];
+    return tuple ? [tuple] : [];
   });
 }
 
 /** Mean per factor, rounded to one decimal for display. */
-export function averageScores(triples: readonly ScoreTriple[]): FactorValues {
+export function averageScores(tuples: readonly ScoreTuple[]): FactorValues {
   const values = {} as FactorValues;
   FACTOR_ORDER.forEach((id, i) => {
-    const sum = triples.reduce((acc, triple) => acc + (triple[i] ?? 0), 0);
-    values[id] = roundTo1(sum / triples.length);
+    const sum = tuples.reduce((acc, tuple) => acc + (tuple[i] ?? 0), 0);
+    values[id] = roundTo1(sum / tuples.length);
   });
   return values;
 }
 
-/** Grade from the unrounded mean total, so display rounding never moves a notch. */
-export function gradeForTriples(artifact: Artifact, triples: readonly ScoreTriple[]): RatingPoint['grade'] {
-  if (artifact.status === 'retired') return WITHDRAWN_GRADE;
-  const meanTotal = triples.reduce((acc, [c, u, k]) => acc + c + u + k, 0) / triples.length;
+/** Grade from the unrounded mean of each rater's weighted total, so display rounding never moves a notch. */
+export function gradeForTuples(artifact: Artifact, tuples: readonly ScoreTuple[]): RatingPoint['grade'] {
+  if (artifact.status === 'retired') return DEPRECATED_GRADE;
+  const meanTotal =
+    tuples.reduce((acc, tuple) => {
+      const values = {} as FactorValues;
+      FACTOR_ORDER.forEach((id, i) => {
+        values[id] = tuple[i] ?? 0;
+      });
+      return acc + totalOf(values);
+    }, 0) / tuples.length;
   return gradeForTotal(meanTotal);
 }
 
 export function pointFor(artifact: Artifact, data: RoundData, date: string): RatingPoint | undefined {
-  const triples = triplesFor(artifact.id, data);
-  if (triples.length === 0) return undefined;
+  const tuples = tuplesFor(artifact.id, data);
+  if (tuples.length === 0) return undefined;
   return {
     round: data.round.id,
     roundLabel: data.round.label,
     date,
-    scores: averageScores(triples),
-    raters: triples.length,
-    grade: gradeForTriples(artifact, triples),
+    scores: averageScores(tuples),
+    raters: tuples.length,
+    grade: gradeForTuples(artifact, tuples),
     note: data.notes[artifact.id] ?? '',
   };
 }

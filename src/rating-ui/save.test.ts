@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { MyScores, RoundReview } from '../domain/api-types';
-import type { Artifact, Round, ScoreTriple } from '../domain/types';
+import type { Artifact, Round, ScoreTuple } from '../domain/types';
 import { ApiError } from '../lib/api';
 import { hasChanges, summarize, type Draft } from './draft';
 import {
@@ -184,7 +184,7 @@ const raterA = { userId: 9, name: 'P2 Rater A' };
 const NAMES: Record<number, string> = { 2: 'Tommy Puglia', 9: raterA.name };
 
 /** A review of `round` holding these cards (keyed by user id), one breakdown row per rater and item. */
-function review(cards: Record<number, Record<string, ScoreTriple>>): RoundReview {
+function review(cards: Record<number, Record<string, ScoreTuple>>): RoundReview {
   const raters = Object.keys(cards).map(Number);
   const ids = [...new Set(Object.values(cards).flatMap((scores) => Object.keys(scores)))];
   return {

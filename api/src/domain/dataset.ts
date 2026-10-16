@@ -1,4 +1,4 @@
-import type { Artifact, Round, RoundData, Score, Scorecard, ScoreTriple, Workload } from '../../../src/domain/types.ts';
+import type { Artifact, Round, RoundData, Score, Scorecard, ScoreTuple, Workload } from '../../../src/domain/types.ts';
 
 export interface ScoreRow {
   roundId: string;
@@ -8,6 +8,7 @@ export interface ScoreRow {
   capability: number;
   ux: number;
   cost: number;
+  outlook: number;
   updatedAt: Date;
 }
 
@@ -25,8 +26,8 @@ export interface Dataset {
   raterNames: Map<number, string>;
 }
 
-export function triple(row: Pick<ScoreRow, 'capability' | 'ux' | 'cost'>): ScoreTriple {
-  return [row.capability as Score, row.ux as Score, row.cost as Score];
+export function tuple(row: Pick<ScoreRow, 'capability' | 'ux' | 'cost' | 'outlook'>): ScoreTuple {
+  return [row.capability as Score, row.ux as Score, row.cost as Score, row.outlook as Score];
 }
 
 export function assembleDataset(
@@ -55,7 +56,7 @@ export function assembleDataset(
       cards.set(key, card);
       data.scorecards.push(card);
     }
-    card.scores[row.artifactId] = triple(row);
+    card.scores[row.artifactId] = tuple(row);
     if (at > card.submittedAt) card.submittedAt = at;
   }
   return { workloads, artifacts, rounds: [...byRound.values()], raterNames };

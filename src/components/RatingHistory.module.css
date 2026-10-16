@@ -58,7 +58,7 @@
 }
 
 .action[data-kind='withdrawn'] {
-  color: var(--band-withdrawn);
+  color: var(--band-deprecated);
 }
 
 .scores {

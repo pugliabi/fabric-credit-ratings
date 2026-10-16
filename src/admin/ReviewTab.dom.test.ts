@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AdminCatalog, AdminRound, RoundReview } from '../domain/api-types';
-import type { ScoreTriple } from '../domain/types';
+import type { ScoreTuple } from '../domain/types';
 import { mayLeave } from '../hooks/useUnsavedWork';
 import { choose, cleanup, click, fakeApi, find, render, settle, type } from '../test/dom';
 import { ReviewTab, RoundReviewPanel } from './ReviewTab';
@@ -23,7 +23,7 @@ const catalog: AdminCatalog = {
 };
 
 function review(notes: Record<string, string>, aiEnabled = false, roundId = '2026-Q4'): RoundReview {
-  const scores: ScoreTriple = [4, 5, 4];
+  const scores: ScoreTuple = [4, 5, 4];
   const label = roundId === '2026-Q4' ? 'Q4 2026' : 'Q3 2026';
   return {
     round: { id: roundId, label, status: roundId === '2026-Q4' ? 'open' : 'published', publishedOn: null },

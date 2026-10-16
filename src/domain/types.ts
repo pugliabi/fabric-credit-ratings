@@ -18,16 +18,16 @@ export type Grade =
   | 'CCC'
   | 'CC'
   | 'C'
-  | 'E';
+  | 'D';
 
-export type Band = 'investment' | 'speculative' | 'distressed' | 'withdrawn';
+export type Band = 'investment' | 'lowInvestment' | 'speculative' | 'distressed' | 'deprecated';
 
-export type FactorId = 'capability' | 'ux' | 'cost';
+export type FactorId = 'capability' | 'ux' | 'cost' | 'outlook';
 
 export type Score = 1 | 2 | 3 | 4 | 5 | 6 | 7;
 
-/** One rater's scores for one item, in FACTORS order: capability, UX, cost. */
-export type ScoreTriple = readonly [Score, Score, Score];
+/** One rater's scores for one item, in FACTORS order: capability, UX, cost, outlook. */
+export type ScoreTuple = readonly [Score, Score, Score, Score];
 
 /** Per-factor values, averaged across raters, so not always whole numbers. */
 export type FactorValues = Record<FactorId, number>;
@@ -73,7 +73,7 @@ export interface Round {
 export interface Scorecard {
   rater: string;
   submittedAt: string;
-  scores: Record<string, ScoreTriple>;
+  scores: Record<string, ScoreTuple>;
 }
 
 /** "Why this rating" text per artifact id. */

@@ -16,12 +16,14 @@
 
   --band-investment: #117865;
   --band-investment-bg: #e6f3ef;
+  --band-low-investment: #4f7d22;
+  --band-low-investment-bg: #eef4e3;
   --band-speculative: #9a6700;
   --band-speculative-bg: #fbf1dc;
   --band-distressed: #b42318;
   --band-distressed-bg: #fdeceb;
-  --band-withdrawn: #5b5f5e;
-  --band-withdrawn-bg: #eef0ef;
+  --band-deprecated: #5b5f5e;
+  --band-deprecated-bg: #eef0ef;
 
   --section-gradient: linear-gradient(90deg, #117865 0%, #2e8c78 30%, #8ccbbb 65%, #ffffff 100%);
   --section-gradient-hover: linear-gradient(90deg, #0c5a4c 0%, #227e6b 30%, #7fc3b2 65%, #ffffff 100%);

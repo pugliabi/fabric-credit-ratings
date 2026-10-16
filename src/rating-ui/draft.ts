@@ -1,5 +1,5 @@
 import { MAX_SCORE, MIN_SCORE } from '../domain/grades';
-import type { Artifact, FactorValues, Score, ScoreTriple } from '../domain/types';
+import type { Artifact, FactorValues, Score, ScoreTuple } from '../domain/types';
 
 /** null = slider not touched yet. */
 export type DraftScore = Score | null;
@@ -8,7 +8,7 @@ export type Draft = Readonly<Record<string, DraftTriple>>;
 
 export const EMPTY_TRIPLE: DraftTriple = [null, null, null];
 
-export function isComplete(triple: DraftTriple): triple is ScoreTriple {
+export function isComplete(triple: DraftTriple): triple is ScoreTuple {
   return triple.every((score) => score !== null);
 }
 
@@ -22,14 +22,14 @@ export function toScore(value: number): Score {
 
 export interface DraftSummary {
   /** Complete triples in catalog order, ready to save. */
-  scores: Record<string, ScoreTriple>;
+  scores: Record<string, ScoreTuple>;
   rated: number;
   /** Artifact ids with some but not all three factors set. */
   partial: string[];
 }
 
 export function summarize(draft: Draft, artifacts: readonly Artifact[]): DraftSummary {
-  const scores: Record<string, ScoreTriple> = {};
+  const scores: Record<string, ScoreTuple> = {};
   const partial: string[] = [];
   for (const artifact of artifacts) {
     const triple = draft[artifact.id];
@@ -111,7 +111,7 @@ export function parseStoredDraft(raw: string | null): StoredDraft | undefined {
   return undefined;
 }
 
-export function draftFromScores(scores: Readonly<Record<string, ScoreTriple>>): Draft {
+export function draftFromScores(scores: Readonly<Record<string, ScoreTuple>>): Draft {
   return { ...scores };
 }
 

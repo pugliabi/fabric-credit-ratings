@@ -1,13 +1,34 @@
 import { describe, expect, it } from 'vitest';
-import { bandOf, isInvestmentGrade, medianGrade, notchDelta, spokenGrade } from './grades.ts';
+import { BAND_META, BAND_ORDER, GRADES, bandOf, isInvestmentGrade, medianGrade, notchDelta, spokenGrade } from './grades.ts';
 
 describe('grades', () => {
-  it('splits bands at BBB- and B-', () => {
-    expect(bandOf('BBB-')).toBe('investment');
+  it('splits bands at A-, BBB- and B-, with D outside them', () => {
+    expect(bandOf('AAA')).toBe('investment');
+    expect(bandOf('A-')).toBe('investment');
+    expect(bandOf('BBB+')).toBe('lowInvestment');
+    expect(bandOf('BBB-')).toBe('lowInvestment');
     expect(bandOf('BB+')).toBe('speculative');
+    expect(bandOf('B-')).toBe('speculative');
     expect(bandOf('CCC')).toBe('distressed');
-    expect(bandOf('E')).toBe('withdrawn');
-    expect(isInvestmentGrade('E')).toBe(false);
+    expect(bandOf('C')).toBe('distressed');
+    expect(bandOf('D')).toBe('deprecated');
+  });
+
+  it('counts both investment bands as investment grade', () => {
+    expect(isInvestmentGrade('A-')).toBe(true);
+    expect(isInvestmentGrade('BBB-')).toBe(true);
+    expect(isInvestmentGrade('BB+')).toBe(false);
+    expect(isInvestmentGrade('D')).toBe(false);
+  });
+
+  it('lists the five bands best to worst, each covering its grades', () => {
+    expect(BAND_ORDER).toEqual(['investment', 'lowInvestment', 'speculative', 'distressed', 'deprecated']);
+    expect(GRADES.at(-1)).toBe('D');
+    expect(BAND_META.lowInvestment.label).toBe('Low investment grade');
+    expect(BAND_META.lowInvestment.range).toBe('BBB+ to BBB-');
+    expect(BAND_META.investment.range).toBe('AAA to A-');
+    expect(BAND_META.deprecated.label).toBe('Deprecated');
+    expect(BAND_META.deprecated.range).toBe('D');
   });
 
   it('counts notches as positive when the grade improves', () => {

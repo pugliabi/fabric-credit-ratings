@@ -1,4 +1,4 @@
-import type { FactorValues, Grade } from '../../../src/domain/types.ts';
+import type { FactorId, FactorValues, Grade } from '../../../src/domain/types.ts';
 
 export const MIN_TOTAL = 3;
 export const MAX_TOTAL = 21;
@@ -25,10 +25,25 @@ export const TOTAL_TO_GRADE: Readonly<Record<number, Grade>> = {
   3: 'C',
 };
 
-export const WITHDRAWN_GRADE: Grade = 'E';
+export const DEPRECATED_GRADE: Grade = 'D';
 
+/** Share of each factor in the grade. The site never shows these, or any total. */
+export const FACTOR_WEIGHTS: Readonly<Record<FactorId, number>> = {
+  capability: 0.4,
+  ux: 0.25,
+  cost: 0.25,
+  outlook: 0.1,
+};
+
+const FACTOR_IDS = Object.keys(FACTOR_WEIGHTS) as FactorId[];
+
+/**
+ * Weighted mean of the four factors, scaled by 3 so it runs 3 to 21 like the old three-factor sum.
+ * Rounded to 10 places so float noise (21.000000000000004) cannot tip a notch boundary.
+ */
 export function totalOf(scores: FactorValues): number {
-  return scores.capability + scores.ux + scores.cost;
+  const total = 3 * FACTOR_IDS.reduce((acc, id) => acc + FACTOR_WEIGHTS[id] * scores[id], 0);
+  return Math.round(total * 1e10) / 1e10;
 }
 
 /** Averaged totals can be fractional; they round to the nearest notch. */

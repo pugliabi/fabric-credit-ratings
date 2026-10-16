@@ -1,5 +1,5 @@
-import type { ScoreTriple } from '../../../src/domain/types.ts';
-import { triple, type ScoreRow } from '../domain/dataset.ts';
+import type { ScoreTuple } from '../../../src/domain/types.ts';
+import { tuple, type ScoreRow } from '../domain/dataset.ts';
 import { varchar, type Db, type Param } from '../lib/db.ts';
 
 const COLUMNS = `s.round_id AS roundId, s.user_id AS userId, u.display_name AS name, s.artifact_id AS artifactId,
@@ -20,8 +20,8 @@ export async function scoresFor(db: Db, roundId: string, userId: number): Promis
   );
 }
 
-export function toTriples(rows: readonly ScoreRow[]): Record<string, ScoreTriple> {
-  return Object.fromEntries(rows.map((row) => [row.artifactId, triple(row)]));
+export function toTriples(rows: readonly ScoreRow[]): Record<string, ScoreTuple> {
+  return Object.fromEntries(rows.map((row) => [row.artifactId, tuple(row)]));
 }
 
 /**
@@ -34,7 +34,7 @@ export async function replaceScorecard(
   db: Db,
   roundId: string,
   userId: number,
-  scores: Record<string, ScoreTriple>,
+  scores: Record<string, ScoreTuple>,
 ): Promise<void> {
   await db.query('DELETE FROM scores WHERE round_id = @roundId AND user_id = @userId', {
     roundId: varchar(roundId),
@@ -60,7 +60,7 @@ export async function replaceScorecard(
 export async function lastPublishedCard(
   db: Db,
   userId: number,
-): Promise<{ roundLabel: string; scores: Record<string, ScoreTriple> } | undefined> {
+): Promise<{ roundLabel: string; scores: Record<string, ScoreTuple> } | undefined> {
   const [round] = await db.query<{ id: string; label: string }>(
     `SELECT TOP 1 r.id, r.label FROM rounds r
      WHERE r.status = 'published' AND EXISTS (SELECT 1 FROM scores s WHERE s.round_id = r.id AND s.user_id = @userId)

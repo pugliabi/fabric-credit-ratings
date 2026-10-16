@@ -1,4 +1,4 @@
-import type { Score, ScoreTriple } from '../../../src/domain/types.ts';
+import type { Score, ScoreTuple } from '../../../src/domain/types.ts';
 import { HttpError } from './errors.ts';
 
 export const ROUND_ID = /^\d{4}-[A-Z0-9]{1,3}$/;
@@ -34,8 +34,8 @@ function isScore(value: unknown): value is Score {
 export function validateScores(
   raw: unknown,
   knownIds: ReadonlySet<string>,
-): { scores: Record<string, ScoreTriple>; errors: string[] } {
-  const scores: Record<string, ScoreTriple> = {};
+): { scores: Record<string, ScoreTuple>; errors: string[] } {
+  const scores: Record<string, ScoreTuple> = {};
   const errors: string[] = [];
   if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
     return { scores, errors: ['Scores must be an object keyed by item id.'] };

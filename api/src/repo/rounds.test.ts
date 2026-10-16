@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import type { Round, ScoreTriple } from '../../../src/domain/types.ts';
+import type { Round, ScoreTuple } from '../../../src/domain/types.ts';
 import { closeDb, db, transaction, varchar, type Db, type Params } from '../lib/db.ts';
 import { ROUND_ID } from '../lib/validate.ts';
 import { useDevTarget } from '../test-target.ts';
@@ -86,7 +86,7 @@ describe.skipIf(!process.env.FCR_DB_TESTS)('card writes against the dev database
     expect(ids).toHaveLength(3);
     const [a = '', b = '', c = ''] = ids;
     // Overlapping on one item, so writes that interleave either collide on the key or merge into one card.
-    const cards: Record<string, Record<string, ScoreTriple>> = {
+    const cards: Record<string, Record<string, ScoreTuple>> = {
       rater: { [a]: [1, 1, 1], [b]: [1, 1, 1] },
       admin: { [b]: [2, 2, 2], [c]: [2, 2, 2] },
     };

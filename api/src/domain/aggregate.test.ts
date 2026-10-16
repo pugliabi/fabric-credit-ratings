@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { asOfDate, buildRatings, previousPoint } from './aggregate.ts';
-import type { Artifact, RoundData, ScoreTriple } from '../../../src/domain/types.ts';
+import type { Artifact, RoundData, ScoreTuple } from '../../../src/domain/types.ts';
 
 const lakehouse: Artifact = { id: 'lakehouse', name: 'Lakehouse', workload: 'storage', status: 'ga' };
 const legacy: Artifact = { id: 'legacy', name: 'Legacy item', workload: 'storage', status: 'retired' };
@@ -11,20 +11,20 @@ const rounds: RoundData[] = [
   {
     round: { id: '2026-Q4', label: 'Q4 2026', status: 'published', publishedOn: '2026-10-01' },
     notes: {},
-    scorecards: [{ rater: 'ann', submittedAt: '2026-09-30T00:00:00Z', scores: { lakehouse: [7, 7, 7] } }],
+    scorecards: [{ rater: 'ann', submittedAt: '2026-09-30T00:00:00Z', scores: { lakehouse: [7, 7, 7, 7] } }],
   },
   {
     round: { id: '2026-Q3', label: 'Q3 2026', status: 'published', publishedOn: '2026-07-01' },
     notes: { lakehouse: 'First look.' },
     scorecards: [
-      { rater: 'ann', submittedAt: '2026-06-30T00:00:00Z', scores: { lakehouse: [6, 5, 4], legacy: [7, 7, 7] } },
-      { rater: 'bo', submittedAt: '2026-06-30T00:00:00Z', scores: { lakehouse: [5, 5, 4] } },
+      { rater: 'ann', submittedAt: '2026-06-30T00:00:00Z', scores: { lakehouse: [6, 5, 4, 6], legacy: [7, 7, 7, 7] } },
+      { rater: 'bo', submittedAt: '2026-06-30T00:00:00Z', scores: { lakehouse: [5, 5, 4, 4] } },
     ],
   },
   {
     round: { id: '2027-Q1', label: 'Q1 2027', status: 'open', publishedOn: null },
     notes: {},
-    scorecards: [{ rater: 'ann', submittedAt: '2026-12-30T00:00:00Z', scores: { fresh: [4, 4, 4] } }],
+    scorecards: [{ rater: 'ann', submittedAt: '2026-12-30T00:00:00Z', scores: { fresh: [4, 4, 4, 4] } }],
   },
 ];
 
@@ -38,26 +38,50 @@ describe('buildRatings', () => {
 
   it('averages each factor to one decimal and grades from the unrounded total', () => {
     const q3 = byId.get('lakehouse')?.history[0];
-    expect(q3?.scores).toEqual({ capability: 5.5, ux: 5, cost: 4 });
+    expect(q3?.scores).toEqual({ capability: 5.5, ux: 5, cost: 4, outlook: 5 });
     expect(q3?.raters).toBe(2);
     expect(q3?.grade).toBe('A-');
     expect(q3?.note).toBe('First look.');
   });
 
   it('grades from the unrounded total even when rounded factors would drop a notch', () => {
-    const card = (rater: string, triple: ScoreTriple) => ({
+    const card = (rater: string, tuple: ScoreTuple) => ({
       rater,
       submittedAt: '2026-06-30T00:00:00Z',
-      scores: { lakehouse: triple },
+      scores: { lakehouse: tuple },
     });
     const sixRaters: RoundData = {
       round: { id: '2026-Q3', label: 'Q3 2026', status: 'published', publishedOn: '2026-07-01' },
       notes: {},
-      scorecards: [card('a', [4, 4, 4]), ...['b', 'c', 'd', 'e', 'f'].map((rater) => card(rater, [5, 5, 5]))],
+      scorecards: [card('a', [4, 4, 4, 4]), ...['b', 'c', 'd', 'e', 'f'].map((rater) => card(rater, [5, 5, 5, 5]))],
     };
     const point = buildRatings([lakehouse], [sixRaters])[0]?.current;
-    expect(point?.scores).toEqual({ capability: 4.8, ux: 4.8, cost: 4.8 });
+    expect(point?.scores).toEqual({ capability: 4.8, ux: 4.8, cost: 4.8, outlook: 4.8 });
     expect(point?.grade).toBe('A-');
+  });
+
+  it('averages an item over the raters who scored it, not every rater in the round', () => {
+    const card = (rater: string, scores: Record<string, ScoreTuple>) => ({
+      rater,
+      submittedAt: '2026-06-30T00:00:00Z',
+      scores,
+    });
+    const round: RoundData = {
+      round: { id: '2026-Q3', label: 'Q3 2026', status: 'published', publishedOn: '2026-07-01' },
+      notes: {},
+      scorecards: [
+        card('a', { lakehouse: [7, 7, 7, 7], fresh: [1, 1, 1, 1] }),
+        card('b', { lakehouse: [7, 7, 7, 7], fresh: [3, 3, 3, 3] }),
+        card('c', { lakehouse: [7, 7, 7, 7], fresh: [5, 5, 5, 5] }),
+        card('d', { lakehouse: [1, 1, 1, 1] }),
+        card('e', { lakehouse: [1, 1, 1, 1] }),
+      ],
+    };
+    const byId = new Map(buildRatings([lakehouse, fresh], [round]).map((r) => [r.artifact.id, r]));
+    expect(byId.get('fresh')?.current.raters).toBe(3);
+    expect(byId.get('fresh')?.current.scores).toEqual({ capability: 3, ux: 3, cost: 3, outlook: 3 });
+    expect(byId.get('lakehouse')?.current.raters).toBe(5);
+    expect(byId.get('lakehouse')?.current.scores).toEqual({ capability: 4.6, ux: 4.6, cost: 4.6, outlook: 4.6 });
   });
 
   it('keeps history oldest to newest with the newest as current', () => {
@@ -70,8 +94,8 @@ describe('buildRatings', () => {
     expect(byId.get('legacy')?.current.round).toBe('2026-Q3');
   });
 
-  it('grades retired items E whatever the scores', () => {
-    expect(byId.get('legacy')?.current.grade).toBe('E');
+  it('grades retired items D whatever the scores', () => {
+    expect(byId.get('legacy')?.current.grade).toBe('D');
   });
 });
 

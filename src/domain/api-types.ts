@@ -1,4 +1,4 @@
-import type { Artifact, Rating, RatingPoint, Round, RoundNotes, ScoreTriple, Workload } from './types.ts';
+import type { Artifact, Rating, RatingPoint, Round, RoundNotes, ScoreTuple, Workload } from './types.ts';
 
 export type Role = 'admin' | 'rater';
 
@@ -16,10 +16,10 @@ export interface Catalog {
 
 export interface MyScores {
   round: Round;
-  scores: Record<string, ScoreTriple>;
+  scores: Record<string, ScoreTuple>;
   updatedAt: string | null;
   /** The rater's card from the newest published round they scored. */
-  previous: { roundLabel: string; scores: Record<string, ScoreTriple> } | null;
+  previous: { roundLabel: string; scores: Record<string, ScoreTuple> } | null;
 }
 
 /** What the public site is built from: published rounds only, no per-rater data. */
@@ -42,7 +42,7 @@ export interface ReviewItem {
   point: RatingPoint;
   previous: RatingPoint | null;
   change: { kind: ChangeKind; text: string };
-  breakdown: { userId: number; name: string; scores: ScoreTriple }[];
+  breakdown: { userId: number; name: string; scores: ScoreTuple }[];
 }
 
 export interface RoundReview {

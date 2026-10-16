@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { gradeForTotal, totalOf } from './formula.ts';
+import { DEPRECATED_GRADE, FACTOR_WEIGHTS, gradeForTotal, totalOf } from './formula.ts';
 
 describe('gradeForTotal', () => {
   it('maps whole totals to notches', () => {
@@ -20,7 +20,21 @@ describe('gradeForTotal', () => {
 });
 
 describe('totalOf', () => {
-  it('adds the three factors', () => {
-    expect(totalOf({ capability: 5.5, ux: 5, cost: 4 })).toBe(14.5);
+  it('weights the four factors 40/25/25/10 and scales onto 3 to 21', () => {
+    expect(totalOf({ capability: 7, ux: 7, cost: 7, outlook: 7 })).toBe(21);
+    expect(totalOf({ capability: 1, ux: 1, cost: 1, outlook: 1 })).toBe(3);
+    expect(totalOf({ capability: 5.5, ux: 5, cost: 4, outlook: 5 })).toBeCloseTo(14.85, 10);
+  });
+
+  it('lets the weights, not the sum, decide the notch', () => {
+    // 7/1/1/7: the old sum was 9 (BB-); weighted it is 3 x (2.8 + 0.25 + 0.25 + 0.7) = 12 (BBB-).
+    expect(gradeForTotal(totalOf({ capability: 7, ux: 1, cost: 1, outlook: 7 }))).toBe('BBB-');
+    // 7/7/1/1: 3 x (2.8 + 1.75 + 0.25 + 0.1) = 14.7 -> A-.
+    expect(gradeForTotal(totalOf({ capability: 7, ux: 7, cost: 1, outlook: 1 }))).toBe('A-');
+  });
+
+  it('exposes the weights, which sum to one', () => {
+    expect(Object.values(FACTOR_WEIGHTS).reduce((a, b) => a + b, 0)).toBeCloseTo(1, 10);
+    expect(DEPRECATED_GRADE).toBe('D');
   });
 });

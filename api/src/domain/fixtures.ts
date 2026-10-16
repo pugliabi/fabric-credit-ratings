@@ -4,9 +4,9 @@ import { assembleDataset, type NoteRow, type ScoreRow } from './dataset.ts';
 const at = new Date('2026-09-30T12:00:00Z');
 const names: Record<number, string> = { 1: 'Ann', 2: 'Bo' };
 
-function row(roundId: string, userId: number, artifactId: string, scores: [number, number, number]): ScoreRow {
-  const [capability, ux, cost] = scores;
-  return { roundId, userId, name: names[userId] ?? '', artifactId, capability, ux, cost, updatedAt: at };
+function row(roundId: string, userId: number, artifactId: string, scores: [number, number, number, number]): ScoreRow {
+  const [capability, ux, cost, outlook] = scores;
+  return { roundId, userId, name: names[userId] ?? '', artifactId, capability, ux, cost, outlook, updatedAt: at };
 }
 
 export const workloads: Workload[] = [
@@ -28,11 +28,11 @@ export const rounds: Round[] = [
 ];
 
 export const scoreRows: ScoreRow[] = [
-  row('2026-Q3', 1, 'lakehouse', [6, 5, 4]),
-  row('2026-Q3', 2, 'lakehouse', [5, 5, 4]),
-  row('2026-Q3', 1, 'legacy', [7, 7, 7]),
-  row('2026-Q4', 1, 'lakehouse', [7, 7, 7]),
-  row('2027-Q1', 1, 'mcp-server', [4, 4, 4]),
+  row('2026-Q3', 1, 'lakehouse', [6, 5, 4, 6]),
+  row('2026-Q3', 2, 'lakehouse', [5, 5, 4, 4]),
+  row('2026-Q3', 1, 'legacy', [7, 7, 7, 7]),
+  row('2026-Q4', 1, 'lakehouse', [7, 7, 7, 7]),
+  row('2027-Q1', 1, 'mcp-server', [4, 4, 4, 4]),
 ];
 
 export const noteRows: NoteRow[] = [{ roundId: '2026-Q4', artifactId: 'lakehouse', body: 'Now the default store.' }];

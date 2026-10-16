@@ -2,7 +2,7 @@
 import { createElement, useState } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AdminCatalog, RoundReview } from '../domain/api-types';
-import type { Artifact, Round, ScoreTriple } from '../domain/types';
+import type { Artifact, Round, ScoreTuple } from '../domain/types';
 import { mayLeave } from '../hooks/useUnsavedWork';
 import { CHANGED_WHILE_SAVING } from '../rating-ui/save';
 import { cleanup, click, fakeApi, find, render, settle, type } from '../test/dom';
@@ -26,7 +26,7 @@ const catalog: AdminCatalog = {
 };
 const addedLater: Artifact = { id: 'added-later', name: 'Added later', workload: 'data-engineering', status: 'ga' };
 
-function review(card: Record<string, ScoreTriple>): RoundReview {
+function review(card: Record<string, ScoreTuple>): RoundReview {
   const known = [...catalog.artifacts, addedLater];
   return {
     round: q4,

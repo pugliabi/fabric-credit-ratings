@@ -20,7 +20,7 @@ export const GRADES: readonly Grade[] = [
   'CCC',
   'CC',
   'C',
-  'E',
+  'D',
 ];
 
 export const MIN_SCORE = 1;
@@ -31,15 +31,18 @@ export function gradeIndex(grade: Grade): number {
 }
 
 export function bandOf(grade: Grade): Band {
-  if (grade === 'E') return 'withdrawn';
+  if (grade === 'D') return 'deprecated';
   const i = gradeIndex(grade);
-  if (i <= gradeIndex('BBB-')) return 'investment';
+  if (i <= gradeIndex('A-')) return 'investment';
+  if (i <= gradeIndex('BBB-')) return 'lowInvestment';
   if (i <= gradeIndex('B-')) return 'speculative';
   return 'distressed';
 }
 
+/** Both investment bands: the site's "investment grade" counts include BBB+ to BBB-. */
 export function isInvestmentGrade(grade: Grade): boolean {
-  return bandOf(grade) === 'investment';
+  const band = bandOf(grade);
+  return band === 'investment' || band === 'lowInvestment';
 }
 
 /** Positive when `to` is better than `from`. */
@@ -65,9 +68,16 @@ export const BAND_META: Readonly<Record<Band, BandMeta>> = {
   investment: {
     label: 'Investment grade',
     shortLabel: 'Inv. grade',
-    range: 'AAA to BBB-',
+    range: 'AAA to A-',
     color: 'var(--band-investment)',
     background: 'var(--band-investment-bg)',
+  },
+  lowInvestment: {
+    label: 'Low investment grade',
+    shortLabel: 'Low inv. grade',
+    range: 'BBB+ to BBB-',
+    color: 'var(--band-low-investment)',
+    background: 'var(--band-low-investment-bg)',
   },
   speculative: {
     label: 'Speculative',
@@ -83,16 +93,16 @@ export const BAND_META: Readonly<Record<Band, BandMeta>> = {
     color: 'var(--band-distressed)',
     background: 'var(--band-distressed-bg)',
   },
-  withdrawn: {
-    label: 'Withdrawn',
-    shortLabel: 'Withdrawn',
-    range: 'E',
-    color: 'var(--band-withdrawn)',
-    background: 'var(--band-withdrawn-bg)',
+  deprecated: {
+    label: 'Deprecated',
+    shortLabel: 'Deprecated',
+    range: 'D',
+    color: 'var(--band-deprecated)',
+    background: 'var(--band-deprecated-bg)',
   },
 };
 
-export const BAND_ORDER: readonly Band[] = ['investment', 'speculative', 'distressed', 'withdrawn'];
+export const BAND_ORDER: readonly Band[] = ['investment', 'lowInvestment', 'speculative', 'distressed', 'deprecated'];
 
 /** Spoken form for screen readers: "AA+" -> "AA plus". */
 export function spokenGrade(grade: Grade): string {
