@@ -2330,33 +2330,53 @@ Loads the catalog and round files from the repo into the database and creates th
 **Files:**
 - Create: `db/seed.ts`
 
-- [ ] **Step 1: Create `db/seed.ts`.** Before its first catalog write, it refuses a workload or item id that the admin catalog would refuse as reserved (`isReservedId`, `fa28250`), naming the file and the id.
+- [ ] **Step 1: Create `db/seed.ts`.** This listing is the file as built:
+  - **Reserved ids.** Unless `--admin-only` is given, it loads `src/data/workloads.ts` and `src/data/artifacts.ts` first (`catalogFiles()`). It refuses a workload or item id that the admin catalog would refuse as reserved (`isReservedId`, `fa28250`), naming the file and the id. This happens before its first database call (`a5cf878`), so a bad id writes nothing at all, the admin user included.
+  - **Existing data** (`b621f07`). On a database that already has a catalog or rounds, it refuses to run unless `--admin-only` (only the admin) or `--force` (overwrite them with the repo files).
+  - **After seeding.** It stamps `site_state.changed_at`.
 
 ```ts
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { closeDb, db, transaction } from '../api/src/lib/db.ts';
 import { hashPassword, passwordProblem } from '../api/src/lib/password.ts';
 import { LOGIN, isReservedId, validateScores } from '../api/src/lib/validate.ts';
-import { listArtifacts, upsertArtifact, upsertWorkload } from '../api/src/repo/catalog.ts';
+import { listArtifacts, listWorkloads, upsertArtifact, upsertWorkload } from '../api/src/repo/catalog.ts';
 import { saveNote } from '../api/src/repo/notes.ts';
-import { upsertRound } from '../api/src/repo/rounds.ts';
+import { listRounds, upsertRound } from '../api/src/repo/rounds.ts';
 import { replaceScorecard } from '../api/src/repo/scores.ts';
+import { markChanged } from '../api/src/repo/site.ts';
 import { createUser, findUserByLogin } from '../api/src/repo/users.ts';
 import type { Round, RoundNotes, Scorecard } from '../src/domain/types.ts';
 import { useTarget } from './target.ts';
 
-const USAGE = 'Usage: npm run db:seed -- --admin <login> --name "<display name>" [--admin-only] [--database <name>]';
+const USAGE =
+  'Usage: npm run db:seed -- --admin <login> --name "<display name>" [--admin-only] [--force] ' +
+  '[--server <host>] [--database <name>]';
+const VALUE_FLAGS = ['--admin', '--name'];
+const SWITCHES = ['--admin-only', '--force'];
 
 const args = useTarget(process.argv.slice(2));
-const flag = (name: string) => {
-  const index = args.indexOf(`--${name}`);
-  return index === -1 ? undefined : args[index + 1];
-};
+const values: Record<string, string> = {};
+for (let i = 0; i < args.length; i += 1) {
+  const arg = args[i] ?? '';
+  if (VALUE_FLAGS.includes(arg)) {
+    const value = args[i + 1];
+    if (value === undefined || value.startsWith('--')) throw new Error(`${arg} needs a value. ${USAGE}`);
+    values[arg.slice(2)] = value;
+    i += 1;
+  } else if (!SWITCHES.includes(arg)) {
+    throw new Error(`Unknown argument "${arg}". Quote names that contain spaces. ${USAGE}`);
+  }
+}
 const adminOnly = args.includes('--admin-only');
-const adminLogin = flag('admin')?.toLowerCase() ?? '';
-const adminName = flag('name') ?? '';
-if (!adminLogin || !adminName) throw new Error(USAGE);
-if (!LOGIN.test(adminLogin)) throw new Error('Logins use 2 to 40 lowercase letters, digits, dots, dashes, or underscores.');
+const force = args.includes('--force');
+const adminLogin = values.admin?.toLowerCase() ?? '';
+const adminName = values.name?.trim() ?? '';
+if (!adminLogin || values.name === undefined) throw new Error(USAGE);
+if (!LOGIN.test(adminLogin)) {
+  throw new Error('Logins use 2 to 40 lowercase letters, digits, dots, dashes, or underscores.');
+}
+if (adminName.length < 1 || adminName.length > 80) throw new Error('Display names use 1 to 80 characters.');
 
 function readJson<T>(path: URL): T {
   return JSON.parse(readFileSync(path, 'utf8')) as T;
@@ -2385,11 +2405,16 @@ function refuseReservedIds(file: string, rows: readonly { id: string }[]): void 
   if (reserved) throw new Error(`src/data/${file}: the id ${reserved.id} is reserved. Rename it, then seed again.`);
 }
 
-async function seedCatalog(): Promise<string> {
+/** Loads and checks the catalog files; called before any database call, so a bad id writes nothing at all. */
+async function catalogFiles() {
   const { WORKLOADS } = await import('../src/data/workloads.ts');
   const { ARTIFACTS } = await import('../src/data/artifacts.ts');
   refuseReservedIds('workloads.ts', WORKLOADS);
   refuseReservedIds('artifacts.ts', ARTIFACTS);
+  return { WORKLOADS, ARTIFACTS };
+}
+
+async function seedCatalog({ WORKLOADS, ARTIFACTS }: Awaited<ReturnType<typeof catalogFiles>>): Promise<string> {
   for (const [index, workload] of WORKLOADS.entries()) await upsertWorkload(db, workload, (index + 1) * 10);
   for (const workload of WORKLOADS) {
     const items = ARTIFACTS.filter((artifact) => artifact.workload === workload.id);
@@ -2439,10 +2464,18 @@ async function seedRounds(): Promise<string> {
 }
 
 try {
+  const catalog = adminOnly ? undefined : await catalogFiles();
+  if (catalog && !force && ((await listWorkloads(db)).length > 0 || (await listRounds(db)).length > 0)) {
+    throw new Error(
+      'This database already has a catalog or rounds, and /admin owns them now. Use --admin-only to add an admin, ' +
+        'or --force to overwrite them with the repo files.',
+    );
+  }
   console.log(`Admin ${adminLogin}: ${await ensureAdmin()}`);
-  if (!adminOnly) {
-    console.log(`Catalog: ${await seedCatalog()}`);
+  if (catalog) {
+    console.log(`Catalog: ${await seedCatalog(catalog)}`);
     console.log(`Rounds: ${await seedRounds()}`);
+    await markChanged(db);
   }
 } finally {
   await closeDb();
@@ -2468,7 +2501,12 @@ Rounds: 1 rounds, 0 scorecards, 0 notes
 - [ ] **Step 3: Run it again.**
 
 Run: `npm run db:seed -- --admin pugliabi --name "<your display name>"`
-Expected: `Admin pugliabi: already exists (admin, active), not changed. --name was not applied.`, with the same counts and no errors. The re-run doesn't read `FCR_ADMIN_PASSWORD`.
+Expected: it stops with "This database already has a catalog or rounds, and /admin owns them now. Use --admin-only to add an admin, or --force to overwrite them with the repo files." and writes nothing.
+
+Run: `npm run db:seed -- --admin pugliabi --name "<your display name>" --admin-only`
+Expected: `Admin pugliabi: already exists (admin, active), not changed. --name was not applied.`, and nothing else. The re-run doesn't read `FCR_ADMIN_PASSWORD`.
+
+Don't use `--force` on a database the admin edits: it overwrites the catalog and rounds with the repo files.
 
 - [ ] **Step 4: Commit.**
 
@@ -3315,7 +3353,7 @@ git commit -m "API: trigger the site deploy workflow"
 - Create: `api/src/functions/rater.ts`
 - Modify: `api/src/index.ts`
 
-- [ ] **Step 1: Create `api/src/functions/rater.ts`.**
+- [ ] **Step 1: Create `api/src/functions/rater.ts`.** As built, the save differs from the block below, and `api/src/functions/rater.ts` wins. It runs through `saveForItems(ctx.log, CARD_ITEM_DELETED, …)` (`api/src/lib/item-saves.ts`, Task 15). Inside, `lockRound(tx, round.id)` re-checks that the round is still open (409 "<label> was just published. Reload the page." if not) before `replaceScorecard`. A deleted item answers 409 `CARD_ITEM_DELETED`, and a lost deadlock answers 503 "Someone was changing the catalog at the same moment. Try again." (`5223830`).
 
 ```ts
 import type { MyScores } from '../../../src/domain/api-types.ts';
@@ -3458,13 +3496,13 @@ Expected: FAIL, cannot resolve `./draft-why.ts`.
 
 - [ ] **Step 2: Create `api/src/lib/draft-why.ts`.** This is `scripts/draft-why.ts` with three changes: the caller passes the workload, settings come from the Function App, and the error messages point at app settings instead of `.env`. As built (`fc3a229`, then `3b86266`, `cfaae75`, `e4c63c5`), the file differs from the block below, and `api/src/lib/draft-why.ts` wins:
   - **Timeouts.** The client is built with `timeout: 40_000` and `maxRetries: 1`, so each Anthropic call gives up after 40 s with one retry. The SDK's waits between retries follow `Retry-After` with no cap, so the caller's signal bounds the whole draft. `draft(input, signal?)` checks `signal.aborted` before each attempt and passes `{ signal }` to every `messages.create`.
-  - **Leak guard.** `mentionsMath` uses two regexes, `GRADE` and `OUT_OF`. They catch signed grades such as `A-` or `B+` without flagging "B-tree", plus "6 of 7", "out of seven", and a slash score from 1 to 21 over 7 or 21 ("6/7", "15/21"). "24/7" isn't flagged.
-  - **`explain()`.** Every message keeps the provider's error as its `cause`. Besides the workspace and key cases:
+  - **Leak guard.** `mentionsMath` uses two regexes, `GRADE` and `OUT_OF`. They catch signed grades such as `A-` or `B+` without flagging "B-tree", plus "6 of 7", "out of seven", and a slash score from 1 to 21 over 7 or 21, decimals included ("6/7", "15/21", "5.67/7", "17.0/21"; `e03dc3b`). "24/7" isn't flagged.
+  - **`explain()`.** It wraps every error, mapped or not, in an `Error` that keeps the provider's error as its `cause`. An unmapped error keeps its own message for the 502 (`a2a211c`). Besides the workspace and key cases:
     - a model the key can't use (404): "ANTHROPIC_MODEL names a model this key can't use. Check the setting in the Function App.";
-    - a rate limit (429): "Anthropic's rate limit for this key was reached. Wait a minute, then try again.";
+    - a rate limit (429): "Anthropic's rate limit was reached. Wait a minute, then try again." (`5223830`);
     - an overload (529 or `overloaded_error`): "Anthropic is overloaded right now. Try again in a minute.";
     - a timeout, meaning an attempt's own 40 s, the SDK's `APIUserAbortError`, or a `TimeoutError` or `AbortError` from the caller's signal: "Anthropic did not answer in time. Try again."
-  - **`failureDetails(error, settings)`** is exported for the log. It returns the model, and for an SDK error with a status, its status, request id, and error type, plus `"<class>: <message>"`. It never includes the key, which travels only in request headers, or the prompt.
+  - **`failureDetails(error, settings)`** is exported for the log. It returns the model, and for an SDK error with a status, its status, request id, and error type. It adds the cause's chain of up to 3 links as `"<class>: <message> (<code>)"` joined by `" <- "`, such as `APIConnectionError: Connection error. <- TypeError: fetch failed <- Error: getaddrinfo ENOTFOUND api.anthropic.com (ENOTFOUND)`. It never includes the key, which travels only in request headers, or the prompt.
   - **Prompt.** A missing workload row renders as its id.
 
 ```ts
@@ -3608,7 +3646,11 @@ export type Drafter = NonNullable<ReturnType<typeof createDrafter>>;
 Run: `npx vitest run api/src/lib/draft-why.test.ts`
 Expected: 3 tests pass.
 
-- [ ] **Step 3: Create `api/src/functions/admin-rounds.ts`.** As built (`f8bdb00`, `817d1d6`, `8090e47`), the writes differ from the block below, and `api/src/functions/admin-rounds.ts` wins. Publish, reopen, `adminScoresPut`, and `adminNotePut` each run in one `transaction`: `lockRound(tx, round.id)` first (from the Task 9 fix), then the status checks on the locked row, then the write, then `markChanged(tx)` as the last statement. Scores and notes stamp only when the locked round is published. Publish starts the deploy after the commit, and refuses a `publishedOn` earlier than the latest published round's with 400 (`e9fe8cf`). The latest published round is the one with the latest publish date; on a tie, the one whose id sorts last (`findLatestPublishedRound`: `ORDER BY published_on DESC, id DESC`). So a lower-id round published on the same day doesn't become the latest. That's accepted, because round ids are created in order (`d98671a`). Reopen accepts only the latest published round. `adminDraft` starts `AbortSignal.timeout(200_000)` as its first statement, so the dataset load counts against it, and passes it to the drafter (`3b86266`). A failed draft logs `failureDetails(error, ctx.config.anthropic)` and answers 502 with the friendly message (`cfaae75`). A note body that isn't a string gets 400. `adminScoresPut` takes `userId` only as 1 to 9 digits (`USER_ID`), and both saves turn a foreign-key refusal (547, the item was deleted after the check) into a 409 (`beb3ca5`, `saveForItems`).
+- [ ] **Step 3: Create `api/src/functions/admin-rounds.ts`.** As built (`f8bdb00`, `817d1d6`, `8090e47`), the writes differ from the block below, and `api/src/functions/admin-rounds.ts` wins. Publish, reopen, `adminScoresPut`, and `adminNotePut` each run in one `transaction`: `lockRound(tx, round.id)` first (from the Task 9 fix), then the status checks on the locked row, then the write, then `markChanged(tx)` as the last statement. Scores and notes stamp only when the locked round is published. Publish starts the deploy after the commit, and refuses a `publishedOn` earlier than the latest published round's with 400 (`e9fe8cf`). The latest published round is the one with the latest publish date; on a tie, the one whose id sorts last (`findLatestPublishedRound`: `ORDER BY published_on DESC, id DESC`). So a lower-id round published on the same day doesn't become the latest. That's accepted, because round ids are created in order (`d98671a`). Reopen accepts only the latest published round. `adminDraft` starts `AbortSignal.timeout(200_000)` as its first statement, so the dataset load counts against it, and passes it to the drafter (`3b86266`). The load can't be interrupted. If the deadline passed during it, the route throws `DatabaseUnavailableError`, which answers the database 503 "The ratings database is not responding. Try again in a minute." instead of blaming Anthropic (`ad47915`). A failed draft logs `failureDetails(error, ctx.config.anthropic)` plus `loadMs` and `elapsedMs`, and answers 502 with the friendly message (`cfaae75`, `ad47915`). A note body that isn't a string gets 400. `adminScoresPut` takes `userId` only as 1 to 9 digits (`USER_ID`). Both saves, and the rater's own save in Task 14, run through `saveForItems(ctx.log, deleted, work)` in `api/src/lib/item-saves.ts` (`beb3ca5`, `5223830`):
+  - a foreign-key refusal (547: the item was deleted after the check) becomes a 409 with `deleted`, either `CARD_ITEM_DELETED` ("An item on this card was just deleted. Reload the page to get the current list.") or the note's "That item was just deleted. Reload the page to get the current list.";
+  - a lost deadlock (1205) logs "Deadlock victim" and becomes 503 "Someone was changing the catalog at the same moment. Try again.". Card saves take the round lock in turn, so the only deadlock one can lose is to that same item's delete.
+
+  The SQL error number lists (`DUPLICATE_KEY`, `DEADLOCK_VICTIM`, `CONSTRAINT_CONFLICT`) and `hasSqlNumber` live in `db.ts`, next to `sqlErrorNumber` (`28ebd57`).
 
 ```ts
 import type { DeployResult, PublishResult, RoundReview } from '../../../src/domain/api-types.ts';
@@ -3786,10 +3828,10 @@ git commit -m "API: admin rounds, review, score and note editing, AI drafting"
 - Create: `api/src/functions/admin-catalog.ts`, `api/src/functions/admin-users.ts`, `api/src/functions/admin-site.ts`
 - Modify: `api/src/index.ts`
 
-- [ ] **Step 1: Create `api/src/functions/admin-catalog.ts`.** Every write and its `markChanged(tx)` share one transaction, with the stamp last. As built (`1ed2260`, `571fd3a`), `saveCatalog` also takes any number of `{ numbers, error }` refusals after the write, so a SQL error number the route's earlier check lost a race on becomes that route's error instead of a 500:
+- [ ] **Step 1: Create `api/src/functions/admin-catalog.ts`.** Every write and its `markChanged(tx)` share one transaction, with the stamp last. As built (`1ed2260`, `571fd3a`), `saveCatalog` also takes any number of `{ numbers, error }` refusals after the write, so a SQL error number the route's earlier check lost a race on becomes that route's error instead of a 500. The number lists and `hasSqlNumber` come from `db.ts` (`28ebd57`):
   - a create that loses a race on its id (2601/2627) answers the "already exists" 409;
   - a delete that loses a race with a new score or note (547) answers the "has scores or notes" 409;
-  - a delete chosen as a deadlock victim (1205) answers 503 "Someone was saving a score or note for <name> at the same moment. Try again." With the `artifact_id` indexes, a delete can only deadlock with a card or note save that adds this item, and a retry gets the accurate 409.
+  - a delete chosen as a deadlock victim (1205) answers 503 "Someone was saving a score or note for <name> at the same moment. Try again.". A refusal's optional `onRefuse` writes the same "Deadlock victim" log line `describe()` writes elsewhere (`a2a211c`). With the `artifact_id` indexes, a delete can only deadlock with a card or note save that adds this item, and a retry gets the accurate 409.
 
 Creates refuse ids that name a built-in object property (`constructor`, `__proto__`, `toString`, …) or `prototype` with 400, before the format check (`3777692`): ids are keys of plain objects in the API and the editors. The check is `isReservedId` in `validate.ts` (Task 7), which the seed shares (`fa28250`). A delete's foreign-key checks seek `ix_scores_artifact` and `ix_notes_artifact` (Task 8) instead of scanning, and waiting on, every card being saved.
 
@@ -4055,20 +4097,23 @@ git commit -m "API: admin catalog, user management, and public-site status"
   },
 ```
 
-- [ ] **Step 2: Write the integration test.** It runs only when `FCR_API_URL` is set and cleans up after itself. As built (`5f8be72`, then `78dc8cb`, `e68ee68`, `90f3cb0`, `8f5e592`, `230bccd`), the file differs from the block below, and `api/src/integration.test.ts` wins:
-  - **12 tests.** On top of the 8 below:
+- [ ] **Step 2: Write the integration test.** It runs only when `FCR_API_URL` is set and cleans up after itself. As built (`5f8be72`, then `78dc8cb`, `e68ee68`, `90f3cb0`, `8f5e592`, `230bccd`, `b018b77`, `7723a47`), the file differs from the block below, and `api/src/integration.test.ts` wins:
+  - **13 tests.** On top of the 8 below:
     - deploy confirmations need the build token and no particular `Origin` (sent with a `generatedAt` the API refuses, so `fcr-dev` isn't stamped);
     - a second user with a taken login gets 409;
     - the admin removing their own admin access gets 409. This test counts the active admins first and skips itself unless there is exactly one, so the last-admin rule backs up the self rule and a broken self rule can't demote anyone;
-    - an admin password reset ends the rater's sessions and swaps the password.
+    - an admin password reset ends the rater's sessions and swaps the password;
+    - the rater's own password change (`PUT /api/me/password`) answers 204, keeps the session that made it, ends the rater's second session, and the new password logs in.
 
-    The disable test also checks that the disabled rater's login gets 401.
+    The disable test also checks that the disabled rater's login, with the password from the own-change test, gets 401.
   - **Fails fast.** It throws, naming the variables, when `FCR_ADMIN_LOGIN`, `FCR_ADMIN_PASSWORD`, or `FCR_SNAPSHOT_TOKEN` is missing.
-    - It refuses to run unless `SQL_DATABASE` starts with `fcr-dev`, through `useDevTarget()` in `api/src/test-target.ts`, the same guard every row-writing test uses.
+    - It refuses to run unless `SQL_DATABASE` is `fcr-dev` or `fcr-dev-<suffix>` (`/^fcr-dev(-|$)/`, so `fcr-devprod` is refused), through `useDevTarget()` in `api/src/test-target.ts`, the same guard every row-writing test uses.
     - Right after the admin login in `beforeAll`, before any test writes, it looks up the session the host just wrote by its hash. That proves the host and the suite share a database.
     - The check after creating the rater stays.
   - **Its own addresses.** Every request sends `X-Forwarded-For` with a per-run TEST-NET-3 address (`203.0.113.x`), so its lockout traffic never shares the `ip:unknown` row with other local hosts. The lock test uses a new address per try, so only the login's own key reaches the limit.
-  - **Cleanup.** `clearTestRows` also deletes the suite's notes and its `ip:203.0.113.%` attempts. `afterAll` skips all cleanup when the `fcr-dev` guard never passed, so a wrong database is never cleaned.
+  - **Cleanup.** `clearTestRows` also deletes the suite's notes and its `ip:203.0.113.%` attempts.
+    - It first counts `itest-` scores in published rounds. If there are any, it throws "An itest- card is in a published round. Remove it by hand, then stamp site_state." Deleting them would change a published round without stamping `site_state`.
+    - `afterAll` skips all cleanup when the `fcr-dev` guard never passed, so a wrong database is never cleaned.
   - **`afterAll` checks, in one assertion** so a failed logout can't hide a failed cleanup:
     - the admin's logout answers 204;
     - no `itest-` users, no `login:itest-%` or `ip:203.0.113.%` attempts, and no session for the admin's token remain;
@@ -4227,27 +4272,71 @@ describe.skipIf(!BASE)('API against the dev database', () => {
 - [ ] **Step 3: Confirm the default run skips it.**
 
 Run: `npm test`
-Expected: all unit tests pass; the 12 integration tests show as skipped. The run shows 17 skipped in all, because the 5 opt-in database tests (`FCR_DB_TESTS`) skip too: 2 in `attempts.test.ts`, and 1 each in `rounds.test.ts`, `users.test.ts`, and `site.test.ts`. When they run, each refuses a database whose name doesn't start with `fcr-dev` (`useDevTarget()`), and cleans up only after that check passed. The `rounds.test.ts` one publishes a throwaway round dated `2000-01-01`, so it's never the latest published round that publish and reopen check against. Its `afterAll` deletes the round's scores, the test user, and the round, each step even if the one before failed.
+Expected: all unit tests pass; the 13 integration tests show as skipped. The run shows 18 skipped in all, because the 5 opt-in database tests (`FCR_DB_TESTS`) skip too: 2 in `attempts.test.ts`, and 1 each in `rounds.test.ts`, `users.test.ts`, and `site.test.ts`. When they run, each refuses a database not named `fcr-dev` or `fcr-dev-<suffix>` (`useDevTarget()`), and cleans up only after that check passed. Inside its transaction, the `site.test.ts` row-lock test first reads the row with a plain query, which doesn't wait. That shows the `READCOMMITTEDLOCK` hint is what blocks, and leaves a pooled connection for the locking read (`bb751b1`). The `rounds.test.ts` one publishes a throwaway round dated `2000-01-01`, so it's never the latest published round that publish and reopen check against. Its `afterAll` deletes the round's scores, the test user, and the round, each step even if the one before failed.
 
-- [ ] **Step 4: Run it against `fcr-dev`.** Close every local site and host using `fcr-dev`, in this checkout and in worktrees, and run one copy of the suite at a time. Leave `FCR_DB_TESTS` unset, and never run the suite in the same run as the opt-in database tests: their `itest-` rows collide with the suite's cleanup.
+- [ ] **Step 4: Run it against `fcr-dev`.** Close every local site and host using `fcr-dev`, in this checkout and in worktrees, and run one copy of the suite at a time. Leave `FCR_DB_TESTS` unset, and never run the suite in the same run as the opt-in database tests: their `itest-` rows collide with the suite's cleanup. For the few minutes of the run, nobody may publish, reopen, edit the catalog or a published card or note, change users, seed, or confirm a deploy on `fcr-dev`. Anything that stamps `site_state` fails `afterAll`.
 
-Terminal 1: `npm run api`
-
-Terminal 2 (works in Windows PowerShell 5.1 and 7, prints nothing secret, and leaves no variables behind):
+Paste the block whole, from the repo root, in Windows PowerShell 5.1 or 7. The `& { … }` wrapper makes any `throw` stop the rest; pasted line by line, PowerShell would carry on after a failed check.
+- The block builds the API and starts its own host on `$port`, before any `FCR_` variable exists, so the host never inherits the admin password. Pick a port no other checkout uses.
+- It waits for `/api/health`, which also wakes `fcr-dev`.
+- It runs the suite, and in `finally` removes the variables and stops the host with `taskkill /T`, which also ends the Node worker `func.exe` started.
+- It prints nothing secret.
 
 ```powershell
-$env:FCR_API_URL = 'http://localhost:7071'
-$env:FCR_ADMIN_LOGIN = 'pugliabi'
-$env:FCR_ADMIN_PASSWORD = [Net.NetworkCredential]::new('', (Read-Host 'Admin password' -AsSecureString)).Password
-$env:FCR_SNAPSHOT_TOKEN = (Get-Content api/local.settings.json -Raw | ConvertFrom-Json).Values.SNAPSHOT_TOKEN
-try {
-  npx vitest run --reporter=verbose api/src/integration.test.ts
-} finally {
-  Remove-Item Env:FCR_API_URL, Env:FCR_ADMIN_LOGIN, Env:FCR_ADMIN_PASSWORD, Env:FCR_SNAPSHOT_TOKEN -ErrorAction SilentlyContinue
+& {
+  $ErrorActionPreference = 'Stop'
+  $port = 7071
+  $base = "http://localhost:$port"
+  $set = Get-ChildItem env: | Where-Object Name -match '^(FCR_|SQL_)|^(ALLOWED_ORIGINS|SNAPSHOT_TOKEN|COOKIE_SECURE)$' |
+    ForEach-Object Name
+  if ($set) { throw "Remove these from this shell first: $($set -join ', ')" }
+  $values = (Get-Content api\local.settings.json -Raw | ConvertFrom-Json).Values
+  if ("$($values.SQL_DATABASE)" -cnotmatch '^fcr-dev(-|$)') { throw 'api/local.settings.json does not name fcr-dev.' }
+  if (@("$($values.ALLOWED_ORIGINS)".Split(',') | ForEach-Object Trim) -notcontains 'http://localhost:5173') {
+    throw 'ALLOWED_ORIGINS in api/local.settings.json lacks http://localhost:5173.'
+  }
+  if (Get-NetTCPConnection -State Listen -LocalPort $port -ErrorAction SilentlyContinue) {
+    throw "Port $port is taken. Pick another free port."
+  }
+  npm --prefix api run build
+  if ($LASTEXITCODE -ne 0) { throw 'The API build failed.' }
+  $log = Join-Path $env:TEMP "fcr-itest-host-$port.log"
+  # Started before any FCR_ variable exists, so the host never inherits the admin password.
+  $hostProc = Start-Process -FilePath (Resolve-Path api\node_modules\azure-functions-core-tools\bin\func.exe).Path `
+    -ArgumentList 'start', '--port', "$port" -WorkingDirectory (Resolve-Path api).Path `
+    -RedirectStandardOutput $log -RedirectStandardError "$log.err" -NoNewWindow -PassThru
+  $suiteExit = $null
+  try {
+    # /api/health runs SELECT 1, so this also wakes fcr-dev before the suite's first request.
+    $deadline = (Get-Date).AddMinutes(6)
+    $ready = $false
+    while (-not $ready -and (Get-Date) -lt $deadline) {
+      Start-Sleep -Seconds 5
+      if ($hostProc.HasExited) { throw "func exited early. See $log and $log.err." }
+      try { $ready = (Invoke-WebRequest "$base/api/health" -UseBasicParsing -TimeoutSec 240).StatusCode -eq 200 }
+      catch { $ready = $false }
+    }
+    if (-not $ready) { throw "The host never answered /api/health with 200. See $log." }
+    $env:FCR_API_URL = $base
+    $env:FCR_ADMIN_LOGIN = 'pugliabi'
+    $env:FCR_SNAPSHOT_TOKEN = $values.SNAPSHOT_TOKEN
+    $env:FCR_ADMIN_PASSWORD = [Net.NetworkCredential]::new('', (Read-Host 'Admin password' -AsSecureString)).Password
+    npx vitest run --reporter=verbose api/src/integration.test.ts
+    $suiteExit = $LASTEXITCODE
+  } finally {
+    # Continue: in Windows PowerShell 5.1, Stop turns any stderr line from a native command into a throw.
+    $ErrorActionPreference = 'Continue'
+    Remove-Item Env:FCR_API_URL, Env:FCR_ADMIN_LOGIN, Env:FCR_ADMIN_PASSWORD, Env:FCR_SNAPSHOT_TOKEN `
+      -ErrorAction SilentlyContinue
+    if (-not $hostProc.HasExited) { taskkill /PID $hostProc.Id /T /F | Out-Null }
+    "Host stopped. Suite exit code: $suiteExit. Host log: $log"
+  }
 }
 ```
 
-Expected: `Tests  12 passed (12)` when `fcr-dev` has exactly one active admin. With two or more, the self-demotion check skips itself, giving `11 passed | 1 skipped (12)`. "12 skipped" means `FCR_API_URL` wasn't set. `afterAll` logs the admin out and deletes the suite's rows. In one assertion, it then checks that the logout answered 204, that no `itest-` users, suite attempts, or admin session remain, and that `site_state` is unchanged, so a green run is the cleanup check. If `afterAll` fails on `site_state`, an open-round write stamped the site: treat it as an API bug.
+If the window closes mid-run, stop the host with `Get-NetTCPConnection -State Listen -LocalPort 7071 | ForEach-Object { taskkill /PID $_.OwningProcess /T /F }`, using your port. A wrong admin password gives a 401 on the admin login. Stop there and don't retry: each failure counts toward the shared `login:pugliabi` lockout, and the suite can't clean it.
+
+Expected: `Tests  13 passed (13)` when `fcr-dev` has exactly one active admin, then `Host stopped. Suite exit code: 0.` With two or more, the self-demotion check skips itself, giving `12 passed | 1 skipped (13)`. "13 skipped" means `FCR_API_URL` wasn't set. `afterAll` logs the admin out and deletes the suite's rows. In one assertion, it then checks that the logout answered 204, that no `itest-` users, suite attempts, or admin session remain, and that `site_state` is unchanged, so a green run is the cleanup check. An `afterAll` failure can sit under an all-green test count ("Test Files 1 failed", exit code 1), so read both. If `afterAll` fails on `site_state` and nobody else wrote public data during the run, an open-round write stamped the site: treat it as an API bug.
 
 - [ ] **Step 5: Commit.**
 
