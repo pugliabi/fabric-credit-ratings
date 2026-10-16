@@ -52,6 +52,11 @@ export function validateScores(
     const [capability, ux, cost] = triple as [Score, Score, Score];
     scores[id] = [capability, ux, cost];
   }
+  // A hand-made request can name thousands of ids; the answer and the log stay short.
+  const MAX_ERRORS = 10;
+  if (errors.length > MAX_ERRORS) {
+    errors.splice(MAX_ERRORS, errors.length, `…and ${errors.length - MAX_ERRORS} more problems.`);
+  }
   return { scores, errors };
 }
 

@@ -42,6 +42,13 @@ describe('validateScores', () => {
     ]);
   });
 
+  it('reports at most ten problems and counts the rest', () => {
+    const raw = Object.fromEntries(Array.from({ length: 25 }, (_, i) => [`ghost-${i}`, [5, 5, 5]]));
+    const { errors } = validateScores(raw, known);
+    expect(errors).toHaveLength(11);
+    expect(errors.at(-1)).toBe('…and 15 more problems.');
+  });
+
   it('rejects anything but an object', () => {
     expect(validateScores([], known).errors).toEqual(['Scores must be an object keyed by item id.']);
   });

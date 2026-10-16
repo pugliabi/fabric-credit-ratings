@@ -4,6 +4,7 @@ import type { AdminCatalog, AdminRound, AdminUser, RoundReview } from '../domain
 import { mayLeave, useUnsavedWork } from '../hooks/useUnsavedWork';
 import { api, errorMessage } from '../lib/api';
 import { formatScore } from '../lib/format';
+import { raterCardWorkloads } from '../rating-ui/save';
 import { draftBlanks, draftItem, requestDraft, type DraftPage } from './draft-loop';
 import {
   afterSent,
@@ -16,7 +17,6 @@ import {
   withNote,
   type Edits,
 } from './notes';
-import { raterCardWorkloads } from '../rating-ui/save';
 import { RaterCardEditor } from './RaterCardEditor';
 import styles from './Admin.module.css';
 
