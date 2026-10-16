@@ -1,3 +1,4 @@
+import childProcess from 'node:child_process';
 import { syncBuiltinESMExports } from 'node:module';
 import net from 'node:net';
 import tls from 'node:tls';
@@ -11,7 +12,14 @@ if (!process.env.FCR_API_URL && !process.env.FCR_DB_TESTS) {
   net.Socket.prototype.connect = refuse;
   Object.assign(net, { connect: refuse, createConnection: refuse });
   Object.assign(tls, { connect: refuse });
-  // So `import { connect } from 'node:net'` sees the same functions.
+  // happy-dom's synchronous loads and @azure/identity's CLI credentials (az, azd, pwsh) run their requests in a child
+  // process, where the socket hooks can't see them. A test that truly needs one sets FCR_ALLOW_CHILD_PROCESS=1.
+  if (!process.env.FCR_ALLOW_CHILD_PROCESS) {
+    for (const name of ['spawn', 'spawnSync', 'exec', 'execSync', 'execFile', 'execFileSync', 'fork']) {
+      Object.assign(childProcess, { [name]: refuse });
+    }
+  }
+  // So `import { connect } from 'node:net'` (and `execFileSync` from 'node:child_process') see the same functions.
   syncBuiltinESMExports();
   globalThis.fetch = (async () => refuse()) as typeof fetch;
 }
