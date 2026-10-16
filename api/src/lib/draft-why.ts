@@ -86,6 +86,12 @@ const KEY_NOT_SENDABLE =
   "ANTHROPIC_API_KEY doesn't look like an Anthropic key: it's too short, or it has spaces, quotes, line breaks, " +
   'or other characters a key never has. Paste the key again in the Function App settings.';
 
+/** Why ANTHROPIC_API_KEY can't be used as set, or undefined when it can be, or isn't set. */
+export function keyProblem(settings: AnthropicSettings): string | undefined {
+  const apiKey = settings.apiKey.trim();
+  return apiKey && !ANTHROPIC_KEY.test(apiKey) ? KEY_NOT_SENDABLE : undefined;
+}
+
 /** Replaces the key, as set and trimmed, wherever error text quotes it. */
 export function redactKey(text: string, apiKey: string): string {
   let redacted = text;
@@ -164,10 +170,11 @@ function textOf(message: Anthropic.Message): string {
 export function createDrafter(settings: AnthropicSettings) {
   const apiKey = settings.apiKey.trim();
   if (!apiKey) return undefined;
-  if (!ANTHROPIC_KEY.test(apiKey)) {
+  const problem = keyProblem(settings);
+  if (problem) {
     // Never handed to the SDK, whose header error would quote the whole key.
     return async function draft(_input: DraftInput, _signal?: AbortSignal): Promise<string> {
-      throw new Error(KEY_NOT_SENDABLE);
+      throw new Error(problem);
     };
   }
   // Each attempt gives up after 40 s. The SDK's waits between retries follow Retry-After with no cap, so only the

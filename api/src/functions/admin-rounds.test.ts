@@ -655,6 +655,21 @@ describe('adminDraft', () => {
     expect(drafter).not.toHaveBeenCalled();
   });
 
+  it('answers a key not in Anthropic form with its 502 before loading any data', async () => {
+    const badKey = { anthropic: { apiKey: 'sk-ant-unit\ntest-secret', workspaceId: '', model: '' } } as Config;
+
+    await expect(call('adminDraft', { id: open.id, artifactId: 'notebook' }, {}, admin, badKey)).rejects.toMatchObject({
+      status: 502,
+      message:
+        "ANTHROPIC_API_KEY doesn't look like an Anthropic key: it's too short, or it has spaces, quotes, line breaks, " +
+        'or other characters a key never has. Paste the key again in the Function App settings.',
+    });
+    expect(loadDataset).not.toHaveBeenCalled();
+    expect(drafter).not.toHaveBeenCalled();
+    expect(log.warn).toHaveBeenCalledWith('AI draft failed', expect.anything());
+    expect(JSON.stringify(log.warn.mock.calls)).not.toContain('test-secret');
+  });
+
   it("redacts the key from the drafter's message in the 502 and from the log", async () => {
     const keyed = { anthropic: { apiKey: 'sk-ant-route-secret', workspaceId: '', model: '' } } as Config;
     drafter.mockRejectedValue(new Error('Headers.append: "sk-ant-route-secret" is an invalid header value.'));

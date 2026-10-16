@@ -4,7 +4,7 @@ import type { Round } from '../../../src/domain/types.ts';
 import { buildReview } from '../domain/review.ts';
 import type { Config } from '../lib/config.ts';
 import { DatabaseUnavailableError, db, transaction } from '../lib/db.ts';
-import { createDrafter, failureDetails, redactKey } from '../lib/draft-why.ts';
+import { createDrafter, failureDetails, keyProblem, redactKey } from '../lib/draft-why.ts';
 import { HttpError } from '../lib/errors.ts';
 import { startDeploy } from '../lib/github.ts';
 import { route } from '../lib/http.ts';
@@ -154,6 +154,12 @@ route('adminDraft', 'POST', 'admin/rounds/{id}/draft/{artifactId}', 'admin', asy
   const deadline = AbortSignal.timeout(DRAFT_DEADLINE_MS);
   const drafter = createDrafter(ctx.config.anthropic);
   if (!drafter) throw new HttpError(400, 'Set ANTHROPIC_API_KEY in the Function App settings to draft with AI.');
+  // Before the load, which can take 150 s on a paused database, since this answer doesn't depend on it.
+  const refusedKey = keyProblem(ctx.config.anthropic);
+  if (refusedKey) {
+    ctx.log.warn('AI draft failed', failureDetails(new Error(refusedKey), ctx.config.anthropic));
+    throw new HttpError(502, refusedKey);
+  }
   const data = await loadDataset(db);
   const loadMs = Date.now() - started;
   // The load can't be interrupted, so it may have used up the deadline or left too little of it for a call. That's the
