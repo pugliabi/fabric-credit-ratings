@@ -9,9 +9,11 @@ interface AccountBarProps {
   onLogout: () => Promise<void>;
   /** Adds a link to /admin for admins. */
   adminLink?: boolean;
+  /** The current catalog's item ids, so Log out ignores a stored edit on an item deleted since. */
+  knownArtifacts?: ReadonlySet<string>;
 }
 
-export function AccountBar({ user, onLogout, adminLink = false }: AccountBarProps) {
+export function AccountBar({ user, onLogout, adminLink = false, knownArtifacts }: AccountBarProps) {
   const [changing, setChanging] = useState(false);
   const [logout, setLogout] = useState<LogoutState>({ kind: 'idle' });
   const leaving = logout.kind === 'leaving';
@@ -34,7 +36,7 @@ export function AccountBar({ user, onLogout, adminLink = false }: AccountBarProp
         className={styles.link}
         aria-disabled={leaving}
         onClick={() => {
-          if (!leaving) void logOutClearingDrafts(user.id, onLogout, setLogout);
+          if (!leaving) void logOutClearingDrafts(user.id, onLogout, setLogout, undefined, knownArtifacts);
         }}
       >
         {leaving ? 'Logging out…' : 'Log out'}

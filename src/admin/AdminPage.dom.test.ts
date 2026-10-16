@@ -266,6 +266,26 @@ describe('AdminPage session and loads', () => {
     expect(find(container, 'h2', 'Admin login')).not.toBeNull();
   });
 
+  it('asks nothing at Log out for a stored edit on an item the catalog no longer has', async () => {
+    // The Score tab prunes such rows when it mounts; Log out from another tab must judge by the current catalog too.
+    localStorage.setItem(
+      'fcr-card:2:2026-Q4',
+      JSON.stringify({ base: { notebook: [5, 5, 5] }, draft: { notebook: [5, 5, 5], gone: [6, 5, 5] } }),
+    );
+    history.replaceState(null, '', '#catalog');
+    const api = server();
+    vi.stubGlobal('fetch', api.fetchMock);
+    const ask = vi.fn(() => false);
+    vi.stubGlobal('confirm', ask);
+    const { container } = await render(AdminPage, {});
+    await settleAll();
+    await click(find(container, 'button', 'Log out'));
+    await settleAll();
+    expect(ask).not.toHaveBeenCalled();
+    expect(count(api, '/api/auth/logout')).toBe(1);
+    expect(localStorage.getItem('fcr-card:2:2026-Q4')).toBeNull();
+  });
+
   it('asks nothing when the session ends on its own, and says what was lost', async () => {
     history.replaceState(null, '', '#review');
     const expired = () => json({ error: 'Log in first.' }, 401);

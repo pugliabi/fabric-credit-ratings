@@ -112,6 +112,18 @@ describe('clearing drafts', () => {
     expect(hasUnsavedDrafts(cardDraftPrefix(7))).toBe(false);
   });
 
+  it('ignores edits on items no longer in the catalog when a catalog is given', () => {
+    const deletedOnly = JSON.stringify({
+      base: { notebook: [5, 5, 5] },
+      draft: { notebook: [5, 5, 5], gone: [6, 5, 5] },
+    });
+    vi.stubGlobal('localStorage', memoryStorage({ 'fcr-card:7:2026-Q4': deletedOnly }));
+    expect(hasUnsavedDrafts(cardDraftPrefix(7))).toBe(true);
+    expect(hasUnsavedDrafts(cardDraftPrefix(7), new Set(['notebook']))).toBe(false);
+    vi.stubGlobal('localStorage', memoryStorage({ 'fcr-card:7:2026-Q4': unsaved }));
+    expect(hasUnsavedDrafts(cardDraftPrefix(7), new Set(['notebook']))).toBe(true);
+  });
+
   it('keeps going when storage is blocked while clearing', () => {
     vi.stubGlobal('localStorage', {
       get length(): number {

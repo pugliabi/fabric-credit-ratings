@@ -1,5 +1,14 @@
 import { useCallback, useEffect, useState } from 'react';
-import { parseStoredDraft, restorable, sameDraft, type Draft, type DraftTriple, type StoredDraft } from './draft';
+import {
+  EMPTY_TRIPLE,
+  parseStoredDraft,
+  restorable,
+  sameDraft,
+  sameTriple,
+  type Draft,
+  type DraftTriple,
+  type StoredDraft,
+} from './draft';
 
 /** Stored drafts of a user's own cards are keyed `fcr-card:<userId>:<roundId>`. */
 export const cardDraftPrefix = (userId: number) => `fcr-card:${userId}:`;
@@ -48,11 +57,17 @@ export function draftKeys(prefix: string): string[] {
   }
 }
 
-/** True when any stored draft under `prefix` holds edits that were never saved. */
-export function hasUnsavedDrafts(prefix: string): boolean {
+/**
+ * True when any stored draft under `prefix` holds edits that were never saved. With `known` (the catalog's item ids),
+ * an edit on an item no longer in the catalog doesn't count: it can't be seen or saved, as restoredDraft() drops it.
+ */
+export function hasUnsavedDrafts(prefix: string, known?: ReadonlySet<string>): boolean {
   return draftKeys(prefix).some((key) => {
     const stored = readDraft(key);
-    return stored !== undefined && !sameDraft(stored.draft, stored.base);
+    if (stored === undefined) return false;
+    const ids = new Set([...Object.keys(stored.draft), ...Object.keys(stored.base)]);
+    const edited = (id: string) => !sameTriple(stored.draft[id] ?? EMPTY_TRIPLE, stored.base[id] ?? EMPTY_TRIPLE);
+    return [...ids].some((id) => (!known || known.has(id)) && edited(id));
   });
 }
 

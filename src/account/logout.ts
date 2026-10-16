@@ -35,16 +35,18 @@ export async function runLogout(logout: () => Promise<void>, update: (state: Log
  * The Log out button: on a shared computer, the user's stored cards must not outlive their session. Asks once first
  * when any of them holds unsaved scores, or the page holds unsaved whys or card edits (Cancel keeps the user logged
  * in), and removes the stored cards only once the session has ended, so a failed logout keeps them. A 401 never comes
- * here: the session-ended notice says what is kept.
+ * here: the session-ended notice says what is kept. `known` is the current catalog's item ids, when the page has them:
+ * a stored edit on an item deleted since is then no reason to ask, as the Score tab would have dropped it on mount.
  */
 export async function logOutClearingDrafts(
   userId: number,
   logout: () => Promise<void>,
   update: (state: LogoutState) => void,
   ask: (message: string) => boolean = (message) => confirm(message),
+  known?: ReadonlySet<string>,
 ): Promise<void> {
   const prefix = cardDraftPrefix(userId);
-  const question = logoutQuestion(hasUnsavedDrafts(prefix), hasUnsavedWork());
+  const question = logoutQuestion(hasUnsavedDrafts(prefix, known), hasUnsavedWork());
   if (question && !ask(question)) return;
   await runLogout(async () => {
     await logout();
