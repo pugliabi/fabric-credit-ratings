@@ -1,7 +1,15 @@
 import type { AdminCatalog } from '../../../src/domain/api-types.ts';
-import { db, transaction, type Db } from '../lib/db.ts';
+import {
+  CONSTRAINT_CONFLICT,
+  DEADLOCK_VICTIM,
+  DUPLICATE_KEY,
+  db,
+  hasSqlNumber,
+  transaction,
+  type Db,
+} from '../lib/db.ts';
 import { HttpError } from '../lib/errors.ts';
-import { CONSTRAINT_CONFLICT, DEADLOCK_VICTIM, DUPLICATE_KEY, hasSqlNumber, route } from '../lib/http.ts';
+import { route } from '../lib/http.ts';
 import { SLUG, isReservedId, oneOf, optionalInt, text } from '../lib/validate.ts';
 import {
   adminCatalog,
@@ -45,11 +53,12 @@ function artifactFields(body: Record<string, unknown>, catalog: AdminCatalog) {
 /**
  * Runs a catalog write and its site-changed mark in one transaction, so a committed change always shows the site as
  * behind. These transactions lock no round, so taking site_state last keeps admin-rounds.ts's lock order. A SQL error
- * numbered in one of `refusals` (a race the route's earlier check lost) becomes that refusal's error.
+ * numbered in one of `refusals` (a race the route's earlier check lost) becomes that refusal's error, after its
+ * `onRefuse` sees the SQL error.
  */
 async function saveCatalog(
   write: (tx: Db) => Promise<void>,
-  ...refusals: { numbers: readonly number[]; error: HttpError }[]
+  ...refusals: { numbers: readonly number[]; error: HttpError; onRefuse?: (cause: unknown) => void }[]
 ): Promise<AdminCatalog> {
   try {
     await transaction(async (tx) => {
@@ -58,7 +67,10 @@ async function saveCatalog(
     });
   } catch (error) {
     const refusal = refusals.find(({ numbers }) => hasSqlNumber(error, numbers));
-    if (refusal) throw refusal.error;
+    if (refusal) {
+      refusal.onRefuse?.(error);
+      throw refusal.error;
+    }
     throw error;
   }
   return adminCatalog(db);
@@ -113,6 +125,6 @@ route('adminArtifactDelete', 'DELETE', 'admin/artifacts/{id}', 'admin', async (c
   return saveCatalog(
     (tx) => deleteArtifact(tx, current.id),
     { numbers: CONSTRAINT_CONFLICT, error: inUse },
-    { numbers: DEADLOCK_VICTIM, error: raced },
+    { numbers: DEADLOCK_VICTIM, error: raced, onRefuse: (cause) => ctx.log.warn('Deadlock victim', cause) },
   );
 });

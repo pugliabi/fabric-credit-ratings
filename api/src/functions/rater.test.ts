@@ -33,12 +33,13 @@ vi.mock(import('../repo/scores.ts'), async (importOriginal) => ({
 const round: Round = { id: '2026-Q4', label: 'Q4 2026', status: 'open', publishedOn: null };
 const notebook: Artifact = { id: 'notebook', name: 'Notebook', workload: 'data-engineering', status: 'ga' };
 const tx: Db = { query: () => Promise.reject(new Error('The repo functions are mocked.')) };
+const log = { warn: vi.fn() };
 
 function save(body: Record<string, unknown>): Promise<unknown> {
   const handler = handlers.get('myScoresPut');
   if (!handler) throw new Error('myScoresPut was not registered.');
   const user = { id: 7, login: 'rater', displayName: 'Rater', role: 'rater' as const };
-  return handler({ body, user } as unknown as UserCtx);
+  return handler({ body, user, log } as unknown as UserCtx);
 }
 
 /** What mssql rejects with when the server refuses a statement. */
@@ -114,6 +115,32 @@ describe('myScoresPut', () => {
       status: 409,
       message: 'An item on this card was just deleted. Reload the page to get the current list.',
     });
+  });
+
+  it('answers 503 asking to try again, logging each loss, when its one retry loses a deadlock too', async () => {
+    vi.mocked(lockRound).mockResolvedValue(round);
+    const deadlock = sqlError(1205);
+    vi.mocked(replaceScorecard).mockRejectedValue(deadlock);
+
+    await expect(save({ round: round.id, scores: { notebook: [6, 5, 4] } })).rejects.toMatchObject({
+      status: 503,
+      message: 'Someone was changing the catalog at the same moment. Try again.',
+    });
+    expect(transaction).toHaveBeenCalledTimes(2);
+    expect(log.warn).toHaveBeenCalledTimes(2);
+    expect(log.warn).toHaveBeenCalledWith('Deadlock victim', deadlock);
+  });
+
+  it('saves on its one retry after losing a deadlock, logging the loss once', async () => {
+    vi.mocked(lockRound).mockResolvedValue(round);
+    const deadlock = sqlError(1205);
+    vi.mocked(replaceScorecard).mockRejectedValueOnce(deadlock).mockResolvedValueOnce(undefined);
+
+    expect(await save({ round: round.id, scores: { notebook: [6, 5, 4] } })).toMatchObject({ round });
+    expect(transaction).toHaveBeenCalledTimes(2);
+    expect(replaceScorecard).toHaveBeenCalledTimes(2);
+    expect(log.warn).toHaveBeenCalledTimes(1);
+    expect(log.warn).toHaveBeenCalledWith('Deadlock victim', deadlock);
   });
 
   it('passes other database errors through', async () => {

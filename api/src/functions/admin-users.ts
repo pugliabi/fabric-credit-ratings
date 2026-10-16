@@ -1,7 +1,7 @@
 import { sessionToken } from '../lib/current-user.ts';
-import { db, transaction } from '../lib/db.ts';
+import { DUPLICATE_KEY, db, hasSqlNumber, transaction } from '../lib/db.ts';
 import { HttpError } from '../lib/errors.ts';
-import { DUPLICATE_KEY, hasSqlNumber, route } from '../lib/http.ts';
+import { route } from '../lib/http.ts';
 import { hashPassword, passwordProblem } from '../lib/password.ts';
 import { userChangeProblem } from '../lib/permissions.ts';
 import { hashToken } from '../lib/session.ts';

@@ -3,11 +3,12 @@ import { pointFor, previousPoint } from '../../../src/domain/aggregate.ts';
 import type { Round } from '../../../src/domain/types.ts';
 import { buildReview } from '../domain/review.ts';
 import type { Config } from '../lib/config.ts';
-import { db, transaction, type Db } from '../lib/db.ts';
-import { createDrafter, failureDetails } from '../lib/draft-why.ts';
+import { DatabaseUnavailableError, db, transaction } from '../lib/db.ts';
+import { createDrafter, failureDetails, keyProblem, redactKey } from '../lib/draft-why.ts';
 import { HttpError } from '../lib/errors.ts';
 import { startDeploy } from '../lib/github.ts';
-import { CONSTRAINT_CONFLICT, hasSqlNumber, route } from '../lib/http.ts';
+import { route } from '../lib/http.ts';
+import { CARD_ITEM_DELETED, saveForItems } from '../lib/item-saves.ts';
 import { cardWriteProblem } from '../lib/permissions.ts';
 import { ROUND_ID, USER_ID, isIsoDate, oneOf, text, today, validateScores } from '../lib/validate.ts';
 import { listArtifacts } from '../repo/catalog.ts';
@@ -34,6 +35,8 @@ import { findUserById } from '../repo/users.ts';
 const NOTE_MAX = 2000;
 /** Azure cuts HTTP functions off at about 230 seconds; this leaves time to answer. */
 const DRAFT_DEADLINE_MS = 200_000;
+/** Less than this left after the dataset load is too little for one real Anthropic call. */
+const DRAFT_MIN_CALL_MS = 10_000;
 
 const noSuchRound = (id: string) => new HttpError(404, `Round ${id} does not exist.`);
 
@@ -52,17 +55,6 @@ async function reviewFor(roundId: string, config: Config): Promise<RoundReview> 
 async function knownArtifactIds(): Promise<Set<string>> {
   return new Set((await listArtifacts(db)).map((artifact) => artifact.id));
 }
-
-/** Runs a card or note save; a foreign key refusing it means the item was deleted after the route checked it. */
-async function saveForItems(deleted: string, work: (tx: Db) => Promise<void>): Promise<void> {
-  try {
-    await transaction(work);
-  } catch (error) {
-    if (hasSqlNumber(error, CONSTRAINT_CONFLICT)) throw new HttpError(409, deleted);
-    throw error;
-  }
-}
-
 route('adminRounds', 'GET', 'admin/rounds', 'admin', async () => listRoundsWithCounts(db));
 
 route('adminRoundCreate', 'POST', 'admin/rounds', 'admin', async (ctx) => {
@@ -129,7 +121,7 @@ route('adminScoresPut', 'PUT', 'admin/rounds/{id}/scores/{userId}', 'admin', asy
   if (!owner) throw new HttpError(404, 'That user does not exist.');
   const { scores, errors } = validateScores(ctx.body.scores, await knownArtifactIds());
   if (errors.length > 0) throw new HttpError(400, errors.join(' '));
-  await saveForItems('An item on this card was just deleted. Reload the page to get the current list.', async (tx) => {
+  await saveForItems(ctx.log, CARD_ITEM_DELETED, async (tx) => {
     const current = await lockRound(tx, round.id);
     if (!current) throw noSuchRound(round.id);
     const problem = cardWriteProblem(ctx.user, current, owner.id);
@@ -147,7 +139,7 @@ route('adminNotePut', 'PUT', 'admin/rounds/{id}/notes/{artifactId}', 'admin', as
   if (typeof ctx.body.body !== 'string') throw new HttpError(400, 'Send the write-up as text.');
   const body = ctx.body.body.trim();
   if (body.length > NOTE_MAX) throw new HttpError(400, 'Keep the write-up to 2,000 characters or fewer.');
-  await saveForItems('That item was just deleted. Reload the page to get the current list.', async (tx) => {
+  await saveForItems(ctx.log, 'That item was just deleted. Reload the page to get the current list.', async (tx) => {
     const current = await lockRound(tx, round.id);
     if (!current) throw noSuchRound(round.id);
     await saveNote(tx, round.id, artifactId, body, ctx.user.id);
@@ -158,10 +150,23 @@ route('adminNotePut', 'PUT', 'admin/rounds/{id}/notes/{artifactId}', 'admin', as
 
 route('adminDraft', 'POST', 'admin/rounds/{id}/draft/{artifactId}', 'admin', async (ctx) => {
   // Started first, so a slow dataset load (a paused database can take 150 s) counts against it too.
+  const started = Date.now();
   const deadline = AbortSignal.timeout(DRAFT_DEADLINE_MS);
   const drafter = createDrafter(ctx.config.anthropic);
   if (!drafter) throw new HttpError(400, 'Set ANTHROPIC_API_KEY in the Function App settings to draft with AI.');
+  // Before the load, which can take 150 s on a paused database, since this answer doesn't depend on it.
+  const refusedKey = keyProblem(ctx.config.anthropic);
+  if (refusedKey) {
+    ctx.log.warn('AI draft failed', failureDetails(new Error(refusedKey), ctx.config.anthropic));
+    throw new HttpError(502, refusedKey);
+  }
   const data = await loadDataset(db);
+  const loadMs = Date.now() - started;
+  // The load can't be interrupted, so it may have used up the deadline or left too little of it for a call. That's the
+  // database's time, not Anthropic's.
+  if (deadline.aborted || DRAFT_DEADLINE_MS - loadMs < DRAFT_MIN_CALL_MS) {
+    throw new DatabaseUnavailableError(`Loading the dataset for an AI draft took ${loadMs} ms.`);
+  }
   const target = data.rounds.find((item) => item.round.id === ctx.params.id);
   if (!target) throw noSuchRound(ctx.params.id ?? '');
   const artifact = data.artifacts.find((item) => item.id === ctx.params.artifactId);
@@ -185,7 +190,9 @@ route('adminDraft', 'POST', 'admin/rounds/{id}/draft/{artifactId}', 'admin', asy
     );
     return { text: draft };
   } catch (error) {
-    ctx.log.warn('AI draft failed', failureDetails(error, ctx.config.anthropic));
-    throw new HttpError(502, error instanceof Error ? error.message : String(error));
+    const timing = { loadMs, elapsedMs: Date.now() - started };
+    ctx.log.warn('AI draft failed', { ...failureDetails(error, ctx.config.anthropic), ...timing });
+    const message = error instanceof Error ? error.message : String(error);
+    throw new HttpError(502, redactKey(message, ctx.config.anthropic.apiKey));
   }
 });

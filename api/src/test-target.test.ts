@@ -19,13 +19,15 @@ afterEach(() => {
 
 describe('useDevTarget', () => {
   it("points db.ts at api/local.settings.json's database when it is fcr-dev", () => {
-    settingsName('fcr-dev-0f1e2d3c');
-    expect(() => useDevTarget()).not.toThrow();
+    for (const database of ['fcr-dev-0f1e2d3c', 'fcr-dev']) {
+      settingsName(database);
+      expect(() => useDevTarget()).not.toThrow();
+    }
     expect(useTarget).toHaveBeenCalledWith([]);
   });
 
   it('refuses any other database, before a test can write to it', () => {
-    for (const database of ['fcr', 'fcr-prod', 'prod-fcr-dev', '']) {
+    for (const database of ['fcr', 'fcr-prod', 'prod-fcr-dev', 'fcr-devprod', 'fcr-development', '']) {
       settingsName(database);
       expect(() => useDevTarget()).toThrow('These tests write rows: point api/local.settings.json at fcr-dev.');
     }

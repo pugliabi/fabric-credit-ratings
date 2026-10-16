@@ -167,7 +167,7 @@ All responses are JSON. Errors look like `{ "error": "<message>" }`, with status
 | `GET /api/catalog` | none | `{ workloads, artifacts }` in sort order |
 | `GET /api/rounds/open` | none | `{ round }` or `{ round: null }` |
 | `GET /api/rounds/open/my-scores` | none | `{ round, scores: Record<artifactId, [c,u,k]>, updatedAt, previous }`, where `previous` is the caller's card from the newest published round they scored. 409 when no round is open |
-| `PUT /api/rounds/open/my-scores` | `{ round, scores }` | 200, the same shape as GET. Replaces the caller's card. 409 if `round` is not the open round, or if an item on the card was deleted after the check ("An item on this card was just deleted. Reload the page to get the current list.") |
+| `PUT /api/rounds/open/my-scores` | `{ round, scores }` | 200, the same shape as GET. Replaces the caller's card. 409 if `round` is not the open round, or if an item on the card was deleted after the check ("An item on this card was just deleted. Reload the page to get the current list."). A save that loses a deadlock to that item's delete gets 503 ("Someone was changing the catalog at the same moment. Try again.") |
 
 The rater page's "Start from current ratings" uses the bundled `snapshot.json` (rounded averages), not an API call. "Start from my <previous round> scores" uses `previous`.
 
@@ -179,9 +179,9 @@ The rater page's "Start from current ratings" uses the bundled `snapshot.json` (
 | `POST /api/admin/rounds` | `{ id, label }` | opens a round and returns every round. 409 if one is already open or the id exists |
 | `PUT /api/admin/rounds/:id` | `{ status: 'published', publishedOn }` or `{ status: 'open' }` | publish, or reopen the latest published round when no round is open. Returns `{ rounds, deploy }`. A `publishedOn` earlier than the latest published round's gets 400 ("Publish dates can't be earlier than <label>'s (<date>)."); the same day and future dates are allowed. The latest published round is the one with the latest publish date; rounds published on the same date fall back to round order, so the one whose id sorts last counts as latest. A lower-id round published that day therefore doesn't become the latest, which is accepted because round ids are created in order |
 | `GET /api/admin/rounds/:id/review` | none | the raters, and per item: averaged scores, grade, change from the previous published round, per-rater scores. Plus the notes and whether AI drafting is configured |
-| `PUT /api/admin/rounds/:id/scores/:userId` | `{ scores }` | replaces any user's card in any round, published included. Returns the review. A `userId` that isn't 1 to 9 digits gets 404. An item deleted after the check gets 409, as on the rater's save |
-| `PUT /api/admin/rounds/:id/notes/:artifactId` | `{ body }` | 204. Saves the why text. An empty body deletes it. A body that isn't text gets 400. An item deleted after the check gets 409 ("That item was just deleted. Reload the page to get the current list.") |
-| `POST /api/admin/rounds/:id/draft/:artifactId` | none | `{ text }`, an AI-drafted why (existing `draft-why` logic), or 502 with the reason. Each Anthropic call times out after 40 s, with one retry. The whole draft, including the dataset load, gives up after 200 s ("Anthropic did not answer in time. Try again."). A rate limit on the key gets "Anthropic's rate limit for this key was reached. Wait a minute, then try again.", and an overload gets "Anthropic is overloaded right now. Try again in a minute." |
+| `PUT /api/admin/rounds/:id/scores/:userId` | `{ scores }` | replaces any user's card in any round, published included. Returns the review. A `userId` that isn't 1 to 9 digits gets 404. An item deleted after the check gets 409, and a lost deadlock gets 503, both as on the rater's save |
+| `PUT /api/admin/rounds/:id/notes/:artifactId` | `{ body }` | 204. Saves the why text. An empty body deletes it. A body that isn't text gets 400. An item deleted after the check gets 409 ("That item was just deleted. Reload the page to get the current list."), and a lost deadlock gets 503 ("Someone was changing the catalog at the same moment. Try again.") |
+| `POST /api/admin/rounds/:id/draft/:artifactId` | none | `{ text }`, an AI-drafted why (existing `draft-why` logic), or 502 with the reason. Each Anthropic call times out after 40 s, with one retry. The draft gives up 200 s after the request starts ("Anthropic did not answer in time. Try again."). The dataset load counts toward that but isn't interrupted, and if it used up the time, the answer is the database 503 ("The ratings database is not responding. Try again in a minute.") instead. A rate limit gets "Anthropic's rate limit was reached. Wait a minute, then try again.", and an overload gets "Anthropic is overloaded right now. Try again in a minute." |
 | `GET /api/admin/catalog` | none | workloads and items with sort orders, and whether each item is referenced |
 | `POST /api/admin/workloads`, `PUT /api/admin/workloads/:id` | `{ id?, name, shortName, blurb, sortOrder? }` | create or edit. Create ignores `sortOrder` and appends to the end; an edit without it keeps the current order. Returns the admin catalog. A new id that names a built-in object property (`constructor`, `__proto__`, `toString`, …) or `prototype` gets 400 ("Workload id <id> is reserved. Pick another id.") |
 | `POST /api/admin/artifacts`, `PUT /api/admin/artifacts/:id`, `DELETE /api/admin/artifacts/:id` | `{ id?, name, workload, status, sortOrder? }` | create, edit, or delete (delete only when unreferenced, else 409). A delete that loses a deadlock to a save adding that item gets 503 ("Someone was saving a score or note for <name> at the same moment. Try again."). Create ignores `sortOrder` and appends to the end of the item's workload, and refuses the same reserved ids ("Item id <id> is reserved. Pick another id."). Returns the admin catalog |
@@ -298,17 +298,17 @@ Requires the admin role; raters who open it are sent to `/rate`. Tabs:
 
 ## Errors in the UI
 
-- **503 from the API.** "The ratings database is not responding. Try again in a minute." A failed save adds "Your draft is kept in this browser."
+- **503 from the API.** The server's message, usually "The ratings database is not responding. Try again in a minute." A save or delete that lost a deadlock gets a 503 saying someone was changing the same data at that moment. A failed save adds "Your draft is kept in this browser."
 - **401 mid-session.** The page returns to its login form with "Your session ended. Log in again; unsaved scores are still in this browser." After login, the draft is restored and the user saves again.
 - **409 on a rater save.** The server's message (for example "The open round is now Q1 2027. Reload the page to score it."), plus "Your draft is kept in this browser."
 - **Slow first request.** After 4 seconds, a notice reads "Waking the ratings database. The first request after a quiet spell can take up to a minute." The DB connection retries 3 times with backoff (2, 5, and 10 seconds).
 
 ## Seed (`db/seed.ts`)
 
-An idempotent run (upserts on primary keys) against the database in `api/local.settings.json`, or the one named with `--server` and `--database`. It authenticates with the developer's `az login` identity. Usage: `npm run db:seed -- --admin <login> --name "<display name>"`.
+An idempotent run (upserts on primary keys) against the database in `api/local.settings.json`, or the one named with `--server` and `--database`. It authenticates with the developer's `az login` identity. Usage: `npm run db:seed -- --admin <login> --name "<display name>" [--admin-only] [--force]`. On a database that already has a catalog or rounds, it refuses to run unless `--admin-only` (only step 1) or `--force` (overwrite them with the repo files).
 
 1. An admin user, if the login doesn't exist yet. The password comes from `FCR_ADMIN_PASSWORD`, which the docs fill with `Read-Host -MaskInput`. It's never echoed or logged.
-2. Workloads and artifacts from the current `src/data/workloads.ts` and `src/data/artifacts.ts`, keeping their order as `sort_order`. Before writing any, it refuses an id the admin catalog would refuse as reserved, naming the file and the id ("src/data/<file>: the id <id> is reserved. Rename it, then seed again.").
+2. Workloads and artifacts from the current `src/data/workloads.ts` and `src/data/artifacts.ts`, keeping their order as `sort_order`. Unless `--admin-only` is given, the seed loads these files before its first database call. It refuses an id the admin catalog would refuse as reserved, naming the file and the id ("src/data/<file>: the id <id> is reserved. Rename it, then seed again."), so a bad id writes nothing at all, the admin user included.
 3. Rounds, notes, and scores from `src/data/rounds/*`. Today that's `2026-Q4`: open, no scores, no notes.
 
 Both `fcr-dev` (Plan 1) and `fcr` (Plan 3) get the full seed. Plan 3 then deletes the data files, and `seed.ts` keeps only step 1, which is still useful for bootstrapping a fresh database. Copying production data into `fcr-dev` is not part of this work.
@@ -393,10 +393,11 @@ vitest.config.ts
   - a card saved in the open round shows in the admin review, and a stale round gets 409;
   - the snapshot needs the build token and has no rater names, and deploy confirmations need the token too;
   - an admin password reset ends the user's sessions and swaps the password;
+  - a user's own password change ends their other sessions but keeps the current one, and the new password logs in;
   - disabling a user ends their sessions and their login gets 401, and a login locks after 10 failures.
 
-  Before any test writes, the suite proves that the API host and its own connection use the same database.
-- **Opt-in database tests (run when `FCR_DB_TESTS` is set):** login-attempt counting, card-write locking, the admin-count lock, and the site-changed stamp's row lock. Every test that writes rows, these and the integration suite, refuses a database whose name doesn't start with `fcr-dev`.
+  Before any test writes, the suite proves that the API host and its own connection use the same database. Its cleanup refuses to run while a test user's card sits in a published round, because deleting it would change public numbers without stamping `site_state`.
+- **Opt-in database tests (run when `FCR_DB_TESTS` is set):** login-attempt counting, card-write locking, the admin-count lock, and the site-changed stamp's row lock. Every test that writes rows, these and the integration suite, refuses a database not named `fcr-dev` or `fcr-dev-<suffix>` (`/^fcr-dev(-|$)/`).
 - **Browser end-to-end against `fcr-dev` (Plan 2, Task 12):** rater and admin scoring, review and whys, editing a rater's card, publish, snapshot, a silent edit flagged as "behind", the next round, catalog edits, and session end.
 - **Live check after cutover (Plan 3, Task 10):** a rater logs in, saves, and changes their password. The admin creates users and starts a site update.
 

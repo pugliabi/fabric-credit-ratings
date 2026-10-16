@@ -72,6 +72,15 @@ function sessionHash(client: Client): string {
 async function clearTestRows(): Promise<void> {
   const pattern = varchar('itest-%');
   const testUsers = 'SELECT id FROM users WHERE login LIKE @pattern';
+  const [published] = await db.query<{ n: number }>(
+    `SELECT COUNT(*) AS n FROM scores s JOIN rounds r ON r.id = s.round_id
+     WHERE r.status = 'published' AND s.user_id IN (${testUsers})`,
+    { pattern },
+  );
+  // Deleting these would change a published round without stamping site_state; that needs a person.
+  if (published?.n) {
+    throw new Error('An itest- card is in a published round. Remove it by hand, then stamp site_state.');
+  }
   await db.query(`DELETE FROM scores WHERE user_id IN (${testUsers})`, { pattern });
   await db.query(`DELETE FROM notes WHERE updated_by IN (${testUsers})`, { pattern });
   await db.query(`DELETE FROM sessions WHERE user_id IN (${testUsers})`, { pattern });
@@ -89,6 +98,9 @@ describe.skipIf(!BASE)('API against the dev database', () => {
   const raterLogin = `itest-${stamp}`;
   const raterPassword = `pass-${stamp}-long`;
   const nextPassword = `next-${stamp}-long`;
+  const ownPassword = `own-${stamp}-long`;
+  // The rater's password as the server last confirmed it, so a later step's 401 can only mean what that step tests.
+  let currentPassword = raterPassword;
   let adminId = 0;
   let raterId = 0;
   let roundId = '';
@@ -251,7 +263,9 @@ describe.skipIf(!BASE)('API against the dev database', () => {
 
   // Only ever the test rater's password; the unit tests cover an admin resetting their own.
   it('ends sessions and swaps the password when an admin resets it', async () => {
-    expect((await admin.send('PUT', `/api/admin/users/${raterId}`, { password: nextPassword })).status).toBe(200);
+    const reset = await admin.send('PUT', `/api/admin/users/${raterId}`, { password: nextPassword });
+    expect(reset.status).toBe(200);
+    currentPassword = nextPassword;
     expect((await rater.send('GET', '/api/me')).status).toBe(401);
     const old = await new Client().send('POST', '/api/auth/login', { login: raterLogin, password: raterPassword });
     expect(old.status).toBe(401);
@@ -260,12 +274,26 @@ describe.skipIf(!BASE)('API against the dev database', () => {
     expect((await rater.send('GET', '/api/me')).body).toMatchObject({ login: raterLogin });
   });
 
+  // The rater's own change; the reset above already proved nextPassword works.
+  it('lets a user change their own password, which ends their other sessions but not this one', async () => {
+    const other = new Client();
+    const second = await other.send('POST', '/api/auth/login', { login: raterLogin, password: nextPassword });
+    expect(second.status).toBe(200);
+    const changed = await rater.send('PUT', '/api/me/password', { current: nextPassword, next: ownPassword });
+    expect(changed.status, changed.body?.error).toBe(204);
+    currentPassword = ownPassword;
+    expect((await rater.send('GET', '/api/me')).status).toBe(200);
+    expect((await other.send('GET', '/api/me')).status).toBe(401);
+    const own = await new Client().send('POST', '/api/auth/login', { login: raterLogin, password: ownPassword });
+    expect(own.status).toBe(200);
+  });
+
   // Only ever the suite's own rater, created above.
   it('ends sessions when an admin disables the user, who then cannot log in', async () => {
     expect((await admin.send('PUT', `/api/admin/users/${raterId}`, { active: false })).status).toBe(200);
     expect((await rater.send('GET', '/api/me')).status).toBe(401);
-    const disabled = await new Client().send('POST', '/api/auth/login', { login: raterLogin, password: nextPassword });
-    expect(disabled.status).toBe(401);
+    const login = { login: raterLogin, password: currentPassword };
+    expect((await new Client().send('POST', '/api/auth/login', login)).status).toBe(401);
   });
 
   // Last: the locked login key stays locked until afterAll clears it.

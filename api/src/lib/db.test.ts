@@ -2,9 +2,13 @@ import sql from 'mssql';
 import { TimeoutError as PoolTimeoutError } from 'tarn';
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 import {
+  CONSTRAINT_CONFLICT,
+  DEADLOCK_VICTIM,
+  DUPLICATE_KEY,
   DatabaseUnavailableError,
   closeDb,
   db,
+  hasSqlNumber,
   isConnectionError,
   sqlErrorNumber,
   transaction,
@@ -226,6 +230,21 @@ describe('sqlErrorNumber', () => {
     for (const error of [undefined, null, 'EREQUEST', 1205, new Error('plain'), { number: '1205' }, loop]) {
       expect(sqlErrorNumber(error)).toBeUndefined();
     }
+  });
+});
+
+describe('hasSqlNumber', () => {
+  const serverError = (number: number) =>
+    new sql.RequestError(Object.assign(new Error(`Server error ${number}.`), { info: { number } }));
+
+  it('checks the number sqlErrorNumber reads against one of the shared lists', () => {
+    expect(DEADLOCK_VICTIM).toEqual([1205]);
+    expect(DUPLICATE_KEY).toEqual([2601, 2627]);
+    expect(CONSTRAINT_CONFLICT).toEqual([547]);
+    expect(hasSqlNumber(serverError(1205), DEADLOCK_VICTIM)).toBe(true);
+    expect(hasSqlNumber(serverError(1205), DUPLICATE_KEY)).toBe(false);
+    expect(hasSqlNumber(serverError(2601), DUPLICATE_KEY)).toBe(true);
+    expect(hasSqlNumber(new Error('plain'), CONSTRAINT_CONFLICT)).toBe(false);
   });
 });
 

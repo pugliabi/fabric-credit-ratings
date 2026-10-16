@@ -5,7 +5,7 @@ import type { AdminRound, DeployResult, SessionUser } from '../../../src/domain/
 import type { Artifact, Round } from '../../../src/domain/types.ts';
 import type { Dataset } from '../domain/dataset.ts';
 import type { Config } from '../lib/config.ts';
-import { transaction, type Db } from '../lib/db.ts';
+import { DatabaseUnavailableError, transaction, type Db } from '../lib/db.ts';
 import { createDrafter, type Drafter } from '../lib/draft-why.ts';
 import { startDeploy } from '../lib/github.ts';
 import type { UserCtx } from '../lib/http.ts';
@@ -90,10 +90,11 @@ function call(
   params: Record<string, string>,
   body: Record<string, unknown> = {},
   user: SessionUser = admin,
+  settings: Config = config,
 ): Promise<unknown> {
   const handler = handlers.get(name);
   if (!handler) throw new Error(`${name} was not registered.`);
-  return handler({ params, body, user, config, log } as unknown as UserCtx);
+  return handler({ params, body, user, config: settings, log } as unknown as UserCtx);
 }
 
 /** When each mock was first called, for comparing with the order the calls should happen in. Each must be called. */
@@ -433,6 +434,33 @@ describe('adminScoresPut', () => {
     expect(markChanged).not.toHaveBeenCalled();
     expect(committed).not.toHaveBeenCalled();
   });
+
+  it('answers 503 asking to try again when a card or note save loses a deadlock twice', async () => {
+    const raced = { status: 503, message: 'Someone was changing the catalog at the same moment. Try again.' };
+    const deadlock = sqlError(1205);
+    vi.mocked(replaceScorecard).mockRejectedValueOnce(deadlock).mockRejectedValueOnce(deadlock);
+    await expect(call('adminScoresPut', { id: open.id, userId: '7' }, body)).rejects.toMatchObject(raced);
+    expect(transaction).toHaveBeenCalledTimes(2);
+    expect(log.warn).toHaveBeenCalledWith('Deadlock victim', deadlock);
+
+    vi.mocked(transaction).mockClear();
+    const noteDeadlock = sqlError(1205);
+    vi.mocked(saveNote).mockRejectedValueOnce(noteDeadlock).mockRejectedValueOnce(noteDeadlock);
+    await expect(
+      call('adminNotePut', { id: open.id, artifactId: 'notebook' }, { body: 'Solid.' }),
+    ).rejects.toMatchObject(raced);
+    expect(transaction).toHaveBeenCalledTimes(2);
+    expect(log.warn).toHaveBeenCalledWith('Deadlock victim', noteDeadlock);
+  });
+
+  it('saves a card on its one retry after losing a deadlock', async () => {
+    vi.mocked(replaceScorecard).mockRejectedValueOnce(sqlError(1205));
+
+    await call('adminScoresPut', { id: open.id, userId: '7' }, body);
+    expect(replaceScorecard).toHaveBeenCalledTimes(2);
+    expect(committed).toHaveBeenCalledTimes(1);
+    expect(log.warn).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe('adminNotePut', () => {
@@ -553,6 +581,48 @@ describe('adminDraft', () => {
     }
   });
 
+  it('answers the database 503, calling no drafter, when the dataset load used up the deadline', async () => {
+    const deadline = new AbortController();
+    const timeout = vi.spyOn(AbortSignal, 'timeout').mockReturnValue(deadline.signal);
+    vi.mocked(loadDataset).mockImplementation(async () => {
+      deadline.abort(new DOMException('The operation was aborted due to timeout', 'TimeoutError'));
+      return scored;
+    });
+
+    try {
+      const drafting = call('adminDraft', { id: open.id, artifactId: 'notebook' });
+      await expect(drafting).rejects.toBeInstanceOf(DatabaseUnavailableError);
+      await expect(drafting).rejects.toThrow(/^Loading the dataset for an AI draft took \d+ ms\.$/);
+      expect(drafter).not.toHaveBeenCalled();
+    } finally {
+      timeout.mockRestore();
+    }
+  });
+
+  it('answers the database 503 when the load leaves under 10 s for Anthropic, and drafts with more', async () => {
+    vi.useFakeTimers();
+    try {
+      vi.mocked(loadDataset).mockImplementationOnce(async () => {
+        vi.advanceTimersByTime(190_001);
+        return scored;
+      });
+      const drafting = call('adminDraft', { id: open.id, artifactId: 'notebook' });
+      await expect(drafting).rejects.toBeInstanceOf(DatabaseUnavailableError);
+      await expect(drafting).rejects.toThrow('Loading the dataset for an AI draft took 190001 ms.');
+      expect(drafter).not.toHaveBeenCalled();
+
+      drafter.mockResolvedValue('Solid and complete.');
+      vi.mocked(loadDataset).mockImplementationOnce(async () => {
+        vi.advanceTimersByTime(189_999);
+        return scored;
+      });
+      const drafted = await call('adminDraft', { id: open.id, artifactId: 'notebook' });
+      expect(drafted).toEqual({ text: 'Solid and complete.' });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("drafts from the round's scores and returns the text", async () => {
     drafter.mockResolvedValue('Solid and complete.');
 
@@ -585,6 +655,33 @@ describe('adminDraft', () => {
     expect(drafter).not.toHaveBeenCalled();
   });
 
+  it('answers a key not in Anthropic form with its 502 before loading any data', async () => {
+    const badKey = { anthropic: { apiKey: 'sk-ant-unit\ntest-secret', workspaceId: '', model: '' } } as Config;
+
+    await expect(call('adminDraft', { id: open.id, artifactId: 'notebook' }, {}, admin, badKey)).rejects.toMatchObject({
+      status: 502,
+      message:
+        "ANTHROPIC_API_KEY doesn't look like an Anthropic key: it's too short, or it has spaces, quotes, " +
+        'line breaks, or other characters a key never has. Paste the key again in the Function App settings.',
+    });
+    expect(loadDataset).not.toHaveBeenCalled();
+    expect(drafter).not.toHaveBeenCalled();
+    expect(log.warn).toHaveBeenCalledWith('AI draft failed', expect.anything());
+    expect(JSON.stringify(log.warn.mock.calls)).not.toContain('test-secret');
+  });
+
+  it("redacts the key from the drafter's message in the 502 and from the log", async () => {
+    const keyed = { anthropic: { apiKey: 'sk-ant-route-secret', workspaceId: '', model: '' } } as Config;
+    drafter.mockRejectedValue(new Error('Headers.append: "sk-ant-route-secret" is an invalid header value.'));
+
+    await expect(call('adminDraft', { id: open.id, artifactId: 'notebook' }, {}, admin, keyed)).rejects.toMatchObject({
+      status: 502,
+      message: 'Headers.append: "[redacted]" is an invalid header value.',
+    });
+    expect(log.warn).toHaveBeenCalledWith('AI draft failed', expect.anything());
+    expect(JSON.stringify(log.warn.mock.calls)).not.toContain('sk-ant-route-secret');
+  });
+
   it("answers 502 with the drafter's message, and logs the provider's answer behind it", async () => {
     const body = { type: 'error', error: { type: 'overloaded_error', message: 'Overloaded' } };
     const provider = new Anthropic.InternalServerError(
@@ -607,6 +704,8 @@ describe('adminDraft', () => {
       requestId: 'req_529',
       type: 'overloaded_error',
       error: `InternalServerError: 529 ${JSON.stringify(body)}`,
+      loadMs: expect.any(Number),
+      elapsedMs: expect.any(Number),
     });
   });
 });

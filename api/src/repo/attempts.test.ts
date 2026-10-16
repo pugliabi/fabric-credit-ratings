@@ -1,14 +1,15 @@
 import sql from 'mssql';
-import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { closeDb, db, transaction, varchar, type Db, type Param, type Params } from '../lib/db.ts';
 import { LOCK_MS, MAX_FAILURES, afterFailure, type AttemptRow } from '../lib/lockout.ts';
 import { useDevTarget } from '../test-target.ts';
 import { clearAttempt, getAttempts, releaseAttempt, reserveAttempt } from './attempts.ts';
 
-vi.mock(import('../lib/db.ts'), async (importOriginal) => {
-  const real = await importOriginal();
-  return { ...real, transaction: vi.fn(real.transaction) as typeof real.transaction };
-});
+// No real default: the opt-in block below opts in to the real transaction.
+vi.mock(import('../lib/db.ts'), async (importOriginal) => ({
+  ...(await importOriginal()),
+  transaction: vi.fn(() => Promise.reject(new Error('Mock transaction() in this test.'))),
+}));
 
 afterEach(() => {
   vi.mocked(transaction).mockReset();
@@ -51,6 +52,12 @@ function expectVarcharKeys(calls: readonly Call[]): void {
 function serverError(number: number): sql.RequestError {
   return new sql.RequestError(Object.assign(new Error(`Server error ${number}.`), { info: { number } }), 'EREQUEST');
 }
+
+describe('the transaction these tests get', () => {
+  it('is a fake that refuses unless a test supplies one, so a missed mock never opens a pool', async () => {
+    await expect(transaction(async () => 1)).rejects.toThrow('Mock transaction() in this test.');
+  });
+});
 
 describe('reserveAttempt', () => {
   const now = new Date('2026-10-15T12:00:00Z');
@@ -196,6 +203,12 @@ describe.skipIf(!process.env.FCR_DB_TESTS)('login attempts against the dev datab
   beforeAll(() => {
     useDevTarget();
     onDevDatabase = true;
+  });
+
+  // The file-level afterEach resets the fake, so each test opts in again.
+  beforeEach(async () => {
+    const real = await vi.importActual<typeof import('../lib/db.ts')>('../lib/db.ts');
+    vi.mocked(transaction).mockImplementation(real.transaction);
   });
 
   afterAll(async () => {

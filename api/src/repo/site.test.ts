@@ -80,6 +80,9 @@ describe.skipIf(!process.env.FCR_DB_TESTS)('the site-changed stamp against the d
     let settled = false;
     await transaction(async (tx) => {
       await markChanged(tx);
+      // A plain read uses the row version, so it doesn't wait: that shows the hint below is what blocks. It also leaves
+      // an open pooled connection, so the locking read isn't held up by a fresh login instead.
+      expect(await db.query('SELECT changed_at FROM site_state WHERE id = 1')).toHaveLength(1);
       read = db
         .query('SELECT SYSUTCDATETIME() AS now FROM site_state WITH (READCOMMITTEDLOCK) WHERE id = 1')
         .finally(() => {

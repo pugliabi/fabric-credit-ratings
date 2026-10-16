@@ -2130,7 +2130,22 @@ export function RaterCardEditor({ review, rater, catalog, onSaved, onCancel }: R
 
 - [ ] **Step 2: Create `src/admin/ReviewTab.tsx`.** Notes save per item through `PUT /admin/rounds/:id/notes/:artifactId`, 700 ms after typing stops. An item stays "unsaved" if its text changed while its save was in flight. The limit matches the server's: up to 2,000 characters after trimming are accepted. A longer note isn't sent; it stays unsaved, with the server's wording ("Keep the write-up to 2,000 characters or fewer.") under the box. The box has no `maxLength`, which would cut a paste short without saying so and would count the untrimmed text.
 
-Drafts are slow by nature, so they skip the wake notice (`{ wakeNotice: false }`, the `api()` option noted in Task 2 Step 1). The API answers every draft within about 200 s, with the text or a 502 whose message is shown as is. So a status 0 there means the network failed, not a draft that ran too long. "Draft all blank" drafts one item at a time. It stops at the first rate-limit or overload message ("Anthropic's rate limit for this key was reached. …", "Anthropic is overloaded right now. …"), because every later draft would get the same answer. It keeps going past "The model kept mentioning scores or grades. Write this one by hand." and other per-item errors.
+Drafts are slow by nature, so they skip the wake notice (`{ wakeNotice: false }`, the `api()` option noted in Task 2 Step 1). The API answers every draft within about 200 s with one of:
+- the text;
+- a 502 whose message is shown as is;
+- the database 503, when loading the data used up the time.
+
+So a status 0 there means the network failed, not a draft that ran too long.
+
+"Draft all blank" drafts one item at a time. It stops when every later draft would get the same answer:
+- a rate limit ("Anthropic's rate limit was reached. …");
+- an overload ("Anthropic is overloaded right now. …");
+- a settings error (the key, the model, or the workspace);
+- the no-key 400;
+- the database 503 ("The ratings database is not responding. …");
+- two "Anthropic did not answer in time. Try again." in a row.
+
+It keeps going past "The model kept mentioning scores or grades. Write this one by hand." and other per-item errors. Drafts stay unsaved edits, so the admin reads each one before it's saved.
 
 ```tsx
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -2146,8 +2161,18 @@ const SAVE_DELAY = 700;
 /** The server's limit, counted on the trimmed text, with its wording. */
 const NOTE_MAX = 2000;
 const NOTE_TOO_LONG = 'Keep the write-up to 2,000 characters or fewer.';
-/** How the API's 502 starts when Anthropic refuses for the key or for everyone; every later draft would fail too. */
-const PROVIDER_LIMITS = ["Anthropic's rate limit for this key was reached.", 'Anthropic is overloaded right now.'];
+/** How the API's answer starts when every later draft in the batch would fail the same way. */
+const STOPS_BATCH = [
+  "Anthropic's rate limit was reached.",
+  'Anthropic is overloaded right now.',
+  'Anthropic rejected ANTHROPIC_API_KEY.',
+  "ANTHROPIC_MODEL names a model this key can't use.",
+  'This Anthropic key is not scoped to a workspace.',
+  'Set ANTHROPIC_API_KEY in the Function App settings to draft with AI.',
+  'The ratings database is not responding.',
+];
+/** Each can take 200 s, and a long rate-limit wait ends this way too, so two in a row stop the batch. */
+const TIMED_OUT = 'Anthropic did not answer in time. Try again.';
 
 interface ReviewTabProps {
   rounds: readonly AdminRound[];
@@ -2285,11 +2310,13 @@ function RoundReviewPanel({ review, catalog, users, onReview }: RoundReviewPanel
     cancelRef.current = false;
     const queue = blanks.map(({ artifact }) => artifact.id);
     setProgress({ done: 0, total: queue.length });
+    let timeouts = 0;
     for (const [index, id] of queue.entries()) {
       if (cancelRef.current) break;
       const failure = await draftOne(id);
       setProgress({ done: index + 1, total: queue.length });
-      if (PROVIDER_LIMITS.some((start) => failure.startsWith(start))) break;
+      timeouts = failure === TIMED_OUT ? timeouts + 1 : 0;
+      if (timeouts === 2 || STOPS_BATCH.some((start) => failure.startsWith(start))) break;
     }
     setProgress(undefined);
   };
@@ -4225,8 +4252,8 @@ git status --short
 
 Expected: a clean tree. `fcr-dev` keeps Q4 2026 (published) and Q1 2027 (open).
 
-- [ ] **Step 10: Re-run the API integration test** (Plan 1 Task 17 Step 4). First log out of or close the admin window and the private window, and don't log in through any local site while it runs. Run one copy of the suite per database at a time, because each copy's `beforeAll` deletes every `itest-` row. Never run `db:seed --force` during it. From a second checkout, set `FCR_API_URL` to that checkout's host port, and check that its `api/local.settings.json` points at `fcr-dev`. The suite connects for its own checks with the settings file of the checkout it runs from. It refuses a database whose name doesn't start with `fcr-dev`. In `beforeAll`, before any test writes, it fails if the host's database differs from its own.
-Expected: `Tests  12 passed (12)` against the new open round, `2027-Q1`. If `fcr-dev` has two or more active admins, the self-demotion check skips itself: `11 passed | 1 skipped (12)`. "12 skipped" means `FCR_API_URL` wasn't set. Leave `FCR_DB_TESTS` unset, and don't run the opt-in database tests in the same session, because both clean up `itest-` rows. After Steps 5 and 6, `site_state.changed_at` and `last_snapshot_at` are both set. The suite writes only to the open round, and its `afterAll` asserts the whole `site_state` row is unchanged. If a stamp moves, an open-round write stamped the site or something else wrote public data. Treat that as an API bug, and don't loosen the test.
+- [ ] **Step 10: Re-run the API integration test** (Plan 1 Task 17 Step 4). First log out of or close the admin window and the private window, and don't log in through any local site while it runs. Run one copy of the suite per database at a time, because each copy's `beforeAll` deletes every `itest-` row. Never run `db:seed --force` during it. From a second checkout, set the block's `$port` to a port no other checkout uses, and check that its `api/local.settings.json` points at `fcr-dev`. The suite connects for its own checks with the settings file of the checkout it runs from. It refuses a database not named `fcr-dev` or `fcr-dev-<suffix>`. In `beforeAll`, before any test writes, it fails if the host's database differs from its own. Its cleanup throws "An itest- card is in a published round. Remove it by hand, then stamp site_state." if an earlier aborted run left a test card in a round that has since been published (Q4 2026, after Step 4).
+Expected: `Tests  13 passed (13)` against the new open round, `2027-Q1`. If `fcr-dev` has two or more active admins, the self-demotion check skips itself: `12 passed | 1 skipped (13)`. "13 skipped" means `FCR_API_URL` wasn't set. Leave `FCR_DB_TESTS` unset, and don't run the opt-in database tests in the same session, because both clean up `itest-` rows. After Steps 5 and 6, `site_state.changed_at` and `last_snapshot_at` are both set. The suite writes only to the open round, and its `afterAll` asserts the whole `site_state` row is unchanged. If a stamp moves, an open-round write stamped the site or something else wrote public data. Treat that as an API bug, and don't loosen the test.
 
 ---
 

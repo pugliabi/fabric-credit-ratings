@@ -1,6 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { createDrafter, failureDetails, mentionsMath, promptFor, type DraftInput } from './draft-why.ts';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { createDrafter, failureDetails, mentionsMath, promptFor, redactKey, type DraftInput } from './draft-why.ts';
 
 const clients = vi.hoisted(() => [] as { options: unknown; client: unknown }[]);
 
@@ -13,6 +13,16 @@ vi.mock(import('@anthropic-ai/sdk'), async (importOriginal) => {
     }
   }
   return { ...real, default: Recording };
+});
+
+// The client takes the global fetch when it's built, so no test here can reach Anthropic, even one that forgets to
+// stub create.
+const offline = vi.hoisted(() => () => Promise.reject(new Error('Unit tests make no network calls.')));
+beforeEach(() => {
+  vi.stubGlobal('fetch', vi.fn(offline));
+});
+afterEach(() => {
+  vi.unstubAllGlobals();
 });
 
 const input: DraftInput = {
@@ -49,11 +59,13 @@ describe('mentionsMath', () => {
     expect(mentionsMath('One of 7 workloads.')).toBe(false);
   });
 
-  it('flags a score over 7 or 21 written with a slash, but not 24/7', () => {
-    for (const text of ['capability 6/7', 'rated 6 / 7', 'a total of 15/21', 'a perfect 21/21']) {
+  it('flags a score over 7 or 21 written with a slash, decimals included, but not 24/7', () => {
+    const scores = ['capability 6/7', 'rated 6 / 7', 'a total of 15/21', 'a perfect 21/21'];
+    for (const text of [...scores, 'about 5.67/7', 'a 17.0/21 total', 'a clean 6.0/7', 'roughly 16.67/21']) {
       expect(mentionsMath(text)).toBe(true);
     }
     expect(mentionsMath('Support is 24/7.')).toBe(false);
+    expect(mentionsMath('Support is 24 / 7.')).toBe(false);
   });
 });
 
@@ -72,7 +84,7 @@ describe('promptFor', () => {
 });
 
 describe('createDrafter', () => {
-  const settings = { apiKey: 'k', workspaceId: '', model: '' };
+  const settings = { apiKey: 'sk-ant-unit-test-key', workspaceId: '', model: '' };
 
   /** The client the drafter built, with its messages.create stubbed. */
   function stubbedCreate() {
@@ -96,7 +108,9 @@ describe('createDrafter', () => {
     createDrafter({ ...settings, workspaceId: 'ws' });
     expect(clients).toHaveLength(1);
     expect(clients[0]?.options).toMatchObject({
-      apiKey: 'k',
+      apiKey: 'sk-ant-unit-test-key',
+      // So the client can't pick up ANTHROPIC_AUTH_TOKEN from the environment and send it as well.
+      authToken: null,
       timeout: 40_000,
       maxRetries: 1,
       defaultHeaders: { 'anthropic-workspace-id': 'ws' },
@@ -211,7 +225,7 @@ describe('createDrafter', () => {
     [
       'a rate limit',
       new Anthropic.RateLimitError(429, { type: 'error' }, undefined, new Headers()),
-      "Anthropic's rate limit for this key was reached. Wait a minute, then try again.",
+      "Anthropic's rate limit was reached. Wait a minute, then try again.",
     ],
     [
       'an overload',
@@ -231,6 +245,92 @@ describe('createDrafter', () => {
     expect((failure as Error).message).toContain(message);
     expect((failure as Error).cause).toBe(error);
   });
+
+  describe('a key that is not in Anthropic key form', () => {
+    const refused =
+      "ANTHROPIC_API_KEY doesn't look like an Anthropic key: it's too short, or it has spaces, quotes, line breaks, " +
+      'or other characters a key never has. Paste the key again in the Function App settings.';
+
+    it.each([
+      ['an interior line break', 'sk-ant-unit\ntest-secret', ['sk-ant-unit', 'test-secret']],
+      ['a NUL', 'sk-ant-unit\u0000test-secret', ['sk-ant-unit', 'test-secret']],
+      ['an interior space', 'sk-ant-unit test-secret', ['sk-ant-unit', 'test-secret']],
+      ['surrounding quotes', '"sk-ant-unit-test-secret"', ['sk-ant-unit-test-secret']],
+      ['a backslash', 'sk-ant-unit\\test-secret', ['sk-ant-unit', 'test-secret']],
+      ['a length no real key has', 'sk-ant-short', ['sk-ant-short']],
+    ])('is refused for %s before any client exists, and nothing quotes it', async (_, apiKey, parts) => {
+      const keySettings = { ...settings, apiKey };
+      const draft = createDrafter(keySettings);
+
+      const failure = await draft?.(input).catch((caught: unknown) => caught);
+      expect((failure as Error).message).toBe(refused);
+      expect(clients).toEqual([]);
+      const logged = JSON.stringify(failureDetails(failure, keySettings));
+      for (const part of parts) {
+        expect((failure as Error).message).not.toContain(part);
+        expect(logged).not.toContain(part);
+      }
+    });
+
+    it('is taken once its outer whitespace is trimmed, if what is left is in key form', () => {
+      createDrafter({ ...settings, apiKey: '  sk-ant-unit-test-ok \n' });
+      expect(clients[0]?.options).toMatchObject({ apiKey: 'sk-ant-unit-test-ok' });
+    });
+  });
+
+  it('redacts the key, as set and trimmed, from error text that quotes it, in the message and the log', async () => {
+    const keySettings = { ...settings, apiKey: ' sk-ant-unit-test-secret ' };
+    const draft = createDrafter(keySettings);
+    const quoting = new TypeError('Headers.append: "sk-ant-unit-test-secret" is an invalid header value.');
+    stubbedCreate().mockRejectedValueOnce(quoting);
+
+    const failure = await draft?.(input).catch((caught: unknown) => caught);
+    expect((failure as Error).message).toBe('Headers.append: "[redacted]" is an invalid header value.');
+    const logged = JSON.stringify(failureDetails(failure, keySettings));
+    expect(logged).not.toContain('sk-ant-unit-test-secret');
+    expect(logged).toContain('[redacted]');
+  });
+
+  it('redacts the key from a provider body that quotes it', async () => {
+    const keySettings = { ...settings, apiKey: 'sk-ant-unit-test-secret' };
+    const draft = createDrafter(keySettings);
+    const body = { error: { message: 'invalid x-api-key sk-ant-unit-test-secret' } };
+    stubbedCreate().mockRejectedValueOnce(new Anthropic.BadRequestError(400, body, undefined, new Headers()));
+
+    const failure = await draft?.(input).catch((caught: unknown) => caught);
+    const redacted = JSON.stringify(body).replace('sk-ant-unit-test-secret', '[redacted]');
+    expect((failure as Error).message).toBe(`400 ${redacted}`);
+    expect(JSON.stringify(failureDetails(failure, keySettings))).not.toContain('sk-ant-unit-test-secret');
+  });
+
+  it('passes the text of an error it has no message for, still keeping that error as the cause', async () => {
+    const fetchFailed = new TypeError('fetch failed');
+    const provider = new Anthropic.APIConnectionError({ message: 'Connection error.', cause: fetchFailed });
+    const draft = createDrafter(settings);
+    stubbedCreate().mockRejectedValueOnce(provider);
+
+    const failure = await draft?.(input).catch((caught: unknown) => caught);
+    expect((failure as Error).message).toBe('Connection error.');
+    expect((failure as Error).cause).toBe(provider);
+  });
+});
+
+describe('redactKey', () => {
+  const KEPT_LEAKING = 'The model kept mentioning scores or grades. Write this one by hand.';
+  const TIMED_OUT = 'Anthropic did not answer in time. Try again.';
+
+  it.each(['e', 'in'])('leaves text alone for %j, too short to be a key, so the exact texts survive', (apiKey) => {
+    for (const text of [KEPT_LEAKING, TIMED_OUT]) {
+      expect(text).toContain(apiKey);
+      expect(redactKey(text, apiKey)).toBe(text);
+      const settings = { apiKey, workspaceId: '', model: '' };
+      expect(failureDetails(new Error(text), settings).error).toBe(`Error: ${text}`);
+    }
+  });
+
+  it('redacts a value long enough to be a key', () => {
+    expect(redactKey('got sk-ant-unit-test-key back', 'sk-ant-unit-test-key')).toBe('got [redacted] back');
+  });
 });
 
 describe('failureDetails', () => {
@@ -245,7 +345,7 @@ describe('failureDetails', () => {
       new Headers({ 'request-id': 'req_123' }),
       'rate_limit_error',
     );
-    const failure = new Error("Anthropic's rate limit for this key was reached.", { cause: provider });
+    const failure = new Error("Anthropic's rate limit was reached.", { cause: provider });
 
     expect(failureDetails(failure, settings)).toEqual({
       model: 'claude-test',
@@ -253,6 +353,19 @@ describe('failureDetails', () => {
       requestId: 'req_123',
       type: 'rate_limit_error',
       error: `RateLimitError: 429 ${JSON.stringify(body)}`,
+    });
+  });
+
+  it('logs the chain behind a network failure, with the socket code, and no status', () => {
+    const socket = Object.assign(new Error('getaddrinfo ENOTFOUND api.anthropic.com'), { code: 'ENOTFOUND' });
+    const fetchFailed = new TypeError('fetch failed', { cause: socket });
+    const provider = new Anthropic.APIConnectionError({ message: 'Connection error.', cause: fetchFailed });
+
+    expect(failureDetails(new Error('Connection error.', { cause: provider }), settings)).toEqual({
+      model: 'claude-test',
+      error:
+        'APIConnectionError: Connection error. <- TypeError: fetch failed ' +
+        '<- Error: getaddrinfo ENOTFOUND api.anthropic.com (ENOTFOUND)',
     });
   });
 

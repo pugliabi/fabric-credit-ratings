@@ -54,11 +54,12 @@ const catalog: AdminCatalog = { workloads: [workload], artifacts: [notebook] };
 const admin: SessionUser = { id: 1, login: 'admin', displayName: 'Admin', role: 'admin' };
 const tx: Db = { query: () => Promise.reject(new Error('The repo functions are mocked.')) };
 const committed = vi.fn();
+const log = { warn: vi.fn() };
 
 function call(name: string, params: Record<string, string>, body: Record<string, unknown> = {}): Promise<unknown> {
   const handler = handlers.get(name);
   if (!handler) throw new Error(`${name} was not registered.`);
-  return handler({ params, body, user: admin } as unknown as UserCtx);
+  return handler({ params, body, user: admin, log } as unknown as UserCtx);
 }
 
 /** What mssql rejects with when the server refuses a statement. */
@@ -110,13 +111,15 @@ describe('adminArtifactDelete', () => {
     expect(committed).not.toHaveBeenCalled();
   });
 
-  it('answers 503, asking to try again, when it loses a deadlock to a save that adds the item', async () => {
-    vi.mocked(deleteArtifact).mockRejectedValue(sqlError(1205));
+  it('answers 503 asking to try again, and logs it, when it loses a deadlock to a save adding the item', async () => {
+    const deadlock = sqlError(1205);
+    vi.mocked(deleteArtifact).mockRejectedValue(deadlock);
 
     await expect(call('adminArtifactDelete', { id: 'notebook' })).rejects.toMatchObject({
       status: 503,
       message: 'Someone was saving a score or note for Notebook at the same moment. Try again.',
     });
+    expect(log.warn).toHaveBeenCalledWith('Deadlock victim', deadlock);
     expect(markChanged).not.toHaveBeenCalled();
     expect(committed).not.toHaveBeenCalled();
   });

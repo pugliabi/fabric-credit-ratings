@@ -31,7 +31,8 @@ export interface DraftInput {
 // The bare one-letter grades (A, B, C, E) are ordinary words, so only their signed forms count. A sign followed by a
 // letter is a hyphenated word ("B-tree"), but "AA-rated" still names AA.
 const GRADE = /(?<![A-Za-z0-9+-])(?:AAA|AA[+-]?|A[+-]|BBB[+-]?|BB[+-]?|B[+-]|CCC|CC)(?![A-Za-z0-9+])/;
-const OUT_OF = /\bout of (?:7|seven|21)\b|\b\d{1,2}\s*of\s*(?:7|21)\b|\b(?:[1-9]|1\d|2[01])\s*\/\s*(?:7|21)\b/i;
+const OUT_OF =
+  /\bout of (?:7|seven|21)\b|\b\d{1,2}\s*of\s*(?:7|21)\b|\b(?:[1-9]|1\d|2[01])(?:[.,]\d+)?\s*\/\s*(?:7|21)\b/i;
 
 /** True when a draft leaks a grade, a total, or arithmetic. */
 export function mentionsMath(text: string): boolean {
@@ -74,11 +75,38 @@ Rules:
 - Never mention scores, totals, letter grades, rater counts, or arithmetic. The reader must not be able to reconstruct the rating from the paragraph.`;
 }
 
+/** No real Anthropic key is shorter; real ones are about 100 characters. */
+const KEY_MIN_LENGTH = 16;
+/**
+ * Anthropic keys are sk-ant-… in this alphabet. Anything else is a bad paste, and no JSON or URL escaping can change a
+ * key in this form, so redaction always finds it in error text.
+ */
+const ANTHROPIC_KEY = new RegExp(`^[A-Za-z0-9_-]{${KEY_MIN_LENGTH},}$`);
+const KEY_NOT_SENDABLE =
+  "ANTHROPIC_API_KEY doesn't look like an Anthropic key: it's too short, or it has spaces, quotes, line breaks, " +
+  'or other characters a key never has. Paste the key again in the Function App settings.';
+
+/** Why ANTHROPIC_API_KEY can't be used as set, or undefined when it can be, or isn't set. */
+export function keyProblem(settings: AnthropicSettings): string | undefined {
+  const apiKey = settings.apiKey.trim();
+  return apiKey && !ANTHROPIC_KEY.test(apiKey) ? KEY_NOT_SENDABLE : undefined;
+}
+
+/** Replaces the key, as set and trimmed, wherever error text quotes it. */
+export function redactKey(text: string, apiKey: string): string {
+  let redacted = text;
+  for (const secret of new Set([apiKey, apiKey.trim()])) {
+    // Shorter than any key, so it's no secret, and replacing it would mangle ordinary words.
+    if (secret.length >= KEY_MIN_LENGTH) redacted = redacted.split(secret).join('[redacted]');
+  }
+  return redacted;
+}
+
 /** Turns the errors people actually hit into instructions, keeping the provider's error as the cause for the log. */
-function explain(error: unknown): Error {
-  const message = error instanceof Error ? error.message : String(error);
+function explain(error: unknown, apiKey: string): Error {
+  const raw = error instanceof Error ? error.message : String(error);
   const friendly = (text: string) => new Error(text, { cause: error });
-  if (message.includes('anthropic-workspace-id')) {
+  if (raw.includes('anthropic-workspace-id')) {
     return friendly(
       'This Anthropic key is not scoped to a workspace. Set ANTHROPIC_WORKSPACE_ID in the Function App settings (Claude Console, Settings, Workspaces), or create the key inside a workspace.',
     );
@@ -90,13 +118,13 @@ function explain(error: unknown): Error {
     return friendly("ANTHROPIC_MODEL names a model this key can't use. Check the setting in the Function App.");
   }
   if (error instanceof Anthropic.RateLimitError) {
-    return friendly("Anthropic's rate limit for this key was reached. Wait a minute, then try again.");
+    return friendly("Anthropic's rate limit was reached. Wait a minute, then try again.");
   }
   if (error instanceof Anthropic.APIError && (error.status === 529 || error.type === 'overloaded_error')) {
     return friendly('Anthropic is overloaded right now. Try again in a minute.');
   }
   if (timedOut(error)) return friendly('Anthropic did not answer in time. Try again.');
-  return error instanceof Error ? error : new Error(message);
+  return friendly(redactKey(raw, apiKey));
 }
 
 /** One attempt's own timeout, or the caller's deadline: the SDK reports that as a user abort. */
@@ -111,9 +139,9 @@ function timedOut(error: unknown): boolean {
 const modelFor = (settings: AnthropicSettings) => settings.model || DEFAULT_MODEL;
 
 /**
- * What to log for a failed draft: the model asked, and the provider's status, request id, error type, and message
- * from the error's cause. The key travels only in request headers and the prompt only in the request body, and an SDK
- * error keeps neither.
+ * What to log for a failed draft: the model asked, and the provider's status, request id, and error type from the
+ * error's cause, then that cause's own chain, such as the fetch error and socket code behind a connection error. The
+ * key travels only in request headers and the prompt only in the request body, and none of these errors keeps either.
  */
 export function failureDetails(error: unknown, settings: AnthropicSettings): Record<string, unknown> {
   const cause = error instanceof Error && error.cause !== undefined ? error.cause : error;
@@ -121,7 +149,12 @@ export function failureDetails(error: unknown, settings: AnthropicSettings): Rec
   if (cause instanceof Anthropic.APIError && cause.status !== undefined) {
     Object.assign(details, { status: cause.status, requestId: cause.requestID ?? null, type: cause.type });
   }
-  details.error = cause instanceof Error ? `${cause.constructor.name}: ${cause.message}` : String(cause);
+  const chain: string[] = [];
+  for (let link: unknown = cause, depth = 0; link instanceof Error && depth < 3; link = link.cause, depth += 1) {
+    const code = (link as { code?: unknown }).code;
+    chain.push(`${link.constructor.name}: ${link.message}${typeof code === 'string' ? ` (${code})` : ''}`);
+  }
+  details.error = redactKey(chain.length > 0 ? chain.join(' <- ') : String(cause), settings.apiKey);
   return details;
 }
 
@@ -135,11 +168,21 @@ function textOf(message: Anthropic.Message): string {
 
 /** Returns undefined when no API key is configured. */
 export function createDrafter(settings: AnthropicSettings) {
-  if (!settings.apiKey) return undefined;
+  const apiKey = settings.apiKey.trim();
+  if (!apiKey) return undefined;
+  const problem = keyProblem(settings);
+  if (problem) {
+    // Never handed to the SDK, whose header error would quote the whole key.
+    return async function draft(_input: DraftInput, _signal?: AbortSignal): Promise<string> {
+      throw new Error(problem);
+    };
+  }
   // Each attempt gives up after 40 s. The SDK's waits between retries follow Retry-After with no cap, so only the
   // caller's signal bounds the whole draft.
   const client = new Anthropic({
-    apiKey: settings.apiKey,
+    apiKey,
+    // Otherwise the SDK reads ANTHROPIC_AUTH_TOKEN from the environment and sends it too.
+    authToken: null,
     timeout: REQUEST_TIMEOUT_MS,
     maxRetries: 1,
     ...(settings.workspaceId ? { defaultHeaders: { 'anthropic-workspace-id': settings.workspaceId } } : {}),
@@ -151,7 +194,7 @@ export function createDrafter(settings: AnthropicSettings) {
     const prompt = promptFor(input);
     let rejected = '';
     for (let attempt = 0; attempt < 2; attempt += 1) {
-      if (signal?.aborted) throw explain(signal.reason);
+      if (signal?.aborted) throw explain(signal.reason, settings.apiKey);
       const message = await client.messages
         .create(
           {
@@ -170,7 +213,7 @@ export function createDrafter(settings: AnthropicSettings) {
           { signal },
         )
         .catch((error: unknown) => {
-          throw explain(error);
+          throw explain(error, settings.apiKey);
         });
       const text = textOf(message);
       if (text && !mentionsMath(text)) return text;

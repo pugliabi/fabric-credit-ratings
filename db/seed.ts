@@ -67,11 +67,16 @@ function refuseReservedIds(file: string, rows: readonly { id: string }[]): void 
   if (reserved) throw new Error(`src/data/${file}: the id ${reserved.id} is reserved. Rename it, then seed again.`);
 }
 
-async function seedCatalog(): Promise<string> {
+/** Loads and checks the catalog files; called before any database call, so a bad id writes nothing at all. */
+async function catalogFiles() {
   const { WORKLOADS } = await import('../src/data/workloads.ts');
   const { ARTIFACTS } = await import('../src/data/artifacts.ts');
   refuseReservedIds('workloads.ts', WORKLOADS);
   refuseReservedIds('artifacts.ts', ARTIFACTS);
+  return { WORKLOADS, ARTIFACTS };
+}
+
+async function seedCatalog({ WORKLOADS, ARTIFACTS }: Awaited<ReturnType<typeof catalogFiles>>): Promise<string> {
   for (const [index, workload] of WORKLOADS.entries()) await upsertWorkload(db, workload, (index + 1) * 10);
   for (const workload of WORKLOADS) {
     const items = ARTIFACTS.filter((artifact) => artifact.workload === workload.id);
@@ -121,15 +126,16 @@ async function seedRounds(): Promise<string> {
 }
 
 try {
-  if (!adminOnly && !force && ((await listWorkloads(db)).length > 0 || (await listRounds(db)).length > 0)) {
+  const catalog = adminOnly ? undefined : await catalogFiles();
+  if (catalog && !force && ((await listWorkloads(db)).length > 0 || (await listRounds(db)).length > 0)) {
     throw new Error(
       'This database already has a catalog or rounds, and /admin owns them now. Use --admin-only to add an admin, ' +
         'or --force to overwrite them with the repo files.',
     );
   }
   console.log(`Admin ${adminLogin}: ${await ensureAdmin()}`);
-  if (!adminOnly) {
-    console.log(`Catalog: ${await seedCatalog()}`);
+  if (catalog) {
+    console.log(`Catalog: ${await seedCatalog(catalog)}`);
     console.log(`Rounds: ${await seedRounds()}`);
     await markChanged(db);
   }

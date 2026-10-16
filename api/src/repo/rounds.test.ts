@@ -67,7 +67,7 @@ describe.skipIf(!process.env.FCR_DB_TESTS)('card writes against the dev database
     userId = await createUser(db, { login, displayName: `itest ${stamp}`, role: 'rater', passwordHash: 'unset' });
   }, 120_000);
 
-  // Each step runs even if the one before it failed, so a failed run can't leave the round behind.
+  // The round is deleted even if a step before it failed, so a failed run can't leave it behind.
   afterAll(async () => {
     try {
       if (roundCreated) await db.query('DELETE FROM scores WHERE round_id = @id', { id: varchar(roundId) });
