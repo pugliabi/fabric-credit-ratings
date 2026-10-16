@@ -57,25 +57,28 @@ describe.skipIf(!process.env.FCR_DB_TESTS)('card writes against the dev database
   beforeAll(async () => {
     useDevTarget();
     expect(roundId).toMatch(ROUND_ID);
-    // Published, because the database allows only one open round and the seeded one holds that slot.
+    // Published, because the database allows only one open round and the seeded one holds that slot. Dated before any
+    // real round, so while it exists it is never the latest published round that publish and reopen check against.
     await db.query(
-      `INSERT INTO rounds (id, label, status, published_on) VALUES (@id, @label, 'published', '2099-01-01')`,
+      `INSERT INTO rounds (id, label, status, published_on) VALUES (@id, @label, 'published', '2000-01-01')`,
       { id: varchar(roundId), label: `itest ${stamp}` },
     );
     roundCreated = true;
     userId = await createUser(db, { login, displayName: `itest ${stamp}`, role: 'rater', passwordHash: 'unset' });
   }, 120_000);
 
+  // Each step runs even if the one before it failed, so a failed run can't leave the round behind.
   afterAll(async () => {
-    if (userId !== undefined) {
-      await db.query('DELETE FROM scores WHERE round_id = @roundId AND user_id = @userId', {
-        roundId: varchar(roundId),
-        userId,
-      });
-      await db.query('DELETE FROM users WHERE id = @id', { id: userId });
+    try {
+      if (roundCreated) await db.query('DELETE FROM scores WHERE round_id = @id', { id: varchar(roundId) });
+      if (userId !== undefined) await db.query('DELETE FROM users WHERE id = @id', { id: userId });
+    } finally {
+      try {
+        if (roundCreated) await db.query('DELETE FROM rounds WHERE id = @id', { id: varchar(roundId) });
+      } finally {
+        await closeDb();
+      }
     }
-    if (roundCreated) await db.query('DELETE FROM rounds WHERE id = @id', { id: varchar(roundId) });
-    await closeDb();
   });
 
   it('makes two writers of one card take turns, so it ends as exactly one of them', { timeout: 120_000 }, async () => {
