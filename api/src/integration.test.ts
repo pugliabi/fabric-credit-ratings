@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { closeDb, db, varchar } from './lib/db.ts';
 import { hashToken } from './lib/session.ts';
 import { siteState, type SiteState } from './repo/site.ts';
-import { useDevTarget } from './test-target.ts';
+import { isRemoteRun, useDevTarget } from './test-target.ts';
 
 const BASE = process.env.FCR_API_URL ?? '';
 const ORIGIN = process.env.FCR_ORIGIN ?? 'http://localhost:5173';
@@ -18,8 +18,12 @@ const RUN = Date.now() % 200;
 /**
  * A documentation address (TEST-NET-3, RFC 5737) for this run, one per slot. Locally nothing appends to
  * X-Forwarded-For, so the host keys these attempts off it instead of the ip:unknown row every local host shares.
+ * Against a deployed API the platform appends the caller's real address, so every attempt shares that one key:
+ * the suite then clears every ip: row it can have touched (see ipRows), and once more before the lock test.
  */
 const testIp = (slot: number) => `203.0.113.${1 + ((RUN + slot) % 254)}`;
+/** The login_attempts address rows the suite owns: its documentation addresses, or every address on a remote run. */
+const ipRows = () => (isRemoteRun() ? "attempt_key LIKE 'ip:%'" : "attempt_key LIKE 'ip:203.0.113.%'");
 
 interface Reply {
   status: number;
@@ -87,7 +91,7 @@ async function clearTestRows(): Promise<void> {
   await db.query('DELETE FROM users WHERE login LIKE @pattern', { pattern });
   await db.query(
     `DELETE FROM login_attempts
-     WHERE attempt_key LIKE 'login:itest-%' OR attempt_key LIKE 'ip:203.0.113.%' OR attempt_key = 'ip:unknown'`,
+     WHERE attempt_key LIKE 'login:itest-%' OR ${ipRows()} OR attempt_key = 'ip:unknown'`,
   );
 }
 
@@ -147,7 +151,7 @@ describe.skipIf(!BASE)('API against the dev database', () => {
       const [left] = await db.query<{ users: number; attempts: number; adminSessions: number }>(
         `SELECT (SELECT COUNT(*) FROM users WHERE login LIKE 'itest-%') AS users,
                 (SELECT COUNT(*) FROM login_attempts
-                 WHERE attempt_key LIKE 'login:itest-%' OR attempt_key LIKE 'ip:203.0.113.%') AS attempts,
+                 WHERE attempt_key LIKE 'login:itest-%' OR ${ipRows()}) AS attempts,
                 (SELECT COUNT(*) FROM sessions WHERE token_hash = @adminSession) AS adminSessions`,
         { adminSession: varchar(adminSession) },
       );
@@ -299,6 +303,9 @@ describe.skipIf(!BASE)('API against the dev database', () => {
   // Last: the locked login key stays locked until afterAll clears it.
   it('locks a login after 10 failures', async () => {
     const login = `itest-lock-${stamp}`;
+    // On a remote run every try also counts against the caller's one real address, so its row starts from zero
+    // here and reaches 10 together with the login's: the 11th try is refused either way, and afterAll clears both.
+    if (isRemoteRun()) await db.query(`DELETE FROM login_attempts WHERE ${ipRows()}`);
     // A new address per try, so only the login's own key can reach the limit.
     const attempt = (slot: number) =>
       new Client(testIp(slot)).send('POST', '/api/auth/login', { login, password: 'wrong-password' });
