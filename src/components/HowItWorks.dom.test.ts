@@ -5,6 +5,7 @@ import { HowItWorks } from './HowItWorks';
 import { ScaleLegend } from './ScaleLegend';
 import { SiteFooter } from './SiteFooter';
 import { SiteHeader } from './SiteHeader';
+import { SiteNav } from './SiteNav';
 
 afterEach(cleanup);
 
@@ -59,5 +60,24 @@ describe('SiteFooter', () => {
     );
     const login = container.querySelector('a[href="/rate"]');
     expect(about?.compareDocumentPosition(login as Node) ?? 0).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+  });
+
+  it('credits Tommy Puglia with a link to his LinkedIn page', async () => {
+    const { container } = await render(SiteFooter, { asOf: '2026-10-16' });
+    const credit = container.querySelector('a[href="https://www.linkedin.com/in/tommypuglia"]');
+    expect(credit?.textContent).toBe('Tommy Puglia');
+    expect(credit?.parentElement?.textContent).toBe('Built by Tommy Puglia.');
+    expect(credit?.getAttribute('target')).toBe('_blank');
+    expect(credit?.getAttribute('rel')).toBe('noopener noreferrer');
+  });
+});
+
+describe('SiteNav', () => {
+  it('keeps an About link in the top bar, outside the scrolling section links', async () => {
+    const items = [{ id: 'ratings', label: 'Ratings' }];
+    const { container } = await render(SiteNav, { items, active: undefined, onNavigate: () => undefined });
+    const about = container.querySelector('header a[href="/about.html"]');
+    expect(about?.textContent).toBe('About');
+    expect(about?.closest('nav[aria-label="Sections"]')).toBeNull();
   });
 });

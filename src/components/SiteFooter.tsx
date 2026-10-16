@@ -10,6 +10,13 @@ export function SiteFooter({ asOf }: SiteFooterProps) {
     <footer className={styles.footer}>
       <div className={styles.inner}>
         <p className={styles.brand}>Microsoft Fabric Credit Ratings</p>
+        <p>
+          Built by{' '}
+          <a href="https://www.linkedin.com/in/tommypuglia" target="_blank" rel="noopener noreferrer">
+            Tommy Puglia
+          </a>
+          .
+        </p>
         {asOf && <p>Ratings as of {formatFullDate(asOf)}.</p>}
         <p>
           <a href="/about.html">About these ratings</a>: where the ratings come from and who built this site.

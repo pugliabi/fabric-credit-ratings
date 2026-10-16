@@ -83,6 +83,10 @@
     background-color var(--duration) var(--ease);
 }
 
+.about {
+  flex-shrink: 0;
+}
+
 .link:hover {
   color: var(--fabric-green-deep);
   background: var(--fabric-green-pale);

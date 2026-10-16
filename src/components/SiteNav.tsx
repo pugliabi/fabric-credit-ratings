@@ -45,6 +45,9 @@ export function SiteNav({ items, active, onNavigate }: SiteNavProps) {
             ))}
           </ul>
         </nav>
+        <a className={`${styles.link} ${styles.about}`} href="/about.html">
+          About
+        </a>
       </div>
     </header>
   );
