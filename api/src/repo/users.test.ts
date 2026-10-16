@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { useTarget } from '../../../db/target.ts';
 import { closeDb, db, transaction, varchar, type Db, type Params } from '../lib/db.ts';
+import { useDevTarget } from '../test-target.ts';
 import { countActiveAdminsLocked, createUser, replacePasswordHash } from './users.ts';
 
 function answering(rows: object[]): { calls: { text: string; params: Params }[]; fake: Db } {
@@ -56,13 +56,16 @@ describe.skipIf(!process.env.FCR_DB_TESTS)('the admin-count lock against the dev
   let raterId: number | undefined;
 
   beforeAll(async () => {
-    useTarget([]);
+    useDevTarget();
     raterId = await createUser(db, { login, displayName: `itest ${login}`, role: 'rater', passwordHash: 'unset' });
   }, 120_000);
 
   afterAll(async () => {
-    if (raterId !== undefined) await db.query('DELETE FROM users WHERE id = @id', { id: raterId });
-    await closeDb();
+    try {
+      if (raterId !== undefined) await db.query('DELETE FROM users WHERE id = @id', { id: raterId });
+    } finally {
+      await closeDb();
+    }
   });
 
   // A rater's row, so even a broken lock changes no admin; the no-op update writes nothing either way.

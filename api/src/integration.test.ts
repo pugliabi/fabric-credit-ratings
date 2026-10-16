@@ -1,8 +1,8 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import { useTarget } from '../../db/target.ts';
 import { closeDb, db, varchar } from './lib/db.ts';
 import { hashToken } from './lib/session.ts';
 import { siteState, type SiteState } from './repo/site.ts';
+import { useDevTarget } from './test-target.ts';
 
 const BASE = process.env.FCR_API_URL ?? '';
 const ORIGIN = process.env.FCR_ORIGIN ?? 'http://localhost:5173';
@@ -106,10 +106,7 @@ describe.skipIf(!BASE)('API against the dev database', () => {
       .map(([name]) => name);
     // Before any request, so a missing password can't count as a failed admin login that the cleanup can't undo.
     if (missing.length > 0) throw new Error(`Set ${missing.join(', ')} before running the integration suite.`);
-    useTarget([]);
-    if (!process.env.SQL_DATABASE?.startsWith('fcr-dev')) {
-      throw new Error('The integration suite writes test rows: point api/local.settings.json at fcr-dev.');
-    }
+    useDevTarget();
     onDevDatabase = true;
     await clearTestRows();
     siteBefore = await siteState(db);

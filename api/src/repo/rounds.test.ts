@@ -1,8 +1,8 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { useTarget } from '../../../db/target.ts';
 import type { Round, ScoreTriple } from '../../../src/domain/types.ts';
 import { closeDb, db, transaction, varchar, type Db, type Params } from '../lib/db.ts';
 import { ROUND_ID } from '../lib/validate.ts';
+import { useDevTarget } from '../test-target.ts';
 import { listArtifacts } from './catalog.ts';
 import { findLatestPublishedRound, lockRound } from './rounds.ts';
 import { replaceScorecard, scoresFor, toTriples } from './scores.ts';
@@ -55,7 +55,7 @@ describe.skipIf(!process.env.FCR_DB_TESTS)('card writes against the dev database
   let userId: number | undefined;
 
   beforeAll(async () => {
-    useTarget([]);
+    useDevTarget();
     expect(roundId).toMatch(ROUND_ID);
     // Published, because the database allows only one open round and the seeded one holds that slot.
     await db.query(

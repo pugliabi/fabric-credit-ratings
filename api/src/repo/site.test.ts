@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { useTarget } from '../../../db/target.ts';
 import { closeDb, db, transaction, type Db, type Params } from '../lib/db.ts';
+import { useDevTarget } from '../test-target.ts';
 import { isBehind, markChanged, markSnapshotTaken } from './site.ts';
 
 function recording(): { calls: { text: string; params: Params }[]; fake: Db } {
@@ -66,7 +66,7 @@ describe('markSnapshotTaken', () => {
 
 describe.skipIf(!process.env.FCR_DB_TESTS)('the site-changed stamp against the dev database', () => {
   beforeAll(() => {
-    useTarget([]);
+    useDevTarget();
   });
 
   afterAll(async () => {
