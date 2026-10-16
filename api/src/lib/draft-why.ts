@@ -75,11 +75,13 @@ Rules:
 - Never mention scores, totals, letter grades, rater counts, or arithmetic. The reader must not be able to reconstruct the rating from the paragraph.`;
 }
 
+/** No real Anthropic key is shorter; real ones are about 100 characters. */
+const KEY_MIN_LENGTH = 16;
 /**
  * Anthropic keys are sk-ant-… in this alphabet. Anything else is a bad paste, and no JSON or URL escaping can change a
  * key in this form, so redaction always finds it in error text.
  */
-const ANTHROPIC_KEY = /^[A-Za-z0-9_-]{16,}$/;
+const ANTHROPIC_KEY = new RegExp(`^[A-Za-z0-9_-]{${KEY_MIN_LENGTH},}$`);
 const KEY_NOT_SENDABLE =
   "ANTHROPIC_API_KEY doesn't look like an Anthropic key: it's too short, or it has spaces, quotes, line breaks, " +
   'or other characters a key never has. Paste the key again in the Function App settings.';
@@ -88,7 +90,8 @@ const KEY_NOT_SENDABLE =
 export function redactKey(text: string, apiKey: string): string {
   let redacted = text;
   for (const secret of new Set([apiKey, apiKey.trim()])) {
-    if (secret) redacted = redacted.split(secret).join('[redacted]');
+    // Shorter than any key, so it's no secret, and replacing it would mangle ordinary words.
+    if (secret.length >= KEY_MIN_LENGTH) redacted = redacted.split(secret).join('[redacted]');
   }
   return redacted;
 }

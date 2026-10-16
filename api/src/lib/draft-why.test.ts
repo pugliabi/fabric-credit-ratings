@@ -1,6 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createDrafter, failureDetails, mentionsMath, promptFor, type DraftInput } from './draft-why.ts';
+import { createDrafter, failureDetails, mentionsMath, promptFor, redactKey, type DraftInput } from './draft-why.ts';
 
 const clients = vi.hoisted(() => [] as { options: unknown; client: unknown }[]);
 
@@ -312,6 +312,24 @@ describe('createDrafter', () => {
     const failure = await draft?.(input).catch((caught: unknown) => caught);
     expect((failure as Error).message).toBe('Connection error.');
     expect((failure as Error).cause).toBe(provider);
+  });
+});
+
+describe('redactKey', () => {
+  const KEPT_LEAKING = 'The model kept mentioning scores or grades. Write this one by hand.';
+  const TIMED_OUT = 'Anthropic did not answer in time. Try again.';
+
+  it.each(['e', 'in'])('leaves text alone for %j, too short to be a key, so the exact texts survive', (apiKey) => {
+    for (const text of [KEPT_LEAKING, TIMED_OUT]) {
+      expect(text).toContain(apiKey);
+      expect(redactKey(text, apiKey)).toBe(text);
+      const settings = { apiKey, workspaceId: '', model: '' };
+      expect(failureDetails(new Error(text), settings).error).toBe(`Error: ${text}`);
+    }
+  });
+
+  it('redacts a value long enough to be a key', () => {
+    expect(redactKey('got sk-ant-unit-test-key back', 'sk-ant-unit-test-key')).toBe('got [redacted] back');
   });
 });
 
