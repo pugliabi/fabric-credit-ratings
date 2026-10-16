@@ -1,5 +1,5 @@
 import type { ChangeKind, ReviewItem, RoundReview } from '../../../src/domain/api-types.ts';
-import { pointFor, previousPoint } from '../../../src/domain/aggregate.ts';
+import { pointFor, previousPoint } from './aggregate.ts';
 import { notchDelta } from '../../../src/domain/grades.ts';
 import type { RatingPoint } from '../../../src/domain/types.ts';
 import { pluralize } from '../../../src/lib/format.ts';

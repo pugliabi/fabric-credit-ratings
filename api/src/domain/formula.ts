@@ -1,4 +1,4 @@
-import type { FactorValues, Grade } from './types.ts';
+import type { FactorValues, Grade } from '../../../src/domain/types.ts';
 
 export const MIN_TOTAL = 3;
 export const MAX_TOTAL = 21;

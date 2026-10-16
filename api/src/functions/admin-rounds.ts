@@ -1,5 +1,5 @@
 import type { PublishResult, RoundReview } from '../../../src/domain/api-types.ts';
-import { pointFor, previousPoint } from '../../../src/domain/aggregate.ts';
+import { pointFor, previousPoint } from '../domain/aggregate.ts';
 import type { Round } from '../../../src/domain/types.ts';
 import { buildReview } from '../domain/review.ts';
 import type { Config } from '../lib/config.ts';

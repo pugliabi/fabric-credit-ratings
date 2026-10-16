@@ -1,5 +1,5 @@
 import { WITHDRAWN_GRADE, gradeForTotal } from './formula.ts';
-import type { Artifact, FactorId, FactorValues, Rating, RatingPoint, RoundData, ScoreTriple } from './types.ts';
+import type { Artifact, FactorId, FactorValues, Rating, RatingPoint, RoundData, ScoreTriple } from '../../../src/domain/types.ts';
 
 /** Position of each factor inside a ScoreTriple. */
 export const FACTOR_ORDER: readonly FactorId[] = ['capability', 'ux', 'cost'];
@@ -92,12 +92,6 @@ export function buildRatings(artifacts: readonly Artifact[], rounds: readonly Ro
     if (current) ratings.push({ artifact, current, history });
   }
   return ratings;
-}
-
-/** Artifacts with no published rating yet, in catalog order. */
-export function findUnrated(artifacts: readonly Artifact[], ratings: readonly Rating[]): Artifact[] {
-  const rated = new Set(ratings.map((rating) => rating.artifact.id));
-  return artifacts.filter((artifact) => !rated.has(artifact.id));
 }
 
 /** Publication date of the newest published round, or '' before the first one. */

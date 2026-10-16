@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { asOfDate, buildRatings, findUnrated, previousPoint } from './aggregate.ts';
-import type { Artifact, RoundData, ScoreTriple } from './types.ts';
+import { asOfDate, buildRatings, previousPoint } from './aggregate.ts';
+import type { Artifact, RoundData, ScoreTriple } from '../../../src/domain/types.ts';
 
 const lakehouse: Artifact = { id: 'lakehouse', name: 'Lakehouse', workload: 'storage', status: 'ga' };
 const legacy: Artifact = { id: 'legacy', name: 'Legacy item', workload: 'storage', status: 'retired' };
@@ -72,10 +72,6 @@ describe('buildRatings', () => {
 
   it('grades retired items E whatever the scores', () => {
     expect(byId.get('legacy')?.current.grade).toBe('E');
-  });
-
-  it('lists never-rated items as unrated', () => {
-    expect(findUnrated(catalog, ratings).map((artifact) => artifact.id)).toEqual(['fresh']);
   });
 });
 
