@@ -53,10 +53,13 @@ src/rate/RatePage.tsx, RatePage.module.css
 src/admin/
   main.tsx  AdminPage.tsx  Admin.module.css (moved from src/desk/Desk.module.css)
   NewRoundForm.tsx  rounds.ts (+ test)
-  ReviewTab.tsx  RaterCardEditor.tsx
+  ReviewTab.tsx  RaterCardEditor.tsx  notes.ts  draft-loop.ts (+ tests)   as built: the note rules and the draft loop
   PublishTab.tsx
-  CatalogTab.tsx  catalog-order.ts (+ test)
+  CatalogTab.tsx  catalog-order.ts  catalog-write.ts  catalog-focus.ts (+ tests)
   UsersTab.tsx  password.ts (+ test)
+src/hooks/useUnsavedWork.ts         as built: unsaved whys or card edits ask before leaving
+src/test/dom.ts                     as built: helpers for the *.dom.test.ts files (happy-dom)
+scripts/snapshot-checks.ts (+ test) as built: the snapshot script's shape check and redaction
 src/data/index.ts, snapshot.json    public data from the snapshot
 src/App.tsx, src/components/        empty state; no unrated rows, no "of N", footer always links /rate
 .github/workflows/deploy.yml        fetch + commit the snapshot before building
@@ -1743,6 +1746,8 @@ Append these rules (used by this task and Tasks 6 to 9) after `.roundList li`, a
 }
 ```
 
+As built after the cleanup round (`7274322`), `src/admin/Admin.module.css` also has `flex-wrap: wrap` on `.tabs`, so five tabs wrap to two rows instead of overflowing the header between about 860 and 1,175 px; a `.tableWrap` rule (`max-width: 100%; overflow-x: auto`) that the Catalog and Users tables sit in, so they scroll sideways on a phone and the page doesn't; and one rule `.small:disabled, .small[aria-disabled='true']` for a dimmed small button, since the tabs' busy buttons use `aria-disabled` to keep keyboard focus.
+
 - [ ] **Step 5: Create `admin.html`.**
 
 ```html
@@ -2036,6 +2041,13 @@ git commit -m "Admin page with login gate and Score tab; retire the local desk"
 
 - [ ] **Step 1: Create `src/admin/RaterCardEditor.tsx`.** The admin edits any rater's card in any round. The card is rebuilt from the review's per-rater breakdown, so no extra endpoint is needed.
 
+As built (`bfbd76b`, `38e9829`, `9a050d2`, `48791ab`), the file differs from the block below, and `src/admin/RaterCardEditor.tsx` wins. Its save logic lives in `src/rating-ui/save.ts` next to the rater's own (`cardFromReview`, `raterCardArtifacts`, `raterCardWorkloads`, `clashingRows`, `describeClashes`, `raterCardChanged`, `saveRaterCard`, `pressRaterSave`, `saveBlocked`), so it's unit-tested without a DOM:
+  - **Open-time read.** The panel's review can be hours old, so on open the editor GETs the review again (aborted on unmount) and shows "Checking for newer scores…"; Save is blocked until it lands. Then "Card is up to date" or "Newer scores loaded", and the admin's edits made meanwhile are rebased on top of the newer card. A row the admin moved during the read that the rater also changed (`clashingRows`) is named: `raterCardChanged(name, describeClashes(clashes, card, names))` reads "<name>'s card changed after you opened it, on their page or in another admin window, including a row you changed too: <item> (newer card: <scores>)…", and the admin's whole row wins (`48791ab`). A failed read shows the server's words and still unblocks Save, which reads the card again before it writes.
+  - **Save.** `saveRaterCard` re-GETs the review and sends no PUT if the rater's card no longer matches the one the editor opened with; the draft is rebased on the newer card and the clash message shows. After a PUT, the editor closes (`onSaved`) only if the live draft still equals the sent one; otherwise it stays open with "Saved. You changed scores while it was saving, and those changes are not saved yet. Save again to keep them." (`CHANGED_WHILE_SAVING`). The newer review goes to the panel through `onRefreshed`, which must be stable. A failed save shows the server's words (a 409 or the deadlock 503) beside the state words. The button is `aria-disabled`, not `disabled`, so focus stays on it.
+  - **Items the catalog lacks.** The matrix lists `raterCardArtifacts(catalog.artifacts, review)`: the whole catalog, retired items included, plus any reviewed item this page's catalog hasn't loaded (added after it), grouped by `raterCardWorkloads`, which adds a group named by the workload id for a workload the page doesn't have. A save replaces the whole card, so a missing item would drop its score.
+  - **Leaving.** `useUnsavedWork(dirty)` holds the page's unsaved-work flag while the card has edits (a `beforeunload` warning, and `mayLeave()` asks before a tab or round switch and before Log out). Back to review asks "Discard your changes to <name>'s card?" while dirty, or "Your save is already on its way and will go through. Go back without waiting?" (`SAVE_ON_ITS_WAY`) while a save is out, since the PUT has no timeout and the button must not wait for it (`48791ab`). A save that lands after Back to review doesn't close or announce over whatever editor is open by then.
+  - **Focus.** The toolbar (`role="group"`, "<name>'s card") takes focus when focus would otherwise be on `<body>` (`useFocusIfLost`), the state words sit in a polite live region, and the message is an alert keyed per attempt.
+
 ```tsx
 import { useCallback, useMemo, useState } from 'react';
 import type { AdminCatalog, RoundReview } from '../domain/api-types';
@@ -2130,6 +2142,17 @@ export function RaterCardEditor({ review, rater, catalog, onSaved, onCancel }: R
 
 - [ ] **Step 2: Create `src/admin/ReviewTab.tsx`.** Notes save per item through `PUT /admin/rounds/:id/notes/:artifactId`, 700 ms after typing stops. An item stays "unsaved" if its text changed while its save was in flight. The limit matches the server's: up to 2,000 characters after trimming are accepted. A longer note isn't sent; it stays unsaved, with the server's wording ("Keep the write-up to 2,000 characters or fewer.") under the box. The box has no `maxLength`, which would cut a paste short without saying so and would count the untrimmed text.
 
+As built (`bfbd76b`, `38e9829`, `9a050d2`, `033bf0b`), the file differs from the block below, and `src/admin/ReviewTab.tsx` wins, with the pure parts in `src/admin/notes.ts` and `src/admin/draft-loop.ts`:
+  - **Leaving asks first.** Whys live only in the tab (a 401 or a reload loses them), so `useUnsavedWork(edits.dirty.size > 0)` holds the page's unsaved-work flag while any note hasn't reached the server. `mayLeave()` (`src/hooks/useUnsavedWork.ts`) then asks "Your unsaved whys or card edits will be lost. Leave anyway?" before a tab switch (`AdminShell`, on a click or a hash change), a round change in the picker, and leaving or reloading the page; Log out asks its own question (Task 7 note). The hold is installed in the keystroke's commit, so a switch within the 700 ms debounce, or while a failed save waits for Retry, asks too.
+  - **Open-time read and clashes.** The card editor re-reads the card on open and names rows that changed under the admin (Step 1 note). The panel receives the newer review through `onRefreshed` and the editor stays open on top of it; the editor is keyed by round and rater.
+  - **"Only missing a why" is frozen.** The checkbox stores the set of items missing a why at the moment it's ticked (`missingWhy`), not a live filter, so a box being filled in stays put instead of vanishing on the first keystroke. When the review reloads, `refreezeMissing` keeps what it showed (while still in the review) and adds items that are blank now.
+  - **Items the catalog lacks.** The groups come from `raterCardWorkloads(catalog.workloads, review items)`, so an item in a workload added after this page loaded is still listed, under a group named by the workload id (`033bf0b`).
+  - **Drafts.** "Draft all blank" runs through `draftBlanks`; it stops with the panel (an unmount sets the cancel flag, so no more Anthropic tokens are spent), and the Stop/Draft button is one element either way so focus stays on it. The AI buttons use `aria-disabled` plus the "Set ANTHROPIC_API_KEY in the Function App settings" tooltip, so focus stays on "Drafting…". Each draft failure is an alert next to its item.
+  - **Notes.** One save batch is in flight at a time (`createNoteSaver`); text typed meanwhile goes in the next batch. The state words ("Unsaved", "Saving…", "All notes saved") sit in a polite live region, a save error is an alert keyed per attempt with Retry (which moves focus to the toolbar before it disappears), and the over-limit message is tied to its box with `aria-describedby`.
+  - **Card picker.** The "Edit a rater's card…" `<select>` only picks; an Edit card button opens the editor (arrow keys on a closed select fire change at once on Windows). After a save, "Saved <name>'s card." shows in the toolbar and is announced from an always-mounted hidden live region.
+  - **Focus.** On arrival (after login, say) and back from the card editor, the toolbar (`role="group"`, "Review of <label>") takes focus when focus is on `<body>`. The round read is aborted on unmount, and its failure is an alert.
+  - **DOM tests.** `ReviewTab.dom.test.ts`, `RaterCardEditor.dom.test.ts`, and the other `*.dom.test.ts` files run under `happy-dom`, a dev dependency, chosen per file with `// @vitest-environment happy-dom` on line 1, with the helpers in `src/test/dom.ts`. They stub `fetch` through `vi.stubGlobal`, which works on top of the unit-test network guard (Plan 1 Task 2 Step 2); a forgotten stub fails with "Unit tests make no network calls…".
+
 Drafts are slow by nature, so they skip the wake notice (`{ wakeNotice: false }`, the `api()` option noted in Task 2 Step 1). The API answers every draft within about 200 s with one of:
 - the text;
 - a 502 whose message is shown as is;
@@ -2137,15 +2160,13 @@ Drafts are slow by nature, so they skip the wake notice (`{ wakeNotice: false }`
 
 So a status 0 there means the network failed, not a draft that ran too long.
 
-"Draft all blank" drafts one item at a time. It stops when every later draft would get the same answer:
-- a rate limit ("Anthropic's rate limit was reached. …");
-- an overload ("Anthropic is overloaded right now. …");
-- a settings error (the key, the model, or the workspace);
-- the no-key 400;
-- the database 503 ("The ratings database is not responding. …");
-- two "Anthropic did not answer in time. Try again." in a row.
+"Draft all blank" drafts one item at a time. It stops when every later draft would get the same answer. As built, the rule is `stopDrafting(reason, timeoutsInARow)` in `src/admin/draft-loop.ts`, and it goes by status, not by a list of prefixes:
+- any 502 stops the batch, except "The model kept mentioning scores or grades. Write this one by hand." (only that item needs a human) and "Anthropic did not answer in time. Try again.", which stops it only as the second in a row. So a rate limit ("Anthropic's rate limit was reached. …"), an overload ("Anthropic is overloaded right now. …"), a settings error (the key, the model, or the workspace, including round 7's "ANTHROPIC_API_KEY doesn't look like an Anthropic key: …"), and raw provider text all stop it;
+- a 404 stops it unless it's "That item does not exist." (that item is gone; the next may not be);
+- a 400 stops it unless it's "<name> has no scores in <label> yet." (per item), so the no-key 400 stops it;
+- anything else stops it: status 0 (network), 401, 403, 409, and the database 503 ("The ratings database is not responding. …").
 
-It keeps going past "The model kept mentioning scores or grades. Write this one by hand." and other per-item errors. Drafts stay unsaved edits, so the admin reads each one before it's saved.
+It keeps going past "The model kept mentioning scores or grades. Write this one by hand." and the other per-item errors. Drafts stay unsaved edits, so the admin reads each one before it's saved. `draftItem` and `draftBlanks` in `draft-loop.ts` hold the loop (one item at a time, filling only boxes still blank, until the queue is done, Stop is pressed or the panel goes away, or `stopDrafting` says so); `notes.ts` holds the note rules (`NOTE_MAX`, `NOTE_TOO_LONG`, `withNote`, `withDraft`, `notesToSend`, `afterSent`, `createNoteSaver` for one save batch at a time, `missingWhy`, `refreezeMissing`).
 
 ```tsx
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -2161,11 +2182,16 @@ const SAVE_DELAY = 700;
 /** The server's limit, counted on the trimmed text, with its wording. */
 const NOTE_MAX = 2000;
 const NOTE_TOO_LONG = 'Keep the write-up to 2,000 characters or fewer.';
-/** How the API's answer starts when every later draft in the batch would fail the same way. */
+/**
+ * How the API's answer starts when every later draft in the batch would fail the same way. As built, this list doesn't
+ * exist: `stopDrafting` in `draft-loop.ts` stops on any 502 except its `KEPT_LEAKING` and `TIMED_OUT` (the two texts
+ * in the prose above), so every text here, and any new 502 the API adds, stops the batch without a front-end change.
+ */
 const STOPS_BATCH = [
   "Anthropic's rate limit was reached.",
   'Anthropic is overloaded right now.',
   'Anthropic rejected ANTHROPIC_API_KEY.',
+  "ANTHROPIC_API_KEY doesn't look like an Anthropic key:",
   "ANTHROPIC_MODEL names a model this key can't use.",
   'This Anthropic key is not scoped to a workspace.',
   'Set ANTHROPIC_API_KEY in the Function App settings to draft with AI.',
@@ -2506,10 +2532,12 @@ After the Score tab block inside `<main>`, add:
         {data && tab === 'review' && <ReviewTab rounds={data.rounds} catalog={data.catalog} users={data.users} />}
 ```
 
+As built, `src/admin/AdminPage.tsx` ends Tasks 6 to 9 with `TABS` = score, review, publish, catalog, users, in that order. The hash is the route: `tabFromHash()` picks the tab on load, a `hashchange` listener follows a hash typed into the open page, and a tab click writes `#<id>` with `history.replaceState`. Both go through `mayLeave()` first; a refused hash change is written back to the current tab's hash, so the URL and the tab agree.
+
 - [ ] **Step 4: Check it.** With the API and dev server running, open `http://localhost:5173/admin.html#review`.
 1. Q4 2026 lists the items scored in Task 4 and Task 5, each with its change label ("First rating"), averaged scores, grade, and a breakdown naming Rater A and you.
 2. Type a why in one item. The toolbar goes "Unsaved", then "Saving…", then "All notes saved". Reload: the text is still there.
-3. Choose "Rater A" in "Edit a rater's card…", change one score, and click Save card. The review comes back with Rater A's new numbers in the breakdown. Log in at `/rate.html` as `rater-a`: their card shows the admin's change.
+3. Choose "Rater A" in "Edit a rater's card…" and press Edit card. "Checking for newer scores…" turns into "Card is up to date"; change one score, and click Save card. The review comes back with Rater A's new numbers in the breakdown and "Saved Rater A's card." in the toolbar. Log in at `/rate.html` as `rater-a`: their card shows the admin's change.
 4. If `ANTHROPIC_API_KEY` is set in `api/local.settings.json`, Draft with AI fills a blank why. If not, the AI buttons are disabled with a tooltip.
 
 - [ ] **Step 5: Commit.**
@@ -2529,6 +2557,14 @@ git commit -m "Admin Review tab: per-item review, autosaved whys, AI drafts, edi
 - Modify: `src/admin/AdminPage.tsx`
 
 - [ ] **Step 1: Create `src/admin/PublishTab.tsx`.**
+
+As built (`3af72f4`, `ab28c57`, `a0b73c1`, `254ef64`), the file differs from the block below, and `src/admin/PublishTab.tsx` wins:
+  - **Structure.** `PublishTab` holds the rounds, the site read, and the publish/reopen call (`setStatus`). `OpenRound` fetches the open round's review (aborted on unmount) and renders either an exported `PublishForm` (the checklist, the date, Publish with `aria-disabled` and "Publishing…"; its "Publish <label>" heading takes focus through `useFocusIfLost`) or, after a failed read, a `ReadFailed` panel on the shell's `LoadFailed` pattern: "Could not check <label>", the server's words as an alert keyed per failure, and a Try again button that stays mounted ("Trying again…", `aria-disabled`) so keyboard focus survives a try that fails again; once the retry works, the heading takes focus. `publishDate()` lives in `rounds.ts`.
+  - **Three counters and `busy`.** `attempt` remounts the `Notice` (which takes focus through `useFocusIfLost`) so each publish or reopen result is announced again; `failures` keys the publish/reopen error alert; `siteFailures` keys the site read's alert. They were one key at first, so a failed site read remounted the notice and could duplicate it. `busy` covers both Publish and Reopen: Reopen refuses before its confirm while busy, reads "Reopening…", and is `aria-disabled`, so a second click can't send a second PUT.
+  - **Site panel.** `loadSite` is sequenced (`siteRun`): only the latest read lands, so a slow older answer can't overwrite a newer one. The exported `SitePanel` takes `site: SiteStatus | undefined` plus `readError`/`readFailures` and renders a retry-only state: before any read has worked it reads "Public site status" / "The site status didn't load." with a working Check again, and later it keeps the last good status beside a failed read's alert. Check again keeps its DOM position, so focus stays on it after a retry. The update result shows inside the panel ("Starting the update…", then the API's text in a polite live region, a 502 as an alert keyed by its own `attempt`), so a failed Update and a failed later read are two separate alerts.
+  - **Shell.** `AdminShell` gets `onForbidden: () => boolean` (a 403 re-reads `/me` once per page; see Task 9), `load` resolves to the rounds it applied, and the Score tab's editor key carries `scoreRun`, so a reload that finds the same round still open remounts the editor once per round. `ScorecardEditor` and `CardForm` gained `onReload`.
+  - **Log out.** `useUnsavedWork.ts` exports `hasUnsavedWork()`, and `logout.ts` exports `UNSAVED_WORK_ON_LOGOUT` ("Log out? Your unsaved whys or card edits will be lost.") and `UNSAVED_BOTH_ON_LOGOUT` ("Log out and remove your unsaved scores from this browser? Your unsaved whys or card edits will be lost too."), so Log out asks one combined question for stored scores, page work, or both; Cancel keeps the user logged in, and a failed logout leaves the holds and the whys in place. After the cleanup round (`5f5b387`), `logOutClearingDrafts(userId, logout, update, ask?, known?)` takes the catalog's item ids as a fifth argument, `hasUnsavedDrafts(prefix, known?)` ignores a stored edit on an item deleted since (the Score tab would have dropped it on mount), and `AccountBar` has an optional `knownArtifacts?: ReadonlySet<string>` prop that `AdminShell` fills from its catalog (memoised); `/rate` passes nothing, so its behaviour is unchanged.
+  - **Tests.** `PublishTab.test.ts` (markup) and `PublishTab.dom.test.ts` (under `happy-dom`, `// @vitest-environment happy-dom`, with `src/test/dom.ts`) pin the counters, the busy Reopen, the retry-in-place states, the failed read's heading focus, and the two separate alerts.
 
 ```tsx
 import { useCallback, useEffect, useState } from 'react';
@@ -2871,6 +2907,13 @@ Run: `npx vitest run src/admin/catalog-order.test.ts`
 Expected: 4 tests pass.
 
 - [ ] **Step 3: Create `src/admin/CatalogTab.tsx`.**
+
+As built (`43d6044`, `5487937`, `7f79310`), the tab differs from the block below, and `src/admin/CatalogTab.tsx` wins. The component no longer imports `api`; every request is built in two tested modules:
+  - **`src/admin/catalog-write.ts`.** `writeCatalog(action, handlers)` runs a write and hands the answer to `onCatalog`; after any refusal the server answered, except a 401 (which shows the login), it reads `/admin/catalog` again, because a reorder is one whole-row PUT per moved row and a failure partway leaves a partial order the page must show. `saveOrders` sends those PUTs in order and stops at the first refusal. `createCatalogWrites` is the tab's write runner (one per mounted tab, outside React): one write at a time (a press while one runs resolves false and sends nothing), `onStart`/`onSettled` hooks for the busy state, and `readOnOpen(signal)`, the open-time reread, because scores saved since the page loaded change which items can be deleted; it is aborted on unmount and dropped when a newer catalog arrived meanwhile. `addAction` trims the id and refuses a reserved one in the browser (`reservedIdProblem`, the server's rule and wording), so nothing is sent. `catalogActions` builds every body and path: `addArtifact`, `addWorkload`, `saveWorkload`, `updateArtifact(artifact, changes, catalog)` (a move to another workload lands at that workload's end, measured across the whole catalog), `deleteArtifact`, `moveArtifacts(catalog, workloadId, from, to)` (renumbers only that workload's items, in the catalog's order), and `moveWorkloads(catalog, from, to)`. After the cleanup round (`7f79310`) the module, not the component, picks the rows a move renumbers or measures, and `ArtifactRowEditor` takes `catalog` instead of `artifacts`.
+  - **`src/admin/catalog-order.ts`** also holds `workloadBody`, `artifactBody`, `artifactUpdate`, `endOfWorkload`, `followServer` (an untouched field follows the server's value after another admin's rename; a field being edited keeps what was typed), and `reservedIdProblem`.
+  - **`src/admin/catalog-focus.ts`.** Row actions (↑/↓, both selects, row Save, Delete, Dismiss) would drop keyboard focus to `<body>`: a select turned disabled, a row React moved, or a removed row. The tab keeps a ref map of its controls (`focusKeys`), and once the write settles it puts focus back on the same control or its stand-in (`moveFocus`, `deleteFocus`, `pickFocus`), unless the user has moved on (`focusLost`). Dismiss returns focus to where the error started, else the tab heading. Busy row buttons are `aria-disabled` and their handlers refuse; real `disabled` is kept for the ends of a list, for the two selects while busy (refocused afterwards), and for a referenced item's Delete, whose tooltip reads "Has scores or notes. Mark it retired instead.".
+  - **Markup.** No `pattern` or `maxLength` on the fields: ids, names, and lengths are checked by the server, whose 400s are shown as is. Add and Save are `aria-disabled` while busy. The error is a sticky bar at the top with Dismiss, an alert keyed per attempt. The heading "Workloads and items" takes focus through `useFocusIfLost` on arrival. Accessible names include the item or workload ("Save <workload>", and so on), so 78 buttons aren't all named "Delete". The tables sit in a `.tableWrap` that scrolls sideways on narrow screens (`7274322`).
+  - **Tests.** 51 instead of the plan's 4: `catalog-order.test.ts` (13), `catalog-write.test.ts` (20, including that a move renumbers only the moved item's workload even when other workloads' items come first, and that a cross-workload move measures the target workload in the full catalog), `catalog-focus.test.ts` (7), and `CatalogTab.test.ts` (11, markup).
 
 ```tsx
 import { useState, type FormEvent } from 'react';
@@ -3329,7 +3372,7 @@ and add after the publish line:
 - [ ] **Step 5: Check it.** At `http://localhost:5173/admin.html#catalog`:
 1. Add an item "Test item" to the first workload. The id fills in as `test-item`, and the row appears at the bottom of that workload.
 2. Rename it, set it to Preview, and move it up. Each change sticks after a reload.
-3. Delete it: it disappears. The Delete button on an item you scored in Task 4 is disabled, with the tooltip "Has scores or notes".
+3. Delete it: it disappears. The Delete button on an item you scored in Task 4 is disabled, with the tooltip "Has scores or notes. Mark it retired instead.".
 4. `/rate.html` (as `rater-a`) shows catalog changes after a reload.
 
 - [ ] **Step 6: Commit.**
@@ -3368,7 +3411,7 @@ describe('generatePassword', () => {
 Run: `npx vitest run src/admin/password.test.ts`
 Expected: FAIL, cannot resolve `./password`.
 
-- [ ] **Step 2: Create `src/admin/password.ts`.**
+- [ ] **Step 2: Create `src/admin/password.ts`.** As built (`bb6040a`), `generatePassword` drops bytes at or above `256 - (256 % 55)` and draws more until the length is reached, because `byte % 55` on all 256 values would favour the first characters; the block below has that bias, and `src/admin/password.ts` wins.
 
 ```ts
 const ALPHABET = 'abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -3384,6 +3427,14 @@ Run: `npx vitest run src/admin/password.test.ts`
 Expected: 2 tests pass.
 
 - [ ] **Step 3: Create `src/admin/UsersTab.tsx`.** Admin-set passwords are shown in clear text, because the admin has to hand them over.
+
+As built (`bb6040a`, `dfde7c7`, `fe424f5`), the file differs from the block below, and `src/admin/UsersTab.tsx` wins:
+  - **Exports.** `UserRow`, `EditUserRow`, `CreateUserForm`, `detailsChanges`, `failureMessage`, and `passwordNotice` are exported for the markup tests (16 in `UsersTab.test.ts`).
+  - **Own-row rules, in code.** `detailsChanges(isMe, name, role)` sends only the name for your own row (the role select is disabled and described by "You cannot remove your own admin access. Ask another admin to make this change."), and your row has no Disable button. The server's self and last-admin rules still back these up, and their 400/409 texts show as is.
+  - **`onForbidden: () => boolean`.** `failureMessage(reason, onForbidden)` calls it only for the 403 "Only admins can do that.", which means this account lost admin rights: `AdminShell` re-reads `/me` once per page, which sends a demoted admin to `/rate`; any other 403 (an origin the server refuses, say) is only shown. After the cleanup round (`fe424f5`) the shell's `load` uses the same once-per-page guard, and the header's "Logged in as <name>" follows `data.users`' copy of the admin's name, so renaming yourself shows at once.
+  - **Password notices.** `passwordNotice(isMe, name, password)` reads "Your new password is <password>. You stay logged in here; your other sessions were ended." for your own row, and "New password for <name>: <password>. Share it privately. They are logged out everywhere and can change it after logging in." for anyone else (every session of theirs ends, not just the other ones). The create notice reads "<name> can log in at /rate as <login> with the password <password>. Share it privately; they can change it after logging in." The notices live in a polite live region mounted from the start (not `role="status"`, which the `WakeNotice` keeps as the page's only one) and scroll into view, since a long list can push the form below the first screen.
+  - **Inputs.** The login field is lowercased in place (`takeLogin`), so the caret stays put, and not mid-composition: `onCompositionEnd` lowercases a composed login when the IME is done. Its `pattern` is `[a-z0-9][a-z0-9._\-]{1,39}` with the title "Logins use 2 to 40 lowercase letters, digits, dots, dashes, or underscores." The password fields have no `minLength`/`maxLength`: the length rule comes from `newPasswordProblem`, in the server's words, because `maxLength` truncates a paste silently. After a create the password field is emptied, so it can't be mistaken for the one in the notice, and typing the next login suggests a new one.
+  - **Focus.** The "Raters and admins" heading takes focus on arrival (`useFocusIfLost`); row buttons are `aria-disabled` while busy; closing an edit row or re-sorting the list puts focus back on the row's button when it fell to `<body>`. The table sits in a `.tableWrap` (`7274322`). Disable asks "Disable <name>? They are logged out everywhere and can't log in until you enable them." first.
 
 ```tsx
 import { useState, type FormEvent } from 'react';
@@ -3684,12 +3735,14 @@ and add after the catalog line:
         {data && tab === 'users' && <UsersTab users={data.users} me={user} onUsers={setUsers} />}
 ```
 
+As built, the render line also passes `onForbidden={onForbidden}`, the shell's once-per-page `/me` re-read (Step 3 note), and `AdminPage.tsx` ends with the five tabs and the hash routing described in Task 6 Step 3.
+
 - [ ] **Step 5: Check it.** At `http://localhost:5173/admin.html#users`:
-1. The table lists you (with a "you" badge) and Rater A.
-2. Add `rater-b` (Rater B). The notice shows the login and the generated password. Log in as `rater-b` in a private window at `/rate.html`.
+1. The table lists you (with a "you" badge) and Rater A. A keyboard-only login on `#users` lands on "Raters and admins".
+2. Add `rater-b` (Rater B). The notice shows the login and the generated password, and the password field is now empty. Log in as `rater-b` in a private window at `/rate.html`.
 3. Set a new password for Rater B. Their private window's next action shows the login form with "Your session ended…". The new password works.
-4. Try to make yourself a rater, or disable yourself. The API refuses with its message, shown in red.
-5. Disable Rater B: their row greys out, and logging in as `rater-b` fails. Enable them again.
+4. Edit your own row: the role select is disabled with the "You cannot remove your own admin access…" hint, and there is no Disable button on your row. Rename yourself: the header's "Logged in as" follows without a reload. Rename back.
+5. Disable Rater B: their row greys out, and logging in as `rater-b` gets "Wrong login or password." Enable them again.
 
 - [ ] **Step 6: Commit.**
 
@@ -3834,7 +3887,7 @@ export function App() {
       <main id="ratings" className={styles.main}>
         {WORKLOADS.length === 0 ? (
           <p className={styles.empty}>
-            No ratings are published yet. The first review round is being scored now; check back once it is published.
+            No ratings are published right now. Check back once the next review round is published.
           </p>
         ) : (
           <>
@@ -3911,7 +3964,7 @@ with:
 - [ ] **Step 5: No unrated rows.** In `src/components/WorkloadSection.tsx`:
 - Change the imports to `import type { Rating, Workload } from '../domain/types';` and `import { ArtifactRow } from './ArtifactRow';`.
 - Delete `unrated: Artifact[];` from the props and `unrated,` from the destructuring.
-- Change `const itemCount = sorted.length + unrated.length;` to `const itemCount = sorted.length;`.
+- Change `const itemCount = sorted.length + unrated.length;` to `const itemCount = sorted.length;`. (As built, `4f02ee6`, the variable is gone and the heading reads `pluralize(sorted.length, 'item')` inline.)
 - Delete the block:
 
 ```tsx
@@ -3971,6 +4024,11 @@ The script also tells the deploy which snapshot it fetched. Its timeout is 200 s
 - With `--confirm` (local runs), after a successful fetch, POST `{ generatedAt }` to `/api/build/snapshot/deployed` with the token and `Content-Type: application/json`. Expect 204. Vite serves the written file at once, so locally the fetch is the deploy. A failed confirm is a warning, like a failed fetch.
 
 Fetching the snapshot never marks the public site up to date. Only `POST /api/build/snapshot/deployed` moves `last_snapshot_at`: the deploy workflow's confirm step (Task 11), or `npm run snapshot -- --confirm` locally.
+
+As built (`cdd808c`, `4f02ee6`, `bf125ed`), the script differs from the block below, and `scripts/snapshot.ts` wins, with its pure checks in `scripts/snapshot-checks.ts` (tested by `scripts/snapshot-checks.test.ts`; `vitest.config.ts` includes `scripts/**/*.test.ts`):
+  - **Validation.** `isSnapshot` is a deep shape check (`snapshotProblem` names what's wrong: "The response is not a valid snapshot: <problem>."), and `generatedAt` must be exactly an ISO timestamp (`isIsoTimestamp`, so nothing but one timestamp reaches `$GITHUB_OUTPUT`). The committed file is read with a BOM tolerated; one that isn't valid JSON counts as different, with a warning, so the fetched snapshot replaces it.
+  - **Token.** `localToken()` reads `api/local.settings.json` BOM-tolerant and returns `''` on any read or parse failure, so the fetch fails with an ordinary warning. `configuredToken()` prefers `SNAPSHOT_TOKEN` from the environment (CI) when it isn't blank. `headerToken` trims it, and a token with a character outside 0x21–0x7E is never sent: "Snapshot not refreshed: SNAPSHOT_TOKEN has characters a header can't carry. Keeping the committed src/data/snapshot.json." (`bf125ed`).
+  - **Redacted warnings.** Every warning passes through `redact(message, secrets)`, where the secrets are the token as read, trimmed, and URL-encoded (`tokenSecrets`) plus the configured URL's credentials, query, and fragment (`urlSecrets`); `failureReason` adds Node's cause (`connect ECONNREFUSED …`, `getaddrinfo ENOTFOUND …`) as one sentence; under `GITHUB_ACTIONS` the `::warning::` text goes through `commandData`, so a line break can't start another workflow command. The two warnings are "Snapshot not refreshed: … Keeping the committed src/data/snapshot.json." and "Snapshot not confirmed: …".
 
 ```ts
 import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
@@ -4085,7 +4143,7 @@ Expected: typecheck and build succeed.
 With `npm run api` running, run `npm run snapshot`.
 Expected: `Snapshot unchanged.` (nothing is published in `fcr-dev` yet). Run `npm run snapshot -- --confirm`. Expected: the same line, and it also prints `Confirmed the snapshot of <time>.` Stop the API and run `npm run snapshot` again. Expected: `Snapshot not refreshed: fetch failed … Keeping the committed src/data/snapshot.json.`, with exit code 0.
 
-Open `http://localhost:5173/`. Expected: the header shows "Items rated 0", the main area shows the "No ratings are published yet" empty state, the nav has only "How It Works", and the footer says "Raters: log in to score the open round."
+Open `http://localhost:5173/`. Expected: the header shows "Items rated 0", the main area shows the "No ratings are published right now. Check back once the next review round is published." empty state (the same copy serves a reopened only-round, whose snapshot is the never-published one), the nav has only "How It Works", and the footer says "Raters: log in to score the open round."
 
 - [ ] **Step 9: Commit.**
 
@@ -4105,6 +4163,8 @@ git commit -m "Public site reads the published snapshot; unrated items no longer
 - [ ] **Step 1: Rewrite `.github/workflows/deploy.yml`.** Before Plan 3 sets the `API_URL` variable, the fetch step is skipped and the committed snapshot is used. A commit pushed with `GITHUB_TOKEN` doesn't start another run.
 
 One job, so re-running a failed deploy fetches the snapshot again instead of redeploying an older run's artifact. With two jobs, "Re-run failed jobs" on an older run would put its older data back on Pages, and the forward-only stamp would keep saying "up to date". After `deploy-pages` succeeds, the last step tells the API which snapshot is live. It warns rather than fails if the API doesn't answer, because the site is already live, and the admin page just shows it as behind until the next deploy. It's skipped when the fetch was skipped or failed, since the site then still shows the committed file. `--retry 2` covers the API's 503 while the database wakes. `jq` and `curl` come with `ubuntu-latest`.
+
+The listing below is the committed file as built (`77982b6`, `4f02ee6`; `git show 53cff7f:.github/workflows/deploy.yml`). Compared with the first draft: the npm cache is keyed on both lockfiles and `npm ci --prefix api --ignore-scripts` runs too, because `npm run build` typechecks `api/` and Core Tools' postinstall download isn't needed; the push loop's counter is `_`; and `git rebase --abort 2>/dev/null || true` runs between tries, so a conflict never leaves a rebase in progress and the warning's "This deploy still uses it" holds.
 
 ```yaml
 name: Deploy to GitHub Pages
@@ -4136,8 +4196,15 @@ jobs:
         with:
           node-version: 24
           cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            api/package-lock.json
 
       - run: npm ci
+
+      # npm run build typechecks api/ (tsc -p api), which needs the API's own packages. Install scripts are skipped:
+      # Core Tools' postinstall downloads a ~585 MB zip that the build never uses.
+      - run: npm ci --prefix api --ignore-scripts
 
       - name: Fetch the published ratings
         id: snapshot
@@ -4154,8 +4221,9 @@ jobs:
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add src/data/snapshot.json
           git commit -m "Snapshot $(node -p "require('./src/data/snapshot.json').asOf || 'empty'")"
-          for attempt in 1 2 3; do
+          for _ in 1 2 3; do
             if git pull --rebase origin "$GITHUB_REF_NAME" && git push origin "HEAD:$GITHUB_REF_NAME"; then exit 0; fi
+            git rebase --abort 2>/dev/null || true
             sleep 5
           done
           echo "::warning::Could not push the snapshot commit. This deploy still uses it."

@@ -215,7 +215,7 @@ Expected: no output.
 - [ ] **Step 5: Verify.**
 
 Run: `npm run typecheck; npm test`
-Expected: no type errors. All tests pass, including both boundary tests. The integration tests are skipped.
+Expected: no type errors. All tests pass, including both boundary tests. The 13 integration tests are skipped (18 skipped in all, with the 5 opt-in database tests), and no test reaches a network: `vitest.setup.ts` refuses sockets, `fetch`, and child processes unless `FCR_API_URL` or `FCR_DB_TESTS` is set.
 
 Run: `npx vite build; rg -l '21:"AAA"' dist`
 Expected: the build succeeds and `rg` prints nothing. The notch table no longer ships in any public file.
@@ -745,7 +745,7 @@ Vite proxies `/api` to the local API, so the session cookie works on localhost.
 | `npm run api` | Build and start the Functions API locally |
 | `npm run build` | Typecheck everything, then build the site to `dist/` |
 | `npm run typecheck` | TypeScript for the site, scripts, and API |
-| `npm test` | Unit tests. The API integration test also runs when `FCR_API_URL` is set |
+| `npm test` | Unit tests, with no network unless `FCR_API_URL` or `FCR_DB_TESTS` is set. The 13-test API integration suite also runs when `FCR_API_URL` is set |
 | `npm run snapshot` | Refresh `src/data/snapshot.json` from the API |
 | `npm run snapshot -- --confirm` | Refresh it, then tell the local API it's live, as a deploy does. Don't commit a snapshot built from `fcr-dev` |
 | `npm run db:apply` | Apply `db/schema.sql` (safe to re-run) |
@@ -819,6 +819,8 @@ git commit -m "README: logins, admin, Fabric SQL backend, and both deploys"
 Run: `npm run typecheck; npm test; npm run build; git status --short`
 Expected: everything passes and the tree is clean. `src/data/snapshot.json` is still the empty file from Plan 2.
 
+The live run of the 13-test API integration suite (Plan 1 Task 17 Step 4) should have passed against `fcr-dev` on the code being merged. If you keep a pinned runbook for that run, its pin is the `login-backend` HEAD after the front-end merge (`53cff7f` or later), not an API-only commit, because the test setup (`vitest.setup.ts`, `vitest.config.ts`, `api/src/network-guard.test.ts`) changed in the merge and the cleanup round.
+
 - [ ] **Step 2: Merge and push.**
 
 ```powershell
@@ -844,7 +846,7 @@ Expected:
 - `api-deploy.yml` also runs (the API files are new on `main`) and passes.
 
 - [ ] **Step 4: Live check** in a normal browser window, with a private window for a rater.
-  1. https://fabriccreditratings.com shows "Items rated 0" and the "No ratings are published yet" empty state, with "Raters: log in" in the footer. The mock ratings that used to be live are gone; this is expected until Q4 2026 is published.
+  1. https://fabriccreditratings.com shows "Items rated 0" and the "No ratings are published right now. Check back once the next review round is published." empty state, with "Raters: log in" in the footer. The mock ratings that used to be live are gone; this is expected until Q4 2026 is published.
   2. https://fabriccreditratings.com/admin: log in. The Score tab shows Q4 2026 with every item, and the Publish tab reads "The public site is up to date".
   3. On Users, create the real raters. Each one's notice shows the password to hand over.
   4. In the private window, log in at https://fabriccreditratings.com/rate as one rater, save a score, and change the password.

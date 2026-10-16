@@ -167,7 +167,7 @@ All responses are JSON. Errors look like `{ "error": "<message>" }`, with status
 | `GET /api/catalog` | none | `{ workloads, artifacts }` in sort order |
 | `GET /api/rounds/open` | none | `{ round }` or `{ round: null }` |
 | `GET /api/rounds/open/my-scores` | none | `{ round, scores: Record<artifactId, [c,u,k]>, updatedAt, previous }`, where `previous` is the caller's card from the newest published round they scored. 409 when no round is open |
-| `PUT /api/rounds/open/my-scores` | `{ round, scores }` | 200, the same shape as GET. Replaces the caller's card. 409 if `round` is not the open round, or if an item on the card was deleted after the check ("An item on this card was just deleted. Reload the page to get the current list."). A save that loses a deadlock to that item's delete gets 503 ("Someone was changing the catalog at the same moment. Try again.") |
+| `PUT /api/rounds/open/my-scores` | `{ round, scores }` | 200, the same shape as GET. Replaces the caller's card. 409 if `round` is not the open round, or if an item on the card was deleted after the check ("An item on this card was just deleted. Reload the page to get the current list."). A save that loses a deadlock to that item's delete is retried once on the server; a second loss gets 503 ("Someone was changing the catalog at the same moment. Try again.") |
 
 The rater page's "Start from current ratings" uses the bundled `snapshot.json` (rounded averages), not an API call. "Start from my <previous round> scores" uses `previous`.
 
@@ -179,9 +179,9 @@ The rater page's "Start from current ratings" uses the bundled `snapshot.json` (
 | `POST /api/admin/rounds` | `{ id, label }` | opens a round and returns every round. 409 if one is already open or the id exists |
 | `PUT /api/admin/rounds/:id` | `{ status: 'published', publishedOn }` or `{ status: 'open' }` | publish, or reopen the latest published round when no round is open. Returns `{ rounds, deploy }`. A `publishedOn` earlier than the latest published round's gets 400 ("Publish dates can't be earlier than <label>'s (<date>)."); the same day and future dates are allowed. The latest published round is the one with the latest publish date; rounds published on the same date fall back to round order, so the one whose id sorts last counts as latest. A lower-id round published that day therefore doesn't become the latest, which is accepted because round ids are created in order |
 | `GET /api/admin/rounds/:id/review` | none | the raters, and per item: averaged scores, grade, change from the previous published round, per-rater scores. Plus the notes and whether AI drafting is configured |
-| `PUT /api/admin/rounds/:id/scores/:userId` | `{ scores }` | replaces any user's card in any round, published included. Returns the review. A `userId` that isn't 1 to 9 digits gets 404. An item deleted after the check gets 409, and a lost deadlock gets 503, both as on the rater's save |
-| `PUT /api/admin/rounds/:id/notes/:artifactId` | `{ body }` | 204. Saves the why text. An empty body deletes it. A body that isn't text gets 400. An item deleted after the check gets 409 ("That item was just deleted. Reload the page to get the current list."), and a lost deadlock gets 503 ("Someone was changing the catalog at the same moment. Try again.") |
-| `POST /api/admin/rounds/:id/draft/:artifactId` | none | `{ text }`, an AI-drafted why (existing `draft-why` logic), or 502 with the reason. Each Anthropic call times out after 40 s, with one retry. The draft gives up 200 s after the request starts ("Anthropic did not answer in time. Try again."). The dataset load counts toward that but isn't interrupted, and if it used up the time, the answer is the database 503 ("The ratings database is not responding. Try again in a minute.") instead. A rate limit gets "Anthropic's rate limit was reached. Wait a minute, then try again.", and an overload gets "Anthropic is overloaded right now. Try again in a minute." |
+| `PUT /api/admin/rounds/:id/scores/:userId` | `{ scores }` | replaces any user's card in any round, published included. Returns the review. A `userId` that isn't 1 to 9 digits gets 404. An item deleted after the check gets 409, and a lost deadlock is retried once and then gets 503 ("Someone was changing the catalog at the same moment. Try again."), both as on the rater's save |
+| `PUT /api/admin/rounds/:id/notes/:artifactId` | `{ body }` | 204. Saves the why text. An empty body deletes it. A body that isn't text gets 400. An item deleted after the check gets 409 ("That item was just deleted. Reload the page to get the current list."), and a lost deadlock is retried once and then gets 503 ("Someone was changing the catalog at the same moment. Try again.") |
+| `POST /api/admin/rounds/:id/draft/:artifactId` | none | `{ text }`, an AI-drafted why (existing `draft-why` logic), or 502 with the reason. Each Anthropic call times out after 40 s, with one retry. The draft gives up 200 s after the request starts ("Anthropic did not answer in time. Try again."). The dataset load counts toward that but isn't interrupted, and if it used up the time, or left under 10 s of it, the answer is the database 503 ("The ratings database is not responding. Try again in a minute.") instead. A rate limit gets "Anthropic's rate limit was reached. Wait a minute, then try again.", and an overload gets "Anthropic is overloaded right now. Try again in a minute." A key that isn't in Anthropic's form (under 16 characters, or anything outside `A-Z a-z 0-9 _ -` after trimming) is never sent: the route answers 502 "ANTHROPIC_API_KEY doesn't look like an Anthropic key: it's too short, or it has spaces, quotes, line breaks, or other characters a key never has. Paste the key again in the Function App settings." before loading any data. Provider text that quotes the key shows `[redacted]` in its place; values under 16 characters are never redacted |
 | `GET /api/admin/catalog` | none | workloads and items with sort orders, and whether each item is referenced |
 | `POST /api/admin/workloads`, `PUT /api/admin/workloads/:id` | `{ id?, name, shortName, blurb, sortOrder? }` | create or edit. Create ignores `sortOrder` and appends to the end; an edit without it keeps the current order. Returns the admin catalog. A new id that names a built-in object property (`constructor`, `__proto__`, `toString`, …) or `prototype` gets 400 ("Workload id <id> is reserved. Pick another id.") |
 | `POST /api/admin/artifacts`, `PUT /api/admin/artifacts/:id`, `DELETE /api/admin/artifacts/:id` | `{ id?, name, workload, status, sortOrder? }` | create, edit, or delete (delete only when unreferenced, else 409). A delete that loses a deadlock to a save adding that item gets 503 ("Someone was saving a score or note for <name> at the same moment. Try again."). Create ignores `sortOrder` and appends to the end of the item's workload, and refuses the same reserved ids ("Item id <id> is reserved. Pick another id."). Returns the admin catalog |
@@ -246,9 +246,9 @@ Publishing a round also starts the deploy workflow. An admin can't demote or dis
 
 Triggers: push to `main`, `workflow_dispatch`. Permissions: `contents: write`, `pages: write`, `id-token: write`.
 
-1. Checkout, setup-node, `npm ci`.
-2. When the `API_URL` variable is set, `npm run snapshot` (`scripts/snapshot.ts`) fetches `${API_URL}/api/build/snapshot` with `secrets.SNAPSHOT_TOKEN`, with a timeout of about 200 seconds so a paused database can wake (under the 230-second Functions limit), and one retry on a 503. On HTTP 200 with a valid snapshot it writes `src/data/snapshot.json`, and it skips the write when only `generatedAt` differs. Either way it outputs the fetched `generatedAt` for step 5. On any failure it keeps the committed file, logs a warning, and outputs nothing. Locally the same script reads the token from `api/local.settings.json`.
-3. If the snapshot changed, commit it as `github-actions[bot]` ("Snapshot <asOf>") and push with a pull-rebase retry. `GITHUB_TOKEN` commits don't retrigger the workflow.
+1. Checkout, setup-node (npm cache keyed on both `package-lock.json` and `api/package-lock.json`), `npm ci`, then `npm ci --prefix api --ignore-scripts`, because the build typechecks `api/` and the Core Tools postinstall download isn't needed.
+2. When the `API_URL` variable is set, `npm run snapshot` (`scripts/snapshot.ts`) fetches `${API_URL}/api/build/snapshot` with `secrets.SNAPSHOT_TOKEN`, with a timeout of about 200 seconds so a paused database can wake (under the 230-second Functions limit), and one retry on a 503. On HTTP 200 with a valid snapshot (the full shape check in `scripts/snapshot-checks.ts`, plus a `generatedAt` that is exactly an ISO timestamp) it writes `src/data/snapshot.json`, and it skips the write when only `generatedAt` differs. Either way it outputs the fetched `generatedAt` for step 5. On any failure it keeps the committed file, logs a warning ("Snapshot not refreshed: …") with the token and any URL credentials redacted, and outputs nothing. A token a header can't carry is never sent. Locally the same script reads the token from `api/local.settings.json`.
+3. If the snapshot changed, commit it as `github-actions[bot]` ("Snapshot <asOf>") and push with a pull-rebase retry (`git rebase --abort` between tries, so a conflict never leaves a rebase in progress). `GITHUB_TOKEN` commits don't retrigger the workflow.
 4. Build, upload `dist`, deploy to Pages.
 5. After `actions/deploy-pages` succeeds, if step 2 output a `generatedAt`, POST it as `{ generatedAt }` to `${API_URL}/api/build/snapshot/deployed` with the same token. That includes the run where step 2 skipped the write because only `generatedAt` differed, since the deployed data is the same. If the fetch failed, the run doesn't POST, because the site still shows the committed file. So a failed fetch, or a deploy that fails or is cancelled after it, leaves `last_snapshot_at` where it was, and the admin page still shows the site as behind.
 
@@ -283,12 +283,13 @@ Requires the admin role; raters who open it are sent to `/rate`. Tabs:
 - **Review & why.**
   - A round picker (open and published).
   - Per item: averaged scores, grade, change from the previous published round, per-rater breakdown, why text with 700 ms debounced autosave, and Draft with AI.
-  - "Edit this rater's card" opens that rater's scores in the matrix.
-  - "Draft all blank" and the "Only missing a why" filter carry over.
+  - "Edit a rater's card…" (a picker plus an Edit card button) opens that rater's scores in the matrix. The editor reads the card again on open, so a card changed since the review loaded is named before Save is offered.
+  - "Draft all blank" and the "Only missing a why" filter carry over. The filter is frozen while it's on, so a box being filled in stays put.
+  - Whys and card edits live only in the tab. Switching tabs or rounds, reloading, or logging out with unsaved ones asks first ("Your unsaved whys or card edits will be lost. Leave anyway?"; Log out asks "Log out? Your unsaved whys or card edits will be lost.").
 - **Publish.**
   - The checklist (every scored item has a why, with an override) and the publish date.
   - Publish, and reopen the latest round.
-  - Site status: "Public site is up to date" or "Public site is behind", with an Update public site button.
+  - Site status: "The public site is up to date" or "The public site is behind", with an Update public site button and Check again. Until a status has loaded, the panel reads "Public site status"; a failed read shows "The site status didn't load." with Check again.
 - **Catalog.** Workloads and items: add, rename, reorder, change workload, set status, delete when unreferenced.
 - **Users.** List, create (login, display name, role, password), edit name and role, set a new password, disable or enable.
 
@@ -299,7 +300,7 @@ Requires the admin role; raters who open it are sent to `/rate`. Tabs:
 ## Errors in the UI
 
 - **503 from the API.** The server's message, usually "The ratings database is not responding. Try again in a minute." A save or delete that lost a deadlock gets a 503 saying someone was changing the same data at that moment. A failed save adds "Your draft is kept in this browser."
-- **401 mid-session.** The page returns to its login form with "Your session ended. Log in again; unsaved scores are still in this browser." After login, the draft is restored and the user saves again.
+- **401 mid-session.** The page returns to its login form with "Your session ended. Log in again; unsaved scores are still in this browser." After login, the draft is restored and the user saves again. The admin page words it "Your session ended. Log in again. Unsaved scores on the Score tab are still in this browser; unsaved whys and card edits on the Review tab are lost.", because only the Score tab's draft is stored.
 - **409 on a rater save.** The server's message (for example "The open round is now Q1 2027. Reload the page to score it."), plus "Your draft is kept in this browser."
 - **Slow first request.** After 4 seconds, a notice reads "Waking the ratings database. The first request after a quiet spell can take up to a minute." The DB connection retries 3 times with backoff (2, 5, and 10 seconds).
 
@@ -328,8 +329,8 @@ src/domain/api-types.ts   API request/response types
 src/domain/grades.ts      public grade helpers (split from scale.ts)
 db/schema.sql, db/target.ts, db/apply.ts, db/seed.ts
 admin.html, src/admin/, src/account/, src/lib/api.ts, .env.production
-src/data/snapshot.json, scripts/snapshot.ts
-vitest.config.ts
+src/data/snapshot.json, scripts/snapshot.ts, scripts/snapshot-checks.ts
+vitest.config.ts, vitest.setup.ts (the unit-test network guard)
 .github/workflows/api-deploy.yml
 ```
 
@@ -387,6 +388,8 @@ vitest.config.ts
   - snapshot building: unscored items excluded, workloads without rated items excluded, retired is E, averages and history match the current behavior, no per-rater fields.
   - the front end's API client, draft restore rule, round suggestion, catalog reordering, and password generator;
   - a boundary test that keeps the formula out of the site sources.
+
+  Unit tests make no network calls: `vitest.setup.ts` refuses sockets, `fetch`, and child processes unless `FCR_API_URL` or `FCR_DB_TESTS` is set ("Unit tests make no network calls. Mock it, or run with FCR_DB_TESTS or FCR_API_URL."); `FCR_ALLOW_CHILD_PROCESS=1` lifts only the child-process part. The few front-end tests that need a DOM run under `happy-dom` (a dev dependency), chosen per file with `// @vitest-environment happy-dom`, and stub `fetch`.
 - **Integration, against `fcr-dev` (runs when `FCR_API_URL` is set):**
   - origin check, user creation and login, raters kept out of admin routes;
   - a taken login gets 409. So does an admin removing their own admin access, a check that runs only when exactly one admin is active, so the last-admin rule backs it up; otherwise it's skipped;
