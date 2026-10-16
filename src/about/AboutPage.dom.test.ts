@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render } from '../test/dom';
 import { AboutPage } from './AboutPage';
 
@@ -42,9 +42,13 @@ describe('AboutPage', () => {
     expect(text).toContain('not measurements, benchmarks, or advice to buy');
     expect(text).toContain('Feature Capability, User Experience, CU / Token Cost, and Outlook');
     expect(text).toContain('like these (Krosnick and Presser, Question and Questionnaire Design). Going beyond seven');
-    expect(text).toContain('adds little reliability (MeasuringU, Rating Scales: Myth vs. Evidence). The site does not');
+    expect(text).toContain(
+      'adds little reliability (MeasuringU, Rating Scales: Myth vs. Evidence). The site does not',
+    );
     expect(text).toContain('The site does not publish how the four scores combine into a grade.');
-    expect(text).toContain('built by Tommy Puglia of Puglia BI Consulting, a Microsoft Fabric and Power BI consultancy.');
+    expect(text).toContain(
+      'built by Tommy Puglia of Puglia BI Consulting, a Microsoft Fabric and Power BI consultancy.',
+    );
     expect(text).toContain('Tommy writes about AI and business intelligence at Prompting BI.');
     expect(text).toContain(
       'Independent and unofficial. Not affiliated with or endorsed by Microsoft. ' +
@@ -72,6 +76,26 @@ describe('AboutPage', () => {
       expect(link?.getAttribute('href'), text).toBe(href);
       expect(link?.getAttribute('target'), text).toBe('_blank');
       expect(link?.getAttribute('rel'), text).toBe('noopener noreferrer');
+    }
+  });
+
+  it('scrolls to the section named in the URL hash, and nowhere without one', async () => {
+    const original = Element.prototype.scrollIntoView;
+    const scrollIntoView = vi.fn();
+    Element.prototype.scrollIntoView = scrollIntoView;
+    try {
+      location.hash = '';
+      const withoutHash = await render(AboutPage, {});
+      expect(scrollIntoView).not.toHaveBeenCalled();
+      await withoutHash.unmount();
+
+      location.hash = '#scale';
+      const { container } = await render(AboutPage, {});
+      expect(scrollIntoView).toHaveBeenCalledTimes(1);
+      expect(scrollIntoView.mock.contexts[0]).toBe(container.querySelector('h2#scale'));
+    } finally {
+      Element.prototype.scrollIntoView = original;
+      location.hash = '';
     }
   });
 

@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { useEffect, type ReactNode } from 'react';
 import styles from './AboutPage.module.css';
 
 const KROSNICK =
@@ -14,6 +14,12 @@ function External({ href, children }: { href: string; children: ReactNode }) {
 }
 
 export function AboutPage() {
+  // The page renders on the client, so the browser has no section to jump to when it first reads the hash.
+  useEffect(() => {
+    const id = location.hash.slice(1);
+    if (id) document.getElementById(id)?.scrollIntoView();
+  }, []);
+
   return (
     <>
       <header className={styles.header}>

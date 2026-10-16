@@ -2,10 +2,11 @@
   background: var(--header-gradient);
 }
 
+/* No lede under the title, so the bottom padding keeps the white title in the dark top of the gradient. */
 .inner {
   max-width: 72ch;
   margin: 0 auto;
-  padding: 28px 24px 36px;
+  padding: 28px 24px 120px;
 }
 
 .back {
