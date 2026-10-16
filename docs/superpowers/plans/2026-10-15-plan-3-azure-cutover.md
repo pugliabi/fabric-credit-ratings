@@ -621,8 +621,10 @@ az functionapp show --resource-group $rg --name $app --query "{cname:defaultHost
 ```
 
 - [ ] **Step 2 (manual): Bluehost DNS.** In Bluehost, open Domains, then `fabriccreditratings.com`, then DNS, and add:
-  - CNAME, host `api`, pointing to the `cname` value above, TTL 1 hour.
+  - CNAME, host `api`, pointing to the `cname` value above, TTL 1 hour (as built: 4 hours).
   - TXT, host `asuid.api`, value: the `txt` value above.
+
+  `az functionapp show` returns an empty `defaultHostName` and `customDomainVerificationId` for Flex Consumption apps; read them from ARM instead: `az rest --method get --url "https://management.azure.com/subscriptions/$subscription/resourceGroups/$rg/providers/Microsoft.Web/sites/${app}?api-version=2023-12-01" --query "properties.{cname:defaultHostName, txt:customDomainVerificationId}"`.
 
 Run, until both answer (minutes, sometimes an hour):
 
@@ -631,16 +633,27 @@ Resolve-DnsName api.fabriccreditratings.com -Type CNAME
 Resolve-DnsName asuid.api.fabriccreditratings.com -Type TXT
 ```
 
-- [ ] **Step 3 (manual): Bind the domain with a managed certificate.** The Azure CLI can't create site-scoped certificates for Flex Consumption yet. In the Azure portal, open the Function App, then Settings, then Custom domains, then Add custom domain:
-  - Domain provider: All other domain services.
-  - TLS/SSL certificate: App Service Managed Certificate.
-  - TLS/SSL type: SNI SSL.
-  - Domain: `api.fabriccreditratings.com`.
+- [ ] **Step 3: Bind the domain with a managed certificate.** As built, from the CLI. `az functionapp config ssl create` refuses Flex Consumption plans ("use the Microsoft.Web/sites/certificates endpoint"), so the site-scoped managed certificate is created through ARM directly; the hostname binding itself works with the CLI.
 
-  Select Validate, then Add. The certificate can take up to 10 minutes.
+```powershell
+. ./infra/names.ps1
+az functionapp config hostname add --resource-group $rg --name $app --hostname $apiHost -o none
+$v = '2025-05-01'   # 2024-11-01 or newer; 2024-04-01 is not served for sites/certificates
+$base = "https://management.azure.com/subscriptions/$subscription/resourceGroups/$rg/providers/Microsoft.Web/sites/$app"
+$body = Join-Path $env:TEMP 'cert.json'
+(@{ location = $location; properties = @{ canonicalName = $apiHost } } | ConvertTo-Json -Compress) | Set-Content $body -NoNewline
+az rest --method put --url "$base/certificates/${apiHost}?api-version=$v" --headers "Content-Type=application/json" --body "@$body" -o none
+# The PUT answers at once with no thumbprint; GET says NotFound for a few minutes, then carries the thumbprint.
+do { Start-Sleep 20; $c = az rest --method get --url "$base/certificates/${apiHost}?api-version=$v" -o json 2>$null | ConvertFrom-Json } until ($c.properties.thumbprint)
+(@{ properties = @{ sslState = 'SniEnabled'; thumbprint = $c.properties.thumbprint } } | ConvertTo-Json -Compress) | Set-Content $body -NoNewline
+az rest --method put --url "$base/hostNameBindings/${apiHost}?api-version=$v" --headers "Content-Type=application/json" --body "@$body" -o none
+Remove-Item $body
+```
+
+The binding takes about a minute to reach the front ends (until then curl reports a wrong principal).
 
 Run: `Invoke-RestMethod https://api.fabriccreditratings.com/api/health`
-Expected: `ok: True` over a valid certificate.
+Expected: `ok: True` over a valid certificate (`CN=api.fabriccreditratings.com`, DigiCert, six months).
 
 - [ ] **Step 4: Point the site deploy at the API.**
 
