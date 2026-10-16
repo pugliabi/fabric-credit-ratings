@@ -1,6 +1,6 @@
 # Microsoft Fabric Credit Ratings
 
-Bond-style credit ratings (AAA to E) for Microsoft Fabric items. Raters score each item 1 to 7 on **Feature Capability**, **User Experience**, and **CU / Token Cost**. Those scores, along with other factors, inform the rating. The site does not show how a set of scores becomes a grade.
+Bond-style credit ratings (AAA to D) for Microsoft Fabric items. Raters score each item 1 to 7 on **Feature Capability**, **User Experience**, **CU / Token Cost**, and **Outlook** (the feature's potential). Those scores, along with other factors, inform the rating. The site does not show how a set of scores becomes a grade.
 
 ## How it fits together
 
@@ -61,8 +61,8 @@ Edits to a published round (scores, whys, catalog) save right away and reach the
 
 ## How ratings are computed
 
-- For each published round, each factor is averaged across the raters who scored the item, shown to one decimal.
-- The grade comes from the unrounded average total (`api/src/domain/formula.ts`, server-side only). Retired items are rated E.
+- For each published round, each of the four factors is averaged across the raters who scored the item, shown to one decimal.
+- The grade comes from the unrounded weighted average total (`api/src/domain/formula.ts`, server-side only; the weights are never published). Retired items are rated D.
 - Each published round adds a point to the item's history. The newest point is the current rating, so an item skipped in a round keeps its last rating.
 
 See `api/src/domain/aggregate.ts`.

@@ -62,7 +62,7 @@ const point = object({
   round: text,
   roundLabel: text,
   date,
-  scores: object({ capability: score, ux: score, cost: score }),
+  scores: object({ capability: score, ux: score, cost: score, outlook: score }),
   raters,
   grade: oneOf(GRADES, 'a grade'),
   note: text,

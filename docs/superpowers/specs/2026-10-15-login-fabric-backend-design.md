@@ -134,7 +134,7 @@ site_state (
 - A rater's scorecard for a round is their `scores` rows. An item they skipped has no row. Saving a scorecard replaces all of that user's rows for the round in one transaction.
 - Users are never hard-deleted (scores reference them). They're disabled.
 - Items are retired rather than deleted. An item can be deleted only if no scores or notes reference it.
-- The three factors (capability, ux, cost) stay in code. They are the shape of every score.
+- The four factors (capability, ux, cost, outlook) stay in code. They are the shape of every score.
 
 ## Grade math stays server-side
 
@@ -143,7 +143,7 @@ Today's `src/domain/scale.ts` is split:
 - `src/domain/grades.ts` (public): grade list, bands, band metadata, `gradeIndex`, `bandOf`, `spokenGrade`, `medianGrade`, `isInvestmentGrade`. The public components need these.
 - `api/src/domain/formula.ts` (API only): the total-to-grade table, `totalOf`, `gradeForTotal`, `WITHDRAWN_GRADE`.
 
-`aggregate.ts` moves to `api/src/domain/`. The public site and the admin receive computed grades, so the formula ships in no public file. Sequencing: both files stay in `src/domain/` (imported by the API) until Plan 2 removes the last front-end import. Plan 3 then moves them, and `api/src/boundary.test.ts` guards the split.
+`aggregate.ts` moves to `api/src/domain/`. The public site and the admin receive computed grades, so the formula ships in no public file. Sequencing: both files stay in `src/domain/` (imported by the API) until Plan 2 removes the last front-end import. Plan 3 then moves them, and `api/src/boundary.test.ts` guards the split. Plan 4 (`2026-10-16-outlook-factor-weighted-formula-design.md`) made the total a weighted one and renamed E to D; that spec wins for the factors, the formula and the bands.
 
 Shared types stay in `src/domain/types.ts` (`Rating`, `RatingPoint`, `FactorValues`, `Grade`, `Band`, ...). API payloads are in `src/domain/api-types.ts`. The site and the API import them type-only.
 
