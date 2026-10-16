@@ -12,7 +12,7 @@ import {
   writeDraft,
 } from './usePersistentDraft';
 
-const stored: StoredDraft = { base: { notebook: [5, 5, 5] }, draft: { notebook: [6, 5, 5] } };
+const stored: StoredDraft = { base: { notebook: [5, 5, 5, 5] }, draft: { notebook: [6, 5, 5, 5] } };
 
 function fail(name: string): never {
   throw new DOMException('Storage is not available.', name);
@@ -71,18 +71,18 @@ describe('restoredDraft', () => {
   const known = new Set(['notebook', 'lakehouse']);
 
   it('restores nothing when the only edit is for an item no longer in the catalog', () => {
-    const phantom: StoredDraft = { base: stored.base, draft: { ...stored.base, deleted: [3, 3, 3] } };
+    const phantom: StoredDraft = { base: stored.base, draft: { ...stored.base, deleted: [3, 3, 3, 3] } };
     expect(restoredDraft(phantom, stored.base, known)).toBeUndefined();
   });
 
   it("drops a deleted item's row but keeps the other edits", () => {
-    const mixed: StoredDraft = { base: stored.base, draft: { notebook: [6, 5, 5], deleted: [3, 3, 3] } };
-    expect(restoredDraft(mixed, stored.base, known)).toEqual({ notebook: [6, 5, 5] });
+    const mixed: StoredDraft = { base: stored.base, draft: { notebook: [6, 5, 5, 5], deleted: [3, 3, 3, 3] } };
+    expect(restoredDraft(mixed, stored.base, known)).toEqual({ notebook: [6, 5, 5, 5] });
   });
 
   it('restores every row when no catalog is given', () => {
-    const phantom: StoredDraft = { base: stored.base, draft: { ...stored.base, deleted: [3, 3, 3] } };
-    expect(restoredDraft(phantom, stored.base)).toEqual({ ...stored.base, deleted: [3, 3, 3] });
+    const phantom: StoredDraft = { base: stored.base, draft: { ...stored.base, deleted: [3, 3, 3, 3] } };
+    expect(restoredDraft(phantom, stored.base)).toEqual({ ...stored.base, deleted: [3, 3, 3, 3] });
   });
 });
 
@@ -114,8 +114,8 @@ describe('clearing drafts', () => {
 
   it('ignores edits on items no longer in the catalog when a catalog is given', () => {
     const deletedOnly = JSON.stringify({
-      base: { notebook: [5, 5, 5] },
-      draft: { notebook: [5, 5, 5], gone: [6, 5, 5] },
+      base: { notebook: [5, 5, 5, 5] },
+      draft: { notebook: [5, 5, 5, 5], gone: [6, 5, 5, 5] },
     });
     vi.stubGlobal('localStorage', memoryStorage({ 'fcr-card:7:2026-Q4': deletedOnly }));
     expect(hasUnsavedDrafts(cardDraftPrefix(7))).toBe(true);

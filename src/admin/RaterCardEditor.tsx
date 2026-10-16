@@ -3,7 +3,7 @@ import type { AdminCatalog, RoundReview } from '../domain/api-types';
 import { useFocusIfLost } from '../hooks/useFocusIfLost';
 import { useUnsavedWork } from '../hooks/useUnsavedWork';
 import { api, errorMessage } from '../lib/api';
-import { hasChanges, rebase, sameDraft, summarize, type Draft, type DraftTriple } from '../rating-ui/draft';
+import { hasChanges, rebase, sameDraft, summarize, type Draft, type DraftTuple } from '../rating-ui/draft';
 import {
   cardFromReview,
   clashingRows,
@@ -110,7 +110,7 @@ export function RaterCardEditor({ review, rater, catalog, onSaved, onRefreshed, 
   const blocked = !fresh || saveBlocked(dirty, summary.partial.length, saving);
   useUnsavedWork(dirty);
 
-  const setTriple = useCallback((artifactId: string, triple: DraftTriple) => {
+  const setTriple = useCallback((artifactId: string, triple: DraftTuple) => {
     setDraft((current) => ({ ...current, [artifactId]: triple }));
   }, []);
 

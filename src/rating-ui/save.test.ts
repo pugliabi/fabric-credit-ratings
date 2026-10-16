@@ -23,7 +23,7 @@ import {
 } from './save';
 
 const round: Round = { id: '2026-Q4', label: 'Q4 2026', status: 'open', publishedOn: null };
-const loaded = { notebook: [5, 5, 5] } as const;
+const loaded = { notebook: [5, 5, 5, 5] } as const;
 
 function card(scores: MyScores['scores'], updatedAt = '2026-10-15T23:00:00.000Z', open = round): MyScores {
   return { round: open, scores, updatedAt, previous: null };
@@ -56,17 +56,17 @@ afterEach(() => {
 
 describe('saveCard', () => {
   it('saves when the server still has the card this page loaded', async () => {
-    const after = card({ notebook: [6, 5, 5] }, '2026-10-15T23:05:00.000Z');
+    const after = card({ notebook: [6, 5, 5, 5] }, '2026-10-15T23:05:00.000Z');
     const api = server(card(loaded), () => reply(200, after));
-    await expect(saveCard(round.id, loaded, { notebook: [6, 5, 5] })).resolves.toEqual({ kind: 'saved', card: after });
+    await expect(saveCard(round.id, loaded, { notebook: [6, 5, 5, 5] })).resolves.toEqual({ kind: 'saved', card: after });
     expect(api.calls()).toEqual(['GET /api/rounds/open/my-scores', 'PUT /api/rounds/open/my-scores']);
-    expect(api.sent()).toEqual({ round: '2026-Q4', scores: { notebook: [6, 5, 5] } });
+    expect(api.sent()).toEqual({ round: '2026-Q4', scores: { notebook: [6, 5, 5, 5] } });
   });
 
   it('does not save over a card that changed after this page loaded it', async () => {
-    const newer = card({ notebook: [5, 5, 5], lakehouse: [6, 6, 6] }, '2026-10-15T23:04:00.000Z');
+    const newer = card({ notebook: [5, 5, 5, 5], lakehouse: [6, 6, 6, 6] }, '2026-10-15T23:04:00.000Z');
     const api = server(newer, () => reply(200, newer));
-    await expect(saveCard(round.id, loaded, { notebook: [6, 5, 5] })).resolves.toEqual({
+    await expect(saveCard(round.id, loaded, { notebook: [6, 5, 5, 5] })).resolves.toEqual({
       kind: 'changed',
       card: newer,
     });
@@ -75,8 +75,8 @@ describe('saveCard', () => {
 
   it('saves when the card was only saved again with the same scores', async () => {
     const resaved = card(loaded, '2026-10-15T23:04:00.000Z');
-    const api = server(resaved, () => reply(200, card({ notebook: [6, 5, 5] })));
-    await expect(saveCard(round.id, loaded, { notebook: [6, 5, 5] })).resolves.toMatchObject({ kind: 'saved' });
+    const api = server(resaved, () => reply(200, card({ notebook: [6, 5, 5, 5] })));
+    await expect(saveCard(round.id, loaded, { notebook: [6, 5, 5, 5] })).resolves.toMatchObject({ kind: 'saved' });
     expect(api.calls()).toHaveLength(2);
   });
 
@@ -84,7 +84,7 @@ describe('saveCard', () => {
     const next: Round = { id: '2027-Q1', label: 'Q1 2027', status: 'open', publishedOn: null };
     const error = 'The open round is now Q1 2027. Reload the page to score it.';
     server(card({}, '2027-01-02T10:00:00.000Z', next), () => reply(409, { error }));
-    await expect(saveCard(round.id, loaded, { notebook: [6, 5, 5] })).rejects.toMatchObject({
+    await expect(saveCard(round.id, loaded, { notebook: [6, 5, 5, 5] })).rejects.toMatchObject({
       status: 409,
       message: error,
     });
@@ -93,31 +93,31 @@ describe('saveCard', () => {
   it('sends no PUT when the check itself fails', async () => {
     const fetchMock = vi.fn(async () => reply(503, { error: 'The ratings database is not responding.' }));
     vi.stubGlobal('fetch', fetchMock);
-    await expect(saveCard(round.id, loaded, { notebook: [6, 5, 5] })).rejects.toMatchObject({ status: 503 });
+    await expect(saveCard(round.id, loaded, { notebook: [6, 5, 5, 5] })).rejects.toMatchObject({ status: 503 });
     expect(fetchMock).toHaveBeenCalledOnce();
   });
 });
 
 describe('settleSave', () => {
   const ids = new Set(['notebook', 'lakehouse']);
-  const base: Draft = { notebook: [5, 5, 5] };
-  const sent: Draft = { notebook: [6, 5, 5] };
+  const base: Draft = { notebook: [5, 5, 5, 5] };
+  const sent: Draft = { notebook: [6, 5, 5, 5] };
 
   it('keeps a slider moved while the save was out', () => {
-    const after = settleSave({ kind: 'saved', card: card({ notebook: [6, 5, 5] }) }, base, sent, ids);
-    expect(after.draft({ ...sent, lakehouse: [2, 2, 2] })).toEqual({ ...sent, lakehouse: [2, 2, 2] });
+    const after = settleSave({ kind: 'saved', card: card({ notebook: [6, 5, 5, 5] }) }, base, sent, ids);
+    expect(after.draft({ ...sent, lakehouse: [2, 2, 2, 2] })).toEqual({ ...sent, lakehouse: [2, 2, 2, 2] });
     expect(after.status).toEqual({ kind: 'idle' });
   });
 
   it('puts the edits on top of a card changed elsewhere, keeps later moves, and asks for a check', () => {
-    const newer = card({ notebook: [5, 5, 5], lakehouse: [4, 4, 4] });
+    const newer = card({ notebook: [5, 5, 5, 5], lakehouse: [4, 4, 4, 4] });
     const after = settleSave({ kind: 'changed', card: newer }, base, sent, ids);
-    expect(after.draft({ notebook: [7, 5, 5] })).toEqual({ notebook: [7, 5, 5], lakehouse: [4, 4, 4] });
+    expect(after.draft({ notebook: [7, 5, 5, 5] })).toEqual({ notebook: [7, 5, 5, 5], lakehouse: [4, 4, 4, 4] });
     expect(after.status).toMatchObject({ kind: 'error', message: CHANGED_ELSEWHERE });
   });
 
   it('says nothing when the other save already holds these edits', () => {
-    const newer = card({ notebook: [6, 5, 5], lakehouse: [4, 4, 4] });
+    const newer = card({ notebook: [6, 5, 5, 5], lakehouse: [4, 4, 4, 4] });
     expect(settleSave({ kind: 'changed', card: newer }, base, sent, ids).status).toEqual({ kind: 'idle' });
   });
 });
@@ -133,14 +133,14 @@ describe('saveBlocked', () => {
 
 describe('pressSave', () => {
   const ids = new Set(['notebook', 'lakehouse']);
-  const sent: Draft = { notebook: [6, 5, 5] };
+  const sent: Draft = { notebook: [6, 5, 5, 5] };
 
   function page() {
     return { saving: vi.fn(), saved: vi.fn(), failed: vi.fn() };
   }
 
   function form(blocked: boolean) {
-    return { blocked, roundId: round.id, saved: loaded, sent, scores: { notebook: [6, 5, 5] } as const, ids };
+    return { blocked, roundId: round.id, saved: loaded, sent, scores: { notebook: [6, 5, 5, 5] } as const, ids };
   }
 
   it('does nothing while Save is blocked, so an incomplete row never reaches the server', async () => {
@@ -154,7 +154,7 @@ describe('pressSave', () => {
   });
 
   it('saves, then hands back the card and a rebase that keeps sliders moved meanwhile', async () => {
-    const after = card({ notebook: [6, 5, 5] }, '2026-10-15T23:05:00.000Z');
+    const after = card({ notebook: [6, 5, 5, 5] }, '2026-10-15T23:05:00.000Z');
     const api = server(card(loaded), () => reply(200, after));
     const handlers = page();
     await pressSave(form(false), handlers);
@@ -162,7 +162,7 @@ describe('pressSave', () => {
     expect(handlers.saving).toHaveBeenCalledOnce();
     const [savedCard, settled] = handlers.saved.mock.calls[0] ?? [];
     expect(savedCard).toEqual(after);
-    expect(settled.draft({ ...sent, lakehouse: [2, 2, 2] })).toEqual({ ...sent, lakehouse: [2, 2, 2] });
+    expect(settled.draft({ ...sent, lakehouse: [2, 2, 2, 2] })).toEqual({ ...sent, lakehouse: [2, 2, 2, 2] });
     expect(handlers.failed).not.toHaveBeenCalled();
   });
 
@@ -196,7 +196,7 @@ function review(cards: Record<number, Record<string, ScoreTuple>>): RoundReview 
         round: round.id,
         roundLabel: round.label,
         date: '2026-10-15',
-        scores: { capability: 5, ux: 5, cost: 5 },
+        scores: { capability: 5, ux: 5, cost: 5, outlook: 5 },
         raters: 1,
         grade: 'A',
         note: '',
@@ -213,13 +213,13 @@ function review(cards: Record<number, Record<string, ScoreTuple>>): RoundReview 
   };
 }
 
-const opened = { notebook: [2, 5, 4], environment: [3, 4, 7] } as const;
-const adminCard = { notebook: [6, 6, 5] } as const;
-const edited = { notebook: [3, 5, 4], environment: [3, 4, 7] } as const;
+const opened = { notebook: [2, 5, 4, 4], environment: [3, 4, 7, 7] } as const;
+const adminCard = { notebook: [6, 6, 5, 5] } as const;
+const edited = { notebook: [3, 5, 4, 4], environment: [3, 4, 7, 7] } as const;
 
 describe('cardFromReview', () => {
   it("rebuilds one rater's card from the breakdown, without the other raters' scores", () => {
-    const both = review({ 9: opened, 2: { ...adminCard, lakehouse: [1, 1, 1] } });
+    const both = review({ 9: opened, 2: { ...adminCard, lakehouse: [1, 1, 1, 1] } });
     expect(cardFromReview(both, 9)).toEqual(opened);
     expect(cardFromReview(both, 5)).toEqual({});
   });
@@ -230,12 +230,12 @@ describe("the admin card editor's item list", () => {
     { id: 'notebook', name: 'Notebook', workload: 'data-engineering', status: 'ga' },
     { id: 'old', name: 'Old item', workload: 'data-engineering', status: 'retired' },
   ];
-  const latest = review({ 9: { notebook: [2, 5, 4], 'added-later': [4, 4, 4] } });
+  const latest = review({ 9: { notebook: [2, 5, 4, 4], 'added-later': [4, 4, 4, 4] } });
 
   it('holds the whole catalog, retired items too, plus reviewed items this page has not loaded', () => {
     const artifacts = raterCardArtifacts(catalog, latest);
     expect(artifacts.map((artifact) => artifact.id)).toEqual(['notebook', 'old', 'added-later']);
-    const card: Draft = { ...cardFromReview(latest, 9), old: [1, 1, 1] };
+    const card: Draft = { ...cardFromReview(latest, 9), old: [1, 1, 1, 1] };
     expect(summarize(card, artifacts).scores).toEqual(card);
   });
 
@@ -258,20 +258,20 @@ describe("the admin card editor's item list", () => {
 
 describe('clashingRows', () => {
   it('lists the rows both sides changed since the card opened, to different values', () => {
-    const saved: Draft = { notebook: [2, 5, 4], environment: [3, 4, 7], lakehouse: [1, 1, 1], pipeline: [2, 2, 2] };
-    const sent: Draft = { notebook: [3, 5, 4], environment: [3, 5, 7], lakehouse: [1, 1, 1], pipeline: [3, 3, 3] };
-    const card: Draft = { notebook: [3, 5, 4], environment: [3, 4, 6], lakehouse: [2, 2, 2] };
+    const saved: Draft = { notebook: [2, 5, 4, 4], environment: [3, 4, 7, 7], lakehouse: [1, 1, 1, 1], pipeline: [2, 2, 2, 2] };
+    const sent: Draft = { notebook: [3, 5, 4, 4], environment: [3, 5, 7, 7], lakehouse: [1, 1, 1, 1], pipeline: [3, 3, 3, 3] };
+    const card: Draft = { notebook: [3, 5, 4, 4], environment: [3, 4, 6, 6], lakehouse: [2, 2, 2, 2] };
     expect(clashingRows(saved, sent, card)).toEqual(['environment', 'pipeline']);
   });
 });
 
 describe('describeClashes', () => {
   it('names each clashing row in catalog order, with the newer value or "cleared", falling back to the id', () => {
-    const card: Draft = { environment: [3, 4, 6] };
+    const card: Draft = { environment: [3, 4, 6, 6] };
     const names = { notebook: 'Notebook', environment: 'Environment' };
     expect(describeClashes(['environment', 'notebook', 'unknown'], card, names)).toEqual([
       'Notebook (newer card: cleared)',
-      'Environment (newer card: 3 · 4 · 6)',
+      'Environment (newer card: 3 · 4 · 6 · 6)',
       'unknown (newer card: cleared)',
     ]);
     expect(describeClashes([], card, names)).toEqual([]);
@@ -291,7 +291,7 @@ describe('saveRaterCard', () => {
   });
 
   it('does not save over a card the rater changed after the editor opened', async () => {
-    const newer = review({ 9: { ...opened, environment: [7, 7, 7] }, 2: adminCard });
+    const newer = review({ 9: { ...opened, environment: [7, 7, 7, 7] }, 2: adminCard });
     const api = server(newer, () => reply(200, newer));
     await expect(saveRaterCard(round.id, raterA.userId, opened, edited)).resolves.toEqual({
       kind: 'changed',
@@ -301,7 +301,7 @@ describe('saveRaterCard', () => {
   });
 
   it("saves when only someone else's card changed, or this one was saved again unchanged", async () => {
-    const others = review({ 9: opened, 2: { notebook: [1, 1, 1] } });
+    const others = review({ 9: opened, 2: { notebook: [1, 1, 1, 1] } });
     const api = server(others, () => reply(200, review({ 9: edited })));
     await expect(saveRaterCard(round.id, raterA.userId, opened, edited)).resolves.toMatchObject({ kind: 'saved' });
     expect(api.calls()).toHaveLength(2);
@@ -357,7 +357,7 @@ describe('pressRaterSave', () => {
   it('stays open after a save when a slider moved meanwhile, and keeps that move unsaved', async () => {
     const after = review({ 9: edited });
     server(review({ 9: opened }), () => reply(200, after));
-    const moved: Draft = { ...edited, environment: [7, 7, 7] };
+    const moved: Draft = { ...edited, environment: [7, 7, 7, 7] };
     const handlers = page(moved);
     await pressRaterSave(form(false), handlers);
     expect(handlers.saved).not.toHaveBeenCalled();
@@ -368,42 +368,42 @@ describe('pressRaterSave', () => {
   });
 
   it("puts the admin's edits on top of the rater's newer card, without saving, and says so", async () => {
-    const newer = review({ 9: { ...opened, environment: [7, 7, 7] } });
+    const newer = review({ 9: { ...opened, environment: [7, 7, 7, 7] } });
     const api = server(newer, () => reply(200, newer));
     const handlers = page(edited);
     await pressRaterSave(form(false), handlers);
     expect(api.calls()).toEqual(['GET /api/admin/rounds/2026-Q4/review']);
     const [next, rebased, message] = handlers.refreshed.mock.calls[0] ?? [];
     expect(next).toEqual(newer);
-    expect(rebased(edited)).toEqual({ notebook: [3, 5, 4], environment: [7, 7, 7] });
+    expect(rebased(edited)).toEqual({ notebook: [3, 5, 4, 4], environment: [7, 7, 7, 7] });
     expect(message).toEqual({ text: raterCardChanged('P2 Rater A'), saved: false });
     expect(message.text).toMatch(/^P2 Rater A's card changed after you opened it/);
   });
 
   it('names each row both sides changed, with the newer values the admin would override', async () => {
-    const newer = review({ 9: { notebook: [2, 5, 4], environment: [3, 4, 6] } });
+    const newer = review({ 9: { notebook: [2, 5, 4, 4], environment: [3, 4, 6, 6] } });
     server(newer, () => reply(200, newer));
-    const sent = { notebook: [2, 5, 4], environment: [3, 5, 7] } as const;
+    const sent = { notebook: [2, 5, 4, 4], environment: [3, 5, 7, 7] } as const;
     const handlers = page(sent);
     await pressRaterSave({ ...form(false), sent, scores: sent }, handlers);
     const [, rebased, message] = handlers.refreshed.mock.calls[0] ?? [];
     expect(rebased(sent)).toEqual(sent);
     expect(message.text).toBe(
       "P2 Rater A's card changed after you opened it, on their page or in another admin window, including a row " +
-        'you changed too: Environment (newer card: 3 · 4 · 6). Your values are kept on it, and the rest of the card ' +
+        'you changed too: Environment (newer card: 3 · 4 · 6 · 6). Your values are kept on it, and the rest of the card ' +
         'shows the newer scores. Check it, then save again.',
     );
   });
 
   it('lists several clashing rows in catalog order, and says when the newer card cleared one', async () => {
-    const newer = review({ 9: { environment: [3, 4, 6] } });
+    const newer = review({ 9: { environment: [3, 4, 6, 6] } });
     server(newer, () => reply(200, newer));
-    const sent = { notebook: [3, 5, 4], environment: [3, 5, 7] } as const;
+    const sent = { notebook: [3, 5, 4, 4], environment: [3, 5, 7, 7] } as const;
     const handlers = page(sent);
     await pressRaterSave({ ...form(false), sent, scores: sent }, handlers);
     const [, , message] = handlers.refreshed.mock.calls[0] ?? [];
     expect(message.text).toContain(
-      'including rows you changed too: Notebook (newer card: cleared) and Environment (newer card: 3 · 4 · 6). ' +
+      'including rows you changed too: Notebook (newer card: cleared) and Environment (newer card: 3 · 4 · 6 · 6). ' +
         'Your values are kept on them',
     );
     expect(message.text).toMatch(/Check them, then save again\.$/);

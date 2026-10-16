@@ -4,14 +4,14 @@ import { api, ApiError, errorMessage } from '../lib/api';
 import { formatTimestamp } from '../lib/format';
 import {
   draftFromScores,
-  EMPTY_TRIPLE,
+  EMPTY_TUPLE,
   hasChanges,
   isBlank,
   rebase,
   sameDraft,
-  sameTriple,
+  sameTuple,
   type Draft,
-  type DraftTriple,
+  type DraftTuple,
 } from './draft';
 
 export const CHANGED_ELSEWHERE =
@@ -125,7 +125,7 @@ export const CHANGED_WHILE_SAVING =
 
 /** One rater's card, rebuilt from the per-rater breakdown of the whole review (never a filtered list of items). */
 export function cardFromReview(review: RoundReview, userId: number): Draft {
-  const card: Record<string, DraftTriple> = {};
+  const card: Record<string, DraftTuple> = {};
   for (const item of review.items) {
     const entry = item.breakdown.find((row) => row.userId === userId);
     if (entry) card[item.artifact.id] = entry.scores;
@@ -152,12 +152,12 @@ export function raterCardWorkloads(workloads: readonly Workload[], artifacts: re
 /** Rows that both `sent` and the newer `card` changed since `saved`, to different values. */
 export function clashingRows(saved: Draft, sent: Draft, card: Draft): string[] {
   const ids = new Set([...Object.keys(saved), ...Object.keys(sent), ...Object.keys(card)]);
-  const row = (draft: Draft, id: string) => draft[id] ?? EMPTY_TRIPLE;
+  const row = (draft: Draft, id: string) => draft[id] ?? EMPTY_TUPLE;
   return [...ids].filter((id) => {
     const was = row(saved, id);
     const mine = row(sent, id);
     const theirs = row(card, id);
-    return !sameTriple(mine, was) && !sameTriple(theirs, was) && !sameTriple(mine, theirs);
+    return !sameTuple(mine, was) && !sameTuple(theirs, was) && !sameTuple(mine, theirs);
   });
 }
 

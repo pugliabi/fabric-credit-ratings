@@ -25,14 +25,14 @@ const review: RoundReview = {
         round: q4.id,
         roundLabel: q4.label,
         date: '2026-10-15',
-        scores: { capability: 4, ux: 5, cost: 4 },
+        scores: { capability: 4, ux: 5, cost: 4, outlook: 4 },
         raters: 1,
         grade: 'BBB',
         note: '',
       },
       previous: null,
       change: { kind: 'new', text: 'First rating' },
-      breakdown: [{ userId: 9, name: 'P2 Rater A', scores: [4, 5, 4] }],
+      breakdown: [{ userId: 9, name: 'P2 Rater A', scores: [4, 5, 4, 4] }],
     },
   ],
   notes: {},
@@ -40,7 +40,7 @@ const review: RoundReview = {
 };
 const card: MyScores = {
   round: q4,
-  scores: { notebook: [5, 5, 5] },
+  scores: { notebook: [5, 5, 5, 5] },
   updatedAt: '2026-10-15T23:00:00Z',
   previous: null,
 };
@@ -270,7 +270,7 @@ describe('AdminPage session and loads', () => {
     // The Score tab prunes such rows when it mounts; Log out from another tab must judge by the current catalog too.
     localStorage.setItem(
       'fcr-card:2:2026-Q4',
-      JSON.stringify({ base: { notebook: [5, 5, 5] }, draft: { notebook: [5, 5, 5], gone: [6, 5, 5] } }),
+      JSON.stringify({ base: { notebook: [5, 5, 5, 5] }, draft: { notebook: [5, 5, 5, 5], gone: [6, 5, 5, 5] } }),
     );
     history.replaceState(null, '', '#catalog');
     const api = server();

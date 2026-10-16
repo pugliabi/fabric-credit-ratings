@@ -2,7 +2,10 @@ import { describe, expect, it } from 'vitest';
 import type { Artifact } from '../domain/types';
 import {
   draftFromValues,
+  EMPTY_TUPLE,
   hasChanges,
+  isBlank,
+  isComplete,
   parseStoredDraft,
   rebase,
   restorable,
@@ -19,14 +22,14 @@ const artifacts: Artifact[] = [
 
 describe('summarize', () => {
   it('keeps complete rows in catalog order and lists partial ones', () => {
-    const summary = summarize({ kql: [4, 4, 4], notebook: [6, 5, null], lakehouse: [7, 6, 5] }, artifacts);
+    const summary = summarize({ kql: [4, 4, 4, 4], notebook: [6, 5, null, null], lakehouse: [7, 6, 5, 5] }, artifacts);
     expect(Object.keys(summary.scores)).toEqual(['lakehouse', 'kql']);
     expect(summary.rated).toBe(2);
     expect(summary.partial).toEqual(['notebook']);
   });
 
   it('ignores blank rows and items no longer in the catalog', () => {
-    expect(summarize({ notebook: [null, null, null], gone: [1, 1, 1] }, artifacts)).toEqual({
+    expect(summarize({ notebook: [null, null, null, null], gone: [1, 1, 1, 1] }, artifacts)).toEqual({
       scores: {},
       rated: 0,
       partial: [],
@@ -36,8 +39,8 @@ describe('summarize', () => {
 
 describe('sameDraft', () => {
   it('treats a missing row and a blank row as equal', () => {
-    expect(sameDraft({}, { notebook: [null, null, null] })).toBe(true);
-    expect(sameDraft({ notebook: [1, 2, 3] }, { notebook: [1, 2, 4] })).toBe(false);
+    expect(sameDraft({}, { notebook: [null, null, null, null] })).toBe(true);
+    expect(sameDraft({ notebook: [1, 2, 3, 3] }, { notebook: [1, 2, 4, 4] })).toBe(false);
   });
 });
 
@@ -45,30 +48,34 @@ describe('hasChanges', () => {
   const ids = new Set(['notebook', 'lakehouse']);
 
   it('ignores rows for items no longer in the catalog', () => {
-    expect(hasChanges({ notebook: [5, 5, 5], gone: [1, 1, 1] }, { notebook: [5, 5, 5] }, ids)).toBe(false);
+    expect(hasChanges({ notebook: [5, 5, 5, 5], gone: [1, 1, 1, 1] }, { notebook: [5, 5, 5, 5] }, ids)).toBe(false);
   });
 
   it('counts an edited or cleared catalog row', () => {
-    expect(hasChanges({ notebook: [6, 5, 5] }, { notebook: [5, 5, 5] }, ids)).toBe(true);
-    expect(hasChanges({}, { notebook: [5, 5, 5] }, ids)).toBe(true);
+    expect(hasChanges({ notebook: [6, 5, 5, 5] }, { notebook: [5, 5, 5, 5] }, ids)).toBe(true);
+    expect(hasChanges({}, { notebook: [5, 5, 5, 5] }, ids)).toBe(true);
   });
 });
 
 describe('draftFromValues', () => {
   it('rounds averages to whole scores', () => {
-    expect(draftFromValues({ notebook: { capability: 5.5, ux: 4.4, cost: 7 } })).toEqual({ notebook: [6, 4, 7] });
+    expect(
+      draftFromValues({
+        notebook: { capability: 5.5, ux: 4.4, cost: 7, outlook: 7 },
+      }),
+    ).toEqual({ notebook: [6, 4, 7, 7] });
   });
 });
 
 describe('restorable', () => {
-  const saved: Draft = { notebook: [5, 5, 5] };
+  const saved: Draft = { notebook: [5, 5, 5, 5] };
 
   it('restores edits that were never saved', () => {
-    expect(restorable({ base: saved, draft: { notebook: [6, 5, 5] } }, saved)).toEqual({ notebook: [6, 5, 5] });
+    expect(restorable({ base: saved, draft: { notebook: [6, 5, 5, 5] } }, saved)).toEqual({ notebook: [6, 5, 5, 5] });
   });
 
   it('lets a newer save win over an untouched draft', () => {
-    const old: Draft = { notebook: [3, 3, 3] };
+    const old: Draft = { notebook: [3, 3, 3, 3] };
     expect(restorable({ base: old, draft: old }, saved)).toBeUndefined();
   });
 
@@ -78,61 +85,61 @@ describe('restorable', () => {
   });
 
   it('re-applies only edited rows on top of a newer save', () => {
-    const base: Draft = { notebook: [3, 3, 3], lakehouse: [4, 4, 4] };
-    const newer: Draft = { notebook: [3, 3, 3], lakehouse: [6, 6, 6] };
-    expect(restorable({ base, draft: { ...base, notebook: [7, 3, 3] } }, newer)).toEqual({
-      notebook: [7, 3, 3],
-      lakehouse: [6, 6, 6],
+    const base: Draft = { notebook: [3, 3, 3, 3], lakehouse: [4, 4, 4, 4] };
+    const newer: Draft = { notebook: [3, 3, 3, 3], lakehouse: [6, 6, 6, 6] };
+    expect(restorable({ base, draft: { ...base, notebook: [7, 3, 3, 3] } }, newer)).toEqual({
+      notebook: [7, 3, 3, 3],
+      lakehouse: [6, 6, 6, 6],
     });
   });
 
   it('keeps a cleared row cleared', () => {
-    expect(restorable({ base: saved, draft: {} }, saved)).toEqual({ notebook: [null, null, null] });
+    expect(restorable({ base: saved, draft: {} }, saved)).toEqual({ notebook: [null, null, null, null] });
   });
 
   it("keeps the rater's edit when the same row also changed in a newer save", () => {
-    const base: Draft = { notebook: [3, 3, 3] };
-    expect(restorable({ base, draft: { notebook: [7, 3, 3] } }, saved)).toEqual({ notebook: [7, 3, 3] });
-    expect(restorable({ base, draft: {} }, saved)).toEqual({ notebook: [null, null, null] });
+    const base: Draft = { notebook: [3, 3, 3, 3] };
+    expect(restorable({ base, draft: { notebook: [7, 3, 3, 3] } }, saved)).toEqual({ notebook: [7, 3, 3, 3] });
+    expect(restorable({ base, draft: {} }, saved)).toEqual({ notebook: [null, null, null, null] });
   });
 
   it('treats a blank row the base never had as no edit', () => {
-    expect(restorable({ base: {}, draft: { notebook: [null, null, null] } }, saved)).toBeUndefined();
+    expect(restorable({ base: {}, draft: { notebook: [null, null, null, null] } }, saved)).toBeUndefined();
   });
 
   it('drops edits that a newer save already holds', () => {
-    expect(restorable({ base: { notebook: [3, 3, 3] }, draft: saved }, saved)).toBeUndefined();
+    expect(restorable({ base: { notebook: [3, 3, 3, 3] }, draft: saved }, saved)).toBeUndefined();
   });
 });
 
 describe('rebase', () => {
-  const sent: Draft = { notebook: [5, 5, 5] };
+  const sent: Draft = { notebook: [5, 5, 5, 5] };
 
   it('keeps edits made while a save was in flight', () => {
-    const current: Draft = { notebook: [5, 5, 5], lakehouse: [6, 6, 6] };
+    const current: Draft = { notebook: [5, 5, 5, 5], lakehouse: [6, 6, 6, 6] };
     expect(rebase(sent, current, sent)).toEqual(current);
   });
 
   it('is the new card when nothing changed since the base', () => {
-    const card: Draft = { notebook: [7, 7, 7] };
+    const card: Draft = { notebook: [7, 7, 7, 7] };
     expect(rebase(sent, sent, card)).toBe(card);
   });
 
   it("puts this tab's edits on top of a card saved elsewhere", () => {
-    const base: Draft = { notebook: [3, 3, 3], lakehouse: [4, 4, 4] };
-    const current: Draft = { ...base, notebook: [7, 3, 3] };
-    const elsewhere: Draft = { notebook: [3, 3, 3], lakehouse: [6, 6, 6] };
-    expect(rebase(base, current, elsewhere)).toEqual({ notebook: [7, 3, 3], lakehouse: [6, 6, 6] });
+    const base: Draft = { notebook: [3, 3, 3, 3], lakehouse: [4, 4, 4, 4] };
+    const current: Draft = { ...base, notebook: [7, 3, 3, 3] };
+    const elsewhere: Draft = { notebook: [3, 3, 3, 3], lakehouse: [6, 6, 6, 6] };
+    expect(rebase(base, current, elsewhere)).toEqual({ notebook: [7, 3, 3, 3], lakehouse: [6, 6, 6, 6] });
   });
 
   it('keeps a row cleared during the save cleared', () => {
-    expect(rebase(sent, { notebook: [null, null, null] }, sent)).toEqual({ notebook: [null, null, null] });
+    expect(rebase(sent, { notebook: [null, null, null, null] }, sent)).toEqual({ notebook: [null, null, null, null] });
   });
 });
 
 describe('parseStoredDraft', () => {
   it('reads what the hook writes', () => {
-    const stored = { base: { notebook: [5, 5, 5] }, draft: { notebook: [6, null, 5] } };
+    const stored = { base: { notebook: [5, 5, 5, 5] }, draft: { notebook: [6, null, 5, null] } };
     expect(parseStoredDraft(JSON.stringify(stored))).toEqual(stored);
   });
 
@@ -144,7 +151,7 @@ describe('parseStoredDraft', () => {
       'null',
       '[]',
       '"x"',
-      '{"base":{"notebook":[1,1,1,1]},"draft":{}}',
+      '{"base":{"notebook":[1,1,1,1,1]},"draft":{}}',
       '{"notebook":[1,2,3]}',
       '{"base":null,"draft":{}}',
       '{"base":{},"draft":[]}',
@@ -154,5 +161,33 @@ describe('parseStoredDraft', () => {
       '{"base":{},"draft":{"notebook":[1,2]}}',
     ];
     for (const raw of bad) expect(parseStoredDraft(raw)).toBeUndefined();
+  });
+});
+
+describe('four factors', () => {
+  it('treats a card as complete only with all four factors set', () => {
+    expect(isComplete([5, 5, 5, null])).toBe(false);
+    expect(isComplete([5, 5, 5, 5])).toBe(true);
+    expect(isBlank(EMPTY_TUPLE)).toBe(true);
+    expect(EMPTY_TUPLE).toHaveLength(4);
+  });
+
+  it('seeds four sliders from averaged values', () => {
+    expect(draftFromValues({ notebook: { capability: 6.4, ux: 5.5, cost: 4.4, outlook: 2.6 } })).toEqual({
+      notebook: [6, 6, 4, 3],
+    });
+  });
+
+  it('upgrades a stored three-entry draft to a partial four-entry one', () => {
+    const stored = JSON.stringify({ base: { notebook: [5, 5, 5] }, draft: { notebook: [6, 5, 5] } });
+    expect(parseStoredDraft(stored)).toEqual({
+      base: { notebook: [5, 5, 5, null] },
+      draft: { notebook: [6, 5, 5, null] },
+    });
+  });
+
+  it('still rejects rows of any other length', () => {
+    expect(parseStoredDraft(JSON.stringify({ base: { notebook: [5, 5] }, draft: {} }))).toBeUndefined();
+    expect(parseStoredDraft(JSON.stringify({ base: {}, draft: { notebook: [5, 5, 5, 5, 5] } }))).toBeUndefined();
   });
 });

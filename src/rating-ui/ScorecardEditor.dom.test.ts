@@ -11,7 +11,7 @@ const catalog: Catalog = {
 };
 const card: MyScores = {
   round: { id: '2026-Q4', label: 'Q4 2026', status: 'open', publishedOn: null },
-  scores: { notebook: [5, 5, 5] },
+  scores: { notebook: [5, 5, 5, 5] },
   updatedAt: '2026-10-15T23:00:00.000Z',
   previous: null,
 };
@@ -49,7 +49,7 @@ describe('CardForm', () => {
   });
 
   it('drops a stored draft that holds only a row for an item no longer in the catalog', async () => {
-    localStorage.setItem(KEY, JSON.stringify({ base: {}, draft: { 'no-such-item': [3, 3, 3] } }));
+    localStorage.setItem(KEY, JSON.stringify({ base: {}, draft: { 'no-such-item': [3, 3, 3, 3] } }));
     const { container } = await render(CardForm, props);
     await settle();
     expect(localStorage.getItem(KEY)).toBeNull();

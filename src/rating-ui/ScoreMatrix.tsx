@@ -5,7 +5,7 @@ import { FACTORS } from '../data/factors';
 import { MAX_SCORE, MIN_SCORE } from '../domain/grades';
 import type { Artifact, FactorValues, Score, Workload, WorkloadId } from '../domain/types';
 import { formatScore } from '../lib/format';
-import { EMPTY_TRIPLE, isBlank, isComplete, toScore, type Draft, type DraftScore, type DraftTriple } from './draft';
+import { EMPTY_TUPLE, isBlank, isComplete, toScore, type Draft, type DraftScore, type DraftTuple } from './draft';
 import styles from './ScoreMatrix.module.css';
 
 const STATUS_LABEL = { preview: 'Preview', retired: 'Retired' } as const;
@@ -16,7 +16,7 @@ interface ScoreMatrixProps {
   /** Every artifact's workload must be in `workloads`, or its row is not shown. */
   artifacts: readonly Artifact[];
   draft: Draft;
-  onChange: (artifactId: string, triple: DraftTriple) => void;
+  onChange: (artifactId: string, triple: DraftTuple) => void;
   /** Published values per artifact, shown under the name as a reminder. */
   reference?: Readonly<Record<string, FactorValues>>;
   referenceLabel?: string;
@@ -84,7 +84,7 @@ export function ScoreMatrix({
                   <MatrixRow
                     key={artifact.id}
                     artifact={artifact}
-                    triple={draft[artifact.id] ?? EMPTY_TRIPLE}
+                    triple={draft[artifact.id] ?? EMPTY_TUPLE}
                     reference={reference?.[artifact.id]}
                     referenceLabel={referenceLabel}
                     onChange={onChange}
@@ -101,10 +101,10 @@ export function ScoreMatrix({
 
 interface MatrixRowProps {
   artifact: Artifact;
-  triple: DraftTriple;
+  triple: DraftTuple;
   reference: FactorValues | undefined;
   referenceLabel: string;
-  onChange: (artifactId: string, triple: DraftTriple) => void;
+  onChange: (artifactId: string, triple: DraftTuple) => void;
 }
 
 const MatrixRow = memo(function MatrixRow({ artifact, triple, reference, referenceLabel, onChange }: MatrixRowProps) {
@@ -112,7 +112,7 @@ const MatrixRow = memo(function MatrixRow({ artifact, triple, reference, referen
   const complete = isComplete(triple);
 
   const setAt = (index: number, score: Score) => {
-    const next: [DraftScore, DraftScore, DraftScore] = [...triple];
+    const next = [...triple] as [DraftScore, DraftScore, DraftScore, DraftScore];
     next[index] = score;
     onChange(artifact.id, next);
   };
@@ -128,11 +128,10 @@ const MatrixRow = memo(function MatrixRow({ artifact, triple, reference, referen
         )}
         {reference && (
           <span className={styles.reference}>
-            {referenceLabel}: {formatScore(reference.capability)} · {formatScore(reference.ux)} ·{' '}
-            {formatScore(reference.cost)}
+            {referenceLabel}: {FACTORS.map((factor) => formatScore(reference[factor.id])).join(' · ')}
           </span>
         )}
-        {!blank && !complete && <span className={styles.partialNote}>Set all three, or clear</span>}
+        {!blank && !complete && <span className={styles.partialNote}>Set all four, or clear</span>}
       </div>
 
       {FACTORS.map((factor, index) => (
@@ -148,7 +147,7 @@ const MatrixRow = memo(function MatrixRow({ artifact, triple, reference, referen
       <button
         type="button"
         className={styles.clear}
-        onClick={() => onChange(artifact.id, EMPTY_TRIPLE)}
+        onClick={() => onChange(artifact.id, EMPTY_TUPLE)}
         disabled={blank}
         aria-label={`Clear ${artifact.name}`}
       >

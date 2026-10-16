@@ -1,19 +1,20 @@
+import { FACTORS } from '../data/factors';
 import { MAX_SCORE, MIN_SCORE } from '../domain/grades';
 import type { Artifact, FactorValues, Score, ScoreTuple } from '../domain/types';
 
 /** null = slider not touched yet. */
 export type DraftScore = Score | null;
-export type DraftTriple = readonly [DraftScore, DraftScore, DraftScore];
-export type Draft = Readonly<Record<string, DraftTriple>>;
+export type DraftTuple = readonly [DraftScore, DraftScore, DraftScore, DraftScore];
+export type Draft = Readonly<Record<string, DraftTuple>>;
 
-export const EMPTY_TRIPLE: DraftTriple = [null, null, null];
+export const EMPTY_TUPLE: DraftTuple = [null, null, null, null];
 
-export function isComplete(triple: DraftTriple): triple is ScoreTuple {
-  return triple.every((score) => score !== null);
+export function isComplete(tuple: DraftTuple): tuple is ScoreTuple {
+  return tuple.every((score) => score !== null);
 }
 
-export function isBlank(triple: DraftTriple): boolean {
-  return triple.every((score) => score === null);
+export function isBlank(tuple: DraftTuple): boolean {
+  return tuple.every((score) => score === null);
 }
 
 export function toScore(value: number): Score {
@@ -21,10 +22,10 @@ export function toScore(value: number): Score {
 }
 
 export interface DraftSummary {
-  /** Complete triples in catalog order, ready to save. */
+  /** Complete tuples in catalog order, ready to save. */
   scores: Record<string, ScoreTuple>;
   rated: number;
-  /** Artifact ids with some but not all three factors set. */
+  /** Artifact ids with some but not all four factors set. */
   partial: string[];
 }
 
@@ -32,21 +33,21 @@ export function summarize(draft: Draft, artifacts: readonly Artifact[]): DraftSu
   const scores: Record<string, ScoreTuple> = {};
   const partial: string[] = [];
   for (const artifact of artifacts) {
-    const triple = draft[artifact.id];
-    if (!triple || isBlank(triple)) continue;
-    if (isComplete(triple)) scores[artifact.id] = triple;
+    const tuple = draft[artifact.id];
+    if (!tuple || isBlank(tuple)) continue;
+    if (isComplete(tuple)) scores[artifact.id] = tuple;
     else partial.push(artifact.id);
   }
   return { scores, rated: Object.keys(scores).length, partial };
 }
 
-export function sameTriple(a: DraftTriple, b: DraftTriple): boolean {
+export function sameTuple(a: DraftTuple, b: DraftTuple): boolean {
   return a.every((score, i) => score === b[i]);
 }
 
 export function sameDraft(a: Draft, b: Draft): boolean {
   const ids = new Set([...Object.keys(a), ...Object.keys(b)]);
-  for (const id of ids) if (!sameTriple(a[id] ?? EMPTY_TRIPLE, b[id] ?? EMPTY_TRIPLE)) return false;
+  for (const id of ids) if (!sameTuple(a[id] ?? EMPTY_TUPLE, b[id] ?? EMPTY_TUPLE)) return false;
   return true;
 }
 
@@ -69,10 +70,10 @@ export interface StoredDraft {
  */
 export function restorable(stored: StoredDraft | undefined, saved: Draft): Draft | undefined {
   if (!stored) return undefined;
-  const merged: Record<string, DraftTriple> = { ...saved };
+  const merged: Record<string, DraftTuple> = { ...saved };
   for (const id of new Set([...Object.keys(stored.draft), ...Object.keys(stored.base)])) {
-    const row = stored.draft[id] ?? EMPTY_TRIPLE;
-    if (!sameTriple(row, stored.base[id] ?? EMPTY_TRIPLE)) merged[id] = row;
+    const row = stored.draft[id] ?? EMPTY_TUPLE;
+    if (!sameTuple(row, stored.base[id] ?? EMPTY_TUPLE)) merged[id] = row;
   }
   return sameDraft(merged, saved) ? undefined : merged;
 }
@@ -85,16 +86,28 @@ export function rebase(base: Draft, current: Draft, card: Draft): Draft {
   return restorable({ base, draft: current }, card) ?? card;
 }
 
-function isRow(value: unknown): value is DraftTriple {
-  return (
-    Array.isArray(value) &&
-    value.length === 3 &&
-    value.every((score) => score === null || (Number.isInteger(score) && score >= MIN_SCORE && score <= MAX_SCORE))
-  );
+function isEntry(score: unknown): boolean {
+  if (score === null) return true;
+  return typeof score === 'number' && Number.isInteger(score) && score >= MIN_SCORE && score <= MAX_SCORE;
 }
 
-function isDraft(value: unknown): value is Draft {
-  return typeof value === 'object' && value !== null && !Array.isArray(value) && Object.values(value).every(isRow);
+/** A stored row with four entries, or an older three-entry row (from before Outlook) padded with an unset fourth. */
+function toRow(value: unknown): DraftTuple | undefined {
+  if (!Array.isArray(value) || !value.every(isEntry)) return undefined;
+  if (value.length === 4) return value as unknown as DraftTuple;
+  if (value.length === 3) return [...value, null] as unknown as DraftTuple;
+  return undefined;
+}
+
+function toDraft(value: unknown): Draft | undefined {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return undefined;
+  const draft: Record<string, DraftTuple> = {};
+  for (const [id, row] of Object.entries(value)) {
+    const tuple = toRow(row);
+    if (!tuple) return undefined;
+    draft[id] = tuple;
+  }
+  return draft;
 }
 
 /** Parses what usePersistentDraft stored. Anything malformed counts as no draft. */
@@ -103,7 +116,9 @@ export function parseStoredDraft(raw: string | null): StoredDraft | undefined {
     const value: unknown = raw ? JSON.parse(raw) : undefined;
     if (typeof value === 'object' && value !== null && 'base' in value && 'draft' in value) {
       const { base, draft } = value;
-      if (isDraft(base) && isDraft(draft)) return { base, draft };
+      const parsedBase = toDraft(base);
+      const parsedDraft = toDraft(draft);
+      if (parsedBase && parsedDraft) return { base: parsedBase, draft: parsedDraft };
     }
   } catch {
     // Unreadable JSON counts as no draft.
@@ -117,7 +132,9 @@ export function draftFromScores(scores: Readonly<Record<string, ScoreTuple>>): D
 
 /** Rounds averaged values to whole scores so they can seed the sliders. */
 export function draftFromValues(values: Readonly<Record<string, FactorValues>>): Draft {
-  const draft: Record<string, DraftTriple> = {};
-  for (const [id, v] of Object.entries(values)) draft[id] = [toScore(v.capability), toScore(v.ux), toScore(v.cost)];
+  const draft: Record<string, DraftTuple> = {};
+  for (const [id, v] of Object.entries(values)) {
+    draft[id] = FACTORS.map((factor) => toScore(v[factor.id])) as [Score, Score, Score, Score];
+  }
   return draft;
 }

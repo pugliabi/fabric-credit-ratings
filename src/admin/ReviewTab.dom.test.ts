@@ -23,7 +23,7 @@ const catalog: AdminCatalog = {
 };
 
 function review(notes: Record<string, string>, aiEnabled = false, roundId = '2026-Q4'): RoundReview {
-  const scores: ScoreTuple = [4, 5, 4];
+  const scores: ScoreTuple = [4, 5, 4, 4];
   const label = roundId === '2026-Q4' ? 'Q4 2026' : 'Q3 2026';
   return {
     round: { id: roundId, label, status: roundId === '2026-Q4' ? 'open' : 'published', publishedOn: null },
@@ -37,7 +37,7 @@ function review(notes: Record<string, string>, aiEnabled = false, roundId = '202
         round: '2026-Q4',
         roundLabel: 'Q4 2026',
         date: '2026-10-15',
-        scores: { capability: 4, ux: 5, cost: 4 },
+        scores: { capability: 4, ux: 5, cost: 4, outlook: 4 },
         raters: 1,
         grade: 'BBB',
         note: '',

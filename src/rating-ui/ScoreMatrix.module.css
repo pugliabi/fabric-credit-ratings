@@ -60,7 +60,7 @@
 .columns,
 .row {
   display: grid;
-  grid-template-columns: minmax(0, 1.3fr) repeat(3, minmax(0, 1fr)) 64px;
+  grid-template-columns: minmax(0, 1.3fr) repeat(4, minmax(0, 1fr)) 64px;
   align-items: center;
   gap: 18px;
   padding: 10px 16px;

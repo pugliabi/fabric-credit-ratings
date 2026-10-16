@@ -11,8 +11,8 @@ import {
 } from './logout';
 
 const WAKING = 'The ratings database is not responding. Try again in a minute.';
-const clean = JSON.stringify({ base: { notebook: [5, 5, 5] }, draft: { notebook: [5, 5, 5] } });
-const unsaved = JSON.stringify({ base: { notebook: [5, 5, 5] }, draft: { notebook: [6, 5, 5] } });
+const clean = JSON.stringify({ base: { notebook: [5, 5, 5, 5] }, draft: { notebook: [5, 5, 5, 5] } });
+const unsaved = JSON.stringify({ base: { notebook: [5, 5, 5, 5] }, draft: { notebook: [6, 5, 5, 5] } });
 
 function setup(
   entries: Record<string, string>,
@@ -70,8 +70,8 @@ describe('logOutClearingDrafts', () => {
 
   it('asks nothing for an edit on an item deleted since, when it knows the current catalog', async () => {
     const deletedOnly = JSON.stringify({
-      base: { notebook: [5, 5, 5] },
-      draft: { notebook: [5, 5, 5], gone: [6, 5, 5] },
+      base: { notebook: [5, 5, 5, 5] },
+      draft: { notebook: [5, 5, 5, 5], gone: [6, 5, 5, 5] },
     });
     const page = setup({ 'fcr-card:7:2026-Q4': deletedOnly }, undefined, false, new Set(['notebook']));
     await page.run();

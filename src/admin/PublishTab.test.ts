@@ -13,7 +13,7 @@ function review(notes: Record<string, string>): RoundReview {
       round: q4.id,
       roundLabel: q4.label,
       date: '2026-10-15',
-      scores: { capability: 4, ux: 5, cost: 4 },
+      scores: { capability: 4, ux: 5, cost: 4, outlook: 4 },
       raters: 2,
       grade: 'BBB+' as const,
       note: '',

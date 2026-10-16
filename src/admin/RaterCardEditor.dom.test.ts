@@ -37,7 +37,7 @@ function review(card: Record<string, ScoreTuple>): RoundReview {
         round: q4.id,
         roundLabel: q4.label,
         date: '2026-10-15',
-        scores: { capability: scores[0], ux: scores[1], cost: scores[2] },
+        scores: { capability: scores[0], ux: scores[1], cost: scores[2], outlook: scores[3] },
         raters: 1,
         grade: 'BBB',
         note: '',
@@ -93,8 +93,8 @@ afterEach(async () => {
 describe('RaterCardEditor', () => {
   it('reads the card again on open, blocks Save and says so until it is in, then keeps edits on top', async () => {
     let answer: (response: Response) => void = () => {};
-    const opened = review({ notebook: [2, 5, 4], environment: [3, 4, 7] });
-    const newer = review({ notebook: [2, 5, 4], environment: [3, 4, 6] });
+    const opened = review({ notebook: [2, 5, 4, 4], environment: [3, 4, 7, 7] });
+    const newer = review({ notebook: [2, 5, 4, 4], environment: [3, 4, 6, 6] });
     const api = fakeApi({
       'GET /api/admin/rounds/2026-Q4/review': () => new Promise<Response>((resolve) => (answer = resolve)),
     });
@@ -123,14 +123,14 @@ describe('RaterCardEditor', () => {
     vi.stubGlobal('fetch', routes.fetchMock);
     await click(save);
     await settle();
-    expect(routes.calls.at(-1)?.body).toEqual({ scores: { notebook: [3, 5, 4], environment: [3, 4, 6] } });
+    expect(routes.calls.at(-1)?.body).toEqual({ scores: { notebook: [3, 5, 4, 4], environment: [3, 4, 6, 6] } });
     expect(onSaved).toHaveBeenCalledOnce();
   });
 
   it('names a clash when a row moved during the open-time read is one the rater changed too', async () => {
     let answer: (response: Response) => void = () => {};
-    const opened = review({ notebook: [2, 5, 4], environment: [3, 4, 7] });
-    const newer = review({ notebook: [2, 5, 4], environment: [3, 4, 6] });
+    const opened = review({ notebook: [2, 5, 4, 4], environment: [3, 4, 7, 7] });
+    const newer = review({ notebook: [2, 5, 4, 4], environment: [3, 4, 6, 6] });
     const api = fakeApi({
       'GET /api/admin/rounds/2026-Q4/review': () => new Promise<Response>((resolve) => (answer = resolve)),
     });
@@ -141,7 +141,7 @@ describe('RaterCardEditor', () => {
     answer(json(newer));
     await settle();
     const alert = container.querySelector('[role="alert"]');
-    expect(alert?.textContent).toContain('Environment (newer card: 3 · 4 · 6)');
+    expect(alert?.textContent).toContain('Environment (newer card: 3 · 4 · 6 · 6)');
     expect(alert?.textContent).toMatch(/^\s*P2 Rater A's card changed after you opened it/);
     expect(alert?.className).toMatch(/error/);
     expect(value(container, 'Environment, User Experience')).toBe('5');
@@ -149,7 +149,7 @@ describe('RaterCardEditor', () => {
   });
 
   it('says a save in flight will still land when Back to review is pressed, and lets the admin go', async () => {
-    const opened = review({ notebook: [2, 5, 4] });
+    const opened = review({ notebook: [2, 5, 4, 4] });
     const routes = fakeApi({
       'GET /api/admin/rounds/2026-Q4/review': opened,
       'PUT /api/admin/rounds/2026-Q4/scores/9': () => new Promise<Response>(() => {}),
@@ -175,7 +175,7 @@ describe('RaterCardEditor', () => {
   });
 
   it('shows "Saved. You changed scores…" as a warning, not an error, and keeps the move made meanwhile', async () => {
-    const opened = review({ notebook: [2, 5, 4], environment: [3, 4, 7] });
+    const opened = review({ notebook: [2, 5, 4, 4], environment: [3, 4, 7, 7] });
     let finish: (response: Response) => void = () => {};
     const routes = fakeApi({
       'GET /api/admin/rounds/2026-Q4/review': opened,
@@ -188,7 +188,7 @@ describe('RaterCardEditor', () => {
     await click(find(container, 'button', 'Save card'));
     await settle();
     await type(slider(container, 'Environment, CU / Token Cost'), '6');
-    finish(json(review({ notebook: [3, 5, 4], environment: [3, 4, 7] })));
+    finish(json(review({ notebook: [3, 5, 4, 4], environment: [3, 4, 7, 7] })));
     await settle();
     const alert = container.querySelector('[role="alert"]');
     expect(alert?.textContent?.trim()).toBe(CHANGED_WHILE_SAVING);
@@ -198,7 +198,7 @@ describe('RaterCardEditor', () => {
   });
 
   it('a save that lands after the editor closed never closes anything', async () => {
-    const opened = review({ notebook: [2, 5, 4] });
+    const opened = review({ notebook: [2, 5, 4, 4] });
     let finish: (response: Response) => void = () => {};
     const routes = fakeApi({
       'GET /api/admin/rounds/2026-Q4/review': opened,
@@ -212,13 +212,13 @@ describe('RaterCardEditor', () => {
     await click(find(container, 'button', 'Save card'));
     await settle();
     await unmount();
-    finish(json(review({ notebook: [3, 5, 4] })));
+    finish(json(review({ notebook: [3, 5, 4, 4] })));
     await settle();
     expect(onSaved).not.toHaveBeenCalled();
   });
 
   it('asks before the page drops unsaved card edits', async () => {
-    const opened = review({ notebook: [2, 5, 4] });
+    const opened = review({ notebook: [2, 5, 4, 4] });
     vi.stubGlobal('fetch', fakeApi({ 'GET /api/admin/rounds/2026-Q4/review': opened }).fetchMock);
     const { container } = await render(Host, { initial: opened, onSaved: vi.fn() });
     await settle();
@@ -230,7 +230,7 @@ describe('RaterCardEditor', () => {
   });
 
   it('keeps a reviewed item the page has not loaded, so a save never drops its score', async () => {
-    const opened = review({ notebook: [2, 5, 4], 'added-later': [4, 4, 4] });
+    const opened = review({ notebook: [2, 5, 4, 4], 'added-later': [4, 4, 4, 4] });
     const routes = fakeApi({
       'GET /api/admin/rounds/2026-Q4/review': opened,
       'PUT /api/admin/rounds/2026-Q4/scores/9': opened,
@@ -248,7 +248,7 @@ describe('RaterCardEditor', () => {
     await click(save);
     await settle();
     expect(routes.calls.find((call) => call.method === 'PUT')?.body).toEqual({
-      scores: { notebook: [3, 5, 4], 'added-later': [4, 4, 4] },
+      scores: { notebook: [3, 5, 4, 4], 'added-later': [4, 4, 4, 4] },
     });
   });
 });

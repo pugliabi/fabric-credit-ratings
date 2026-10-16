@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
-  EMPTY_TRIPLE,
+  EMPTY_TUPLE,
   parseStoredDraft,
   restorable,
   sameDraft,
-  sameTriple,
+  sameTuple,
   type Draft,
-  type DraftTriple,
+  type DraftTuple,
   type StoredDraft,
 } from './draft';
 
@@ -66,7 +66,7 @@ export function hasUnsavedDrafts(prefix: string, known?: ReadonlySet<string>): b
     const stored = readDraft(key);
     if (stored === undefined) return false;
     const ids = new Set([...Object.keys(stored.draft), ...Object.keys(stored.base)]);
-    const edited = (id: string) => !sameTriple(stored.draft[id] ?? EMPTY_TRIPLE, stored.base[id] ?? EMPTY_TRIPLE);
+    const edited = (id: string) => !sameTuple(stored.draft[id] ?? EMPTY_TUPLE, stored.base[id] ?? EMPTY_TUPLE);
     return [...ids].some((id) => (!known || known.has(id)) && edited(id));
   });
 }
@@ -107,7 +107,7 @@ export function usePersistentDraft(key: string, initial: Draft, known: ReadonlyS
     persistDraft(key, initial, draft);
   }, [key, initial, draft]);
 
-  const setTriple = useCallback((artifactId: string, triple: DraftTriple) => {
+  const setTriple = useCallback((artifactId: string, triple: DraftTuple) => {
     setDraft((current) => ({ ...current, [artifactId]: triple }));
   }, []);
 
