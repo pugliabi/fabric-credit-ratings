@@ -1,5 +1,6 @@
 import type { AdminArtifact, AdminCatalog, AdminWorkload } from '../../../src/domain/api-types.ts';
-import type { Artifact, ReleaseStatus, Workload } from '../../../src/domain/types.ts';
+import { parseNaFactors, serializeNaFactors } from '../../../src/domain/factors-applicable.ts';
+import type { Artifact, FactorId, ReleaseStatus, Workload } from '../../../src/domain/types.ts';
 import { varchar, type Db } from '../lib/db.ts';
 
 export async function listWorkloads(db: Db): Promise<Workload[]> {
@@ -8,11 +9,12 @@ export async function listWorkloads(db: Db): Promise<Workload[]> {
 
 /** Catalog order: workload order, then item order within the workload. */
 export async function listArtifacts(db: Db): Promise<Artifact[]> {
-  return db.query<Artifact>(
-    `SELECT a.id, a.name, a.workload_id AS workload, a.status
+  const rows = await db.query<Artifact>(
+    `SELECT a.id, a.name, a.workload_id AS workload, a.status, a.na_factors AS naFactors
      FROM artifacts a JOIN workloads w ON w.id = a.workload_id
      ORDER BY w.sort_order, a.sort_order, a.name`,
   );
+  return rows.map((row) => ({ ...row, naFactors: parseNaFactors(row.naFactors as unknown as string) }));
 }
 
 export async function adminCatalog(db: Db): Promise<AdminCatalog> {
@@ -21,7 +23,7 @@ export async function adminCatalog(db: Db): Promise<AdminCatalog> {
       'SELECT id, name, short_name AS shortName, blurb, sort_order AS sortOrder FROM workloads ORDER BY sort_order, name',
     ),
     db.query<AdminArtifact>(
-      `SELECT a.id, a.name, a.workload_id AS workload, a.status, a.sort_order AS sortOrder,
+      `SELECT a.id, a.name, a.workload_id AS workload, a.status, a.na_factors AS naFactors, a.sort_order AS sortOrder,
               CAST(CASE WHEN EXISTS (SELECT 1 FROM scores s WHERE s.artifact_id = a.id)
                           OR EXISTS (SELECT 1 FROM notes n WHERE n.artifact_id = a.id)
                         THEN 1 ELSE 0 END AS bit) AS referenced
@@ -29,7 +31,10 @@ export async function adminCatalog(db: Db): Promise<AdminCatalog> {
        ORDER BY w.sort_order, a.sort_order, a.name`,
     ),
   ]);
-  return { workloads, artifacts };
+  return {
+    workloads,
+    artifacts: artifacts.map((row) => ({ ...row, naFactors: parseNaFactors(row.naFactors as unknown as string) })),
+  };
 }
 
 interface WorkloadFields {
@@ -63,17 +68,20 @@ interface ArtifactFields {
   name: string;
   workload: string;
   status: ReleaseStatus;
+  naFactors: FactorId[];
 }
 
 export async function createArtifact(db: Db, artifact: ArtifactFields & { id: string }): Promise<void> {
   await db.query(
-    `INSERT INTO artifacts (id, name, workload_id, status, sort_order)
-     SELECT @id, @name, @workload, @status, ISNULL(MAX(sort_order), 0) + 10 FROM artifacts WHERE workload_id = @workload`,
+    `INSERT INTO artifacts (id, name, workload_id, status, na_factors, sort_order)
+     SELECT @id, @name, @workload, @status, @naFactors, ISNULL(MAX(sort_order), 0) + 10
+     FROM artifacts WHERE workload_id = @workload`,
     {
       ...artifact,
       id: varchar(artifact.id),
       workload: varchar(artifact.workload),
       status: varchar(artifact.status),
+      naFactors: varchar(serializeNaFactors(artifact.naFactors)),
     },
   );
 }
@@ -85,9 +93,16 @@ export async function updateArtifact(
 ): Promise<void> {
   await db.query(
     `UPDATE artifacts
-     SET name = @name, workload_id = @workload, status = @status, sort_order = @sortOrder, updated_at = SYSUTCDATETIME()
+     SET name = @name, workload_id = @workload, status = @status, na_factors = @naFactors, sort_order = @sortOrder,
+       updated_at = SYSUTCDATETIME()
      WHERE id = @id`,
-    { ...fields, id: varchar(id), workload: varchar(fields.workload), status: varchar(fields.status) },
+    {
+      ...fields,
+      id: varchar(id),
+      workload: varchar(fields.workload),
+      status: varchar(fields.status),
+      naFactors: varchar(serializeNaFactors(fields.naFactors)),
+    },
   );
 }
 

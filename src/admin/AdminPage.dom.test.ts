@@ -12,7 +12,15 @@ const q4 = { id: '2026-Q4', label: 'Q4 2026', status: 'open' as const, published
 const catalog: AdminCatalog = {
   workloads: [{ id: 'data-engineering', name: 'Data Engineering', shortName: 'Data Eng', blurb: '', sortOrder: 1 }],
   artifacts: [
-    { id: 'notebook', name: 'Notebook', workload: 'data-engineering', status: 'ga', sortOrder: 1, referenced: true },
+    {
+      id: 'notebook',
+      name: 'Notebook',
+      workload: 'data-engineering',
+      status: 'ga',
+      naFactors: [],
+      sortOrder: 1,
+      referenced: true,
+    },
   ],
 };
 const review: RoundReview = {
@@ -20,7 +28,7 @@ const review: RoundReview = {
   raters: [{ userId: 9, name: 'P2 Rater A' }],
   items: [
     {
-      artifact: { id: 'notebook', name: 'Notebook', workload: 'data-engineering', status: 'ga' },
+      artifact: { id: 'notebook', name: 'Notebook', workload: 'data-engineering', status: 'ga', naFactors: [] },
       point: {
         round: q4.id,
         roundLabel: q4.label,

@@ -8,7 +8,7 @@ const q4: AdminRound = { id: '2026-Q4', label: 'Q4 2026', status: 'open', publis
 
 function review(notes: Record<string, string>): RoundReview {
   const item = (id: string, name: string) => ({
-    artifact: { id, name, workload: 'data-engineering', status: 'ga' as const },
+    artifact: { id, name, workload: 'data-engineering', status: 'ga' as const, naFactors: [] },
     point: {
       round: q4.id,
       roundLabel: q4.label,

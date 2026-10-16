@@ -70,7 +70,13 @@ vi.mock(import('../repo/users.ts'), () => ({ findUserById: vi.fn() }));
 
 const open: Round = { id: '2026-Q4', label: 'Q4 2026', status: 'open', publishedOn: null };
 const published: Round = { ...open, status: 'published', publishedOn: '2026-10-15' };
-const notebook: Artifact = { id: 'notebook', name: 'Notebook', workload: 'data-engineering', status: 'ga' };
+const notebook: Artifact = {
+  id: 'notebook',
+  name: 'Notebook',
+  workload: 'data-engineering',
+  status: 'ga',
+  naFactors: [],
+};
 const rounds: AdminRound[] = [{ ...published, scorecards: 2, notes: 0 }];
 const deploy: DeployResult = { started: true, message: 'The public site is rebuilding.' };
 const dataset: Dataset = {

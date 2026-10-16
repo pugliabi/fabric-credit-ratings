@@ -9,16 +9,33 @@ import { ReviewTab, RoundReviewPanel } from './ReviewTab';
 const catalog: AdminCatalog = {
   workloads: [{ id: 'data-engineering', name: 'Data Engineering', shortName: 'Data Eng', blurb: '', sortOrder: 1 }],
   artifacts: [
-    { id: 'notebook', name: 'Notebook', workload: 'data-engineering', status: 'ga', sortOrder: 1, referenced: true },
+    {
+      id: 'notebook',
+      name: 'Notebook',
+      workload: 'data-engineering',
+      status: 'ga',
+      naFactors: [],
+      sortOrder: 1,
+      referenced: true,
+    },
     {
       id: 'environment',
       name: 'Environment',
       workload: 'data-engineering',
       status: 'ga',
+      naFactors: [],
       sortOrder: 2,
       referenced: true,
     },
-    { id: 'lakehouse', name: 'Lakehouse', workload: 'data-engineering', status: 'ga', sortOrder: 3, referenced: true },
+    {
+      id: 'lakehouse',
+      name: 'Lakehouse',
+      workload: 'data-engineering',
+      status: 'ga',
+      naFactors: [],
+      sortOrder: 3,
+      referenced: true,
+    },
   ],
 };
 
@@ -147,7 +164,13 @@ describe('RoundReviewPanel', () => {
   it("lists a reviewed item whose workload this page's catalog hasn't loaded, under a group named by its id", async () => {
     vi.stubGlobal('fetch', fakeApi({}).fetchMock);
     const current = review({});
-    const copilot = { id: 'copilot', name: 'Copilot', workload: 'fabric-iq', status: 'preview' as const };
+    const copilot = {
+      id: 'copilot',
+      name: 'Copilot',
+      workload: 'fabric-iq',
+      status: 'preview' as const,
+      naFactors: [],
+    };
     const added = { ...current, items: [...current.items, { ...current.items[0]!, artifact: copilot }] };
     const { container } = await render(RoundReviewPanel, panelProps(added));
     expect(shownItems(container)).toEqual(['Notebook', 'Environment', 'Lakehouse', 'Copilot']);

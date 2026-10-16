@@ -27,7 +27,7 @@ const review: RoundReview = {
   raters: [{ userId: 9, name: 'P2 Rater A' }],
   items: [
     {
-      artifact: { id: 'notebook', name: 'Notebook', workload: 'data-engineering', status: 'ga' },
+      artifact: { id: 'notebook', name: 'Notebook', workload: 'data-engineering', status: 'ga', naFactors: [] },
       point: {
         round: q4.id,
         roundLabel: q4.label,

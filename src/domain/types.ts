@@ -57,6 +57,8 @@ export interface Artifact {
   name: string;
   workload: WorkloadId;
   status: ReleaseStatus;
+  /** Factors the item is not scored on; see factors-applicable.ts. */
+  naFactors: FactorId[];
 }
 
 export type RoundStatus = 'open' | 'published';

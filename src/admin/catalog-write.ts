@@ -137,6 +137,7 @@ export const catalogActions = {
         name: fields.name.trim(),
         workload: fields.workload,
         status: fields.status,
+        naFactors: [],
       }),
     ),
 

@@ -191,7 +191,7 @@ function review(cards: Record<number, Record<string, ScoreTuple>>): RoundReview 
     round,
     raters: raters.map((userId) => ({ userId, name: NAMES[userId] ?? '' })),
     items: ids.map((id) => ({
-      artifact: { id, name: id, workload: 'data-engineering', status: 'ga' },
+      artifact: { id, name: id, workload: 'data-engineering', status: 'ga', naFactors: [] },
       point: {
         round: round.id,
         roundLabel: round.label,
@@ -227,8 +227,8 @@ describe('cardFromReview', () => {
 
 describe("the admin card editor's item list", () => {
   const catalog: Artifact[] = [
-    { id: 'notebook', name: 'Notebook', workload: 'data-engineering', status: 'ga' },
-    { id: 'old', name: 'Old item', workload: 'data-engineering', status: 'retired' },
+    { id: 'notebook', name: 'Notebook', workload: 'data-engineering', status: 'ga', naFactors: [] },
+    { id: 'old', name: 'Old item', workload: 'data-engineering', status: 'retired', naFactors: [] },
   ];
   const latest = review({ 9: { notebook: [2, 5, 4, 4], 'added-later': [4, 4, 4, 4] } });
 
@@ -248,7 +248,13 @@ describe("the admin card editor's item list", () => {
 
   it("adds a group for an item whose workload this page hasn't loaded", () => {
     const workloads = [{ id: 'data-engineering', name: 'Data Engineering', shortName: 'Data Eng', blurb: '' }];
-    const artifacts: Artifact[] = [...catalog, { id: 'x', name: 'X', workload: 'brand-new', status: 'ga' }];
+    const artifacts: Artifact[] = [...catalog, {
+      id: 'x',
+      name: 'X',
+      workload: 'brand-new',
+      status: 'ga',
+      naFactors: [],
+    }];
     expect(raterCardWorkloads(workloads, artifacts)).toEqual([
       ...workloads,
       { id: 'brand-new', name: 'brand-new', shortName: 'brand-new', blurb: '' },

@@ -7,7 +7,7 @@ import { CardForm } from './ScorecardEditor';
 const user: SessionUser = { id: 7, login: 'ann', displayName: 'Ann', role: 'rater' };
 const catalog: Catalog = {
   workloads: [{ id: 'data-engineering', name: 'Data Engineering', shortName: 'Data Eng', blurb: '' }],
-  artifacts: [{ id: 'notebook', name: 'Notebook', workload: 'data-engineering', status: 'ga' }],
+  artifacts: [{ id: 'notebook', name: 'Notebook', workload: 'data-engineering', status: 'ga', naFactors: [] }],
 };
 const card: MyScores = {
   round: { id: '2026-Q4', label: 'Q4 2026', status: 'open', publishedOn: null },

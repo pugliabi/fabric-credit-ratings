@@ -31,7 +31,13 @@ vi.mock(import('../repo/scores.ts'), async (importOriginal) => ({
 }));
 
 const round: Round = { id: '2026-Q4', label: 'Q4 2026', status: 'open', publishedOn: null };
-const notebook: Artifact = { id: 'notebook', name: 'Notebook', workload: 'data-engineering', status: 'ga' };
+const notebook: Artifact = {
+  id: 'notebook',
+  name: 'Notebook',
+  workload: 'data-engineering',
+  status: 'ga',
+  naFactors: [],
+};
 const tx: Db = { query: () => Promise.reject(new Error('The repo functions are mocked.')) };
 const log = { warn: vi.fn() };
 

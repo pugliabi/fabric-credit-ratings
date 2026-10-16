@@ -2,9 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { asOfDate, buildRatings, previousPoint } from './aggregate.ts';
 import type { Artifact, RoundData, ScoreTuple } from '../../../src/domain/types.ts';
 
-const lakehouse: Artifact = { id: 'lakehouse', name: 'Lakehouse', workload: 'storage', status: 'ga' };
-const legacy: Artifact = { id: 'legacy', name: 'Legacy item', workload: 'storage', status: 'retired' };
-const fresh: Artifact = { id: 'fresh', name: 'Fresh item', workload: 'mcp', status: 'preview' };
+const lakehouse: Artifact = { id: 'lakehouse', name: 'Lakehouse', workload: 'storage', status: 'ga', naFactors: [] };
+const legacy: Artifact = { id: 'legacy', name: 'Legacy item', workload: 'storage', status: 'retired', naFactors: [] };
+const fresh: Artifact = { id: 'fresh', name: 'Fresh item', workload: 'mcp', status: 'preview', naFactors: [] };
 const catalog = [lakehouse, legacy, fresh];
 
 const rounds: RoundData[] = [

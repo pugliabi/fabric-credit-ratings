@@ -15,10 +15,10 @@ export const workloads: Workload[] = [
 ];
 
 export const artifacts: Artifact[] = [
-  { id: 'lakehouse', name: 'Lakehouse', workload: 'storage', status: 'ga' },
-  { id: 'legacy', name: 'Legacy item', workload: 'storage', status: 'retired' },
-  { id: 'unscored', name: 'Unscored item', workload: 'storage', status: 'preview' },
-  { id: 'mcp-server', name: 'MCP server', workload: 'mcp', status: 'preview' },
+  { id: 'lakehouse', name: 'Lakehouse', workload: 'storage', status: 'ga', naFactors: [] },
+  { id: 'legacy', name: 'Legacy item', workload: 'storage', status: 'retired', naFactors: [] },
+  { id: 'unscored', name: 'Unscored item', workload: 'storage', status: 'preview', naFactors: [] },
+  { id: 'mcp-server', name: 'MCP server', workload: 'mcp', status: 'preview', naFactors: [] },
 ];
 
 export const rounds: Round[] = [

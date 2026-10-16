@@ -9,8 +9,24 @@ import { RoundReviewPanel } from './ReviewTab';
 const catalog: AdminCatalog = {
   workloads: [{ id: 'data-engineering', name: 'Data Engineering', shortName: 'Data Eng', blurb: '', sortOrder: 1 }],
   artifacts: [
-    { id: 'notebook', name: 'Notebook', workload: 'data-engineering', status: 'ga', sortOrder: 1, referenced: true },
-    { id: 'old', name: 'Old item', workload: 'data-engineering', status: 'retired', sortOrder: 2, referenced: true },
+    {
+      id: 'notebook',
+      name: 'Notebook',
+      workload: 'data-engineering',
+      status: 'ga',
+      naFactors: [],
+      sortOrder: 1,
+      referenced: true,
+    },
+    {
+      id: 'old',
+      name: 'Old item',
+      workload: 'data-engineering',
+      status: 'retired',
+      naFactors: [],
+      sortOrder: 2,
+      referenced: true,
+    },
   ],
 };
 

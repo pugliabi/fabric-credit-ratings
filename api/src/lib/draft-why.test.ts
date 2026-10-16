@@ -26,7 +26,7 @@ afterEach(() => {
 });
 
 const input: DraftInput = {
-  artifact: { id: 'notebook', name: 'Notebook', workload: 'data-engineering', status: 'ga' },
+  artifact: { id: 'notebook', name: 'Notebook', workload: 'data-engineering', status: 'ga', naFactors: [] },
   workload: { id: 'data-engineering', name: 'Data Engineering', shortName: 'Data Eng', blurb: 'Notebooks and Spark' },
   roundLabel: 'Q4 2026',
   scores: { capability: 6, ux: 5, cost: 4, outlook: 4 },

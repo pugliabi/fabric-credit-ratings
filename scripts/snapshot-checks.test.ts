@@ -30,7 +30,7 @@ function valid() {
     workloads: [{ id: 'data-engineering', name: 'Data Engineering', shortName: 'Data Eng', blurb: 'Lakehouses' }],
     ratings: [
       {
-        artifact: { id: 'notebook', name: 'Notebook', workload: 'data-engineering', status: 'ga' },
+        artifact: { id: 'notebook', name: 'Notebook', workload: 'data-engineering', status: 'ga', naFactors: [] },
         current: point('2026-Q4', '2026-10-15'),
         history: [point('2026-Q3', '2026-07-01', 'BBB'), point('2026-Q4', '2026-10-15')],
       },

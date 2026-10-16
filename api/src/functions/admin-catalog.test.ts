@@ -47,6 +47,7 @@ const notebook: AdminArtifact = {
   name: 'Notebook',
   workload: 'data-engineering',
   status: 'ga',
+  naFactors: [],
   sortOrder: 10,
   referenced: false,
 };
@@ -173,9 +174,39 @@ describe('catalog writes', () => {
   it('creates an item and marks the site changed in one transaction', async () => {
     await call('adminArtifactCreate', {}, newArtifact);
 
-    expect(createArtifact).toHaveBeenCalledWith(tx, newArtifact);
+    expect(createArtifact).toHaveBeenCalledWith(tx, { ...newArtifact, naFactors: [] });
     expect(markChanged).toHaveBeenCalledWith(tx);
     expectAscending(callOrder(vi.mocked(createArtifact), vi.mocked(markChanged), committed));
+  });
+
+  it('stores the not-applicable factors sent with a new item', async () => {
+    await call('adminArtifactCreate', {}, { ...newArtifact, naFactors: ['cost'] });
+
+    expect(createArtifact).toHaveBeenCalledWith(tx, { ...newArtifact, naFactors: ['cost'] });
+  });
+
+  it('keeps the current not-applicable factors when an update sends none, and replaces them when it does', async () => {
+    const marked: AdminCatalog = { ...catalog, artifacts: [{ ...notebook, naFactors: ['cost'] }] };
+    vi.mocked(adminCatalog).mockResolvedValue(marked);
+    const body = { name: 'Notebook', workload: workload.id, status: 'ga' };
+
+    await call('adminArtifactUpdate', { id: notebook.id }, body);
+    expect(updateArtifact).toHaveBeenLastCalledWith(tx, notebook.id, expect.objectContaining({ naFactors: ['cost'] }));
+
+    await call('adminArtifactUpdate', { id: notebook.id }, { ...body, naFactors: [] });
+    expect(updateArtifact).toHaveBeenLastCalledWith(tx, notebook.id, expect.objectContaining({ naFactors: [] }));
+  });
+
+  it('refuses unknown factors, and every factor marked not applicable, with 400', async () => {
+    await expect(call('adminArtifactCreate', {}, { ...newArtifact, naFactors: ['bogus'] })).rejects.toMatchObject({
+      status: 400,
+      message: 'Unknown factor "bogus".',
+    });
+    const all = ['capability', 'ux', 'cost', 'outlook'];
+    await expect(
+      call('adminArtifactUpdate', { id: notebook.id }, { ...newArtifact, naFactors: all }),
+    ).rejects.toMatchObject({ status: 400, message: 'At least one factor must apply.' });
+    expect(transaction).not.toHaveBeenCalled();
   });
 
   it('updates an item, keeping its order when none is sent, and marks the site changed in one transaction', async () => {
@@ -185,6 +216,7 @@ describe('catalog writes', () => {
       name: 'Notebooks',
       workload: workload.id,
       status: 'ga',
+      naFactors: [],
       sortOrder: notebook.sortOrder,
     });
     expect(markChanged).toHaveBeenCalledWith(tx);

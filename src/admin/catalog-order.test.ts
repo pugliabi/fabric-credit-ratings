@@ -82,6 +82,7 @@ describe('artifactUpdate', () => {
     name: id,
     workload,
     status: 'ga',
+    naFactors: [],
     sortOrder,
     referenced: false,
   });
@@ -96,9 +97,16 @@ describe('artifactUpdate', () => {
       name: 'pipeline',
       workload: 'data-factory',
       status: 'retired',
+      naFactors: [],
       sortOrder: 10,
     });
     expect(artifactUpdate(artifacts[0]!, { name: 'Pipelines' }, artifacts).sortOrder).toBe(10);
+  });
+
+  it('sends the not-applicable factors of the item, or the ones being changed', () => {
+    const marked = { ...artifacts[0]!, naFactors: ['cost' as const] };
+    expect(artifactUpdate(marked, { name: 'Pipelines' }, artifacts).naFactors).toEqual(['cost']);
+    expect(artifactUpdate(marked, { naFactors: [] }, artifacts).naFactors).toEqual([]);
   });
 
   it('puts an item moved to another workload at its end, past every item there', () => {
@@ -106,6 +114,7 @@ describe('artifactUpdate', () => {
       name: 'pipeline',
       workload: 'power-bi',
       status: 'ga',
+      naFactors: [],
       sortOrder: 40,
     });
   });

@@ -11,6 +11,7 @@ const artifact = (id: string, sortOrder: number): AdminArtifact => ({
   name: id,
   workload: 'data-factory',
   status: 'ga',
+  naFactors: [],
   sortOrder,
   referenced: false,
 });
@@ -43,7 +44,12 @@ function server(...replies: Response[]) {
   };
 }
 
-const body = (item: AdminArtifact) => ({ name: item.name, workload: item.workload, status: item.status });
+const body = (item: AdminArtifact) => ({
+  name: item.name,
+  workload: item.workload,
+  status: item.status,
+  naFactors: item.naFactors,
+});
 
 beforeEach(() => {
   vi.stubEnv('VITE_API_URL', '');
@@ -66,8 +72,8 @@ describe('saveOrders', () => {
     await expect(saveOrders('/admin/artifacts', moves, body, catalog(a, b))).resolves.toEqual(after);
     expect(api.calls()).toEqual(['PUT /api/admin/artifacts/b', 'PUT /api/admin/artifacts/a']);
     expect(api.bodies()).toEqual([
-      { name: 'b', workload: 'data-factory', status: 'ga', sortOrder: 10 },
-      { name: 'a', workload: 'data-factory', status: 'ga', sortOrder: 20 },
+      { name: 'b', workload: 'data-factory', status: 'ga', naFactors: [], sortOrder: 10 },
+      { name: 'a', workload: 'data-factory', status: 'ga', naFactors: [], sortOrder: 20 },
     ]);
   });
 
@@ -279,8 +285,8 @@ describe('catalogActions', () => {
     await catalogActions.updateArtifact(pipeline, { workload: 'power-bi' }, current)();
     expect(calls.calls()).toEqual(['PUT /api/admin/artifacts/pipeline', 'PUT /api/admin/artifacts/pipeline']);
     expect(calls.bodies()).toEqual([
-      { name: 'pipeline', workload: 'data-factory', status: 'preview', sortOrder: 10 },
-      { name: 'pipeline', workload: 'power-bi', status: 'ga', sortOrder: 40 },
+      { name: 'pipeline', workload: 'data-factory', status: 'preview', naFactors: [], sortOrder: 10 },
+      { name: 'pipeline', workload: 'power-bi', status: 'ga', naFactors: [], sortOrder: 40 },
     ]);
   });
 
@@ -307,7 +313,7 @@ describe('catalogActions', () => {
     await catalogActions.addWorkload({ id: 'fabric-iq ', name: ' Fabric IQ', shortName: 'IQ ', blurb: ' Agents. ' })();
     expect(calls.calls()).toEqual(['POST /api/admin/artifacts', 'POST /api/admin/workloads']);
     expect(calls.posts()).toEqual([
-      { id: 'copy-job', name: 'Copy job', workload: 'data-factory', status: 'preview' },
+      { id: 'copy-job', name: 'Copy job', workload: 'data-factory', status: 'preview', naFactors: [] },
       { id: 'fabric-iq', name: 'Fabric IQ', shortName: 'IQ', blurb: 'Agents.' },
     ]);
   });
@@ -337,8 +343,8 @@ describe('catalogActions', () => {
     await catalogActions.moveArtifacts(catalog(x, y, a, b), 'data-factory', 1, 0)();
     expect(calls.calls()).toEqual(['PUT /api/admin/artifacts/b', 'PUT /api/admin/artifacts/a']);
     expect(calls.bodies()).toEqual([
-      { name: 'b', workload: 'data-factory', status: 'ga', sortOrder: 10 },
-      { name: 'a', workload: 'data-factory', status: 'ga', sortOrder: 20 },
+      { name: 'b', workload: 'data-factory', status: 'ga', naFactors: [], sortOrder: 10 },
+      { name: 'a', workload: 'data-factory', status: 'ga', naFactors: [], sortOrder: 20 },
     ]);
   });
 });

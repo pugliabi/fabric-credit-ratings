@@ -1,4 +1,5 @@
 import type { AdminArtifact, AdminWorkload } from '../domain/api-types';
+import type { FactorId } from '../domain/types';
 
 /** The fields a workload PUT replaces; `sortOrder` goes alongside. */
 export function workloadBody(workload: Pick<AdminWorkload, 'name' | 'shortName' | 'blurb'>) {
@@ -9,10 +10,10 @@ export type WorkloadFields = ReturnType<typeof workloadBody>;
 
 /** The fields an item PUT replaces; `sortOrder` goes alongside. */
 export function artifactBody(artifact: AdminArtifact) {
-  return { name: artifact.name, workload: artifact.workload, status: artifact.status };
+  return { name: artifact.name, workload: artifact.workload, status: artifact.status, naFactors: artifact.naFactors };
 }
 
-export type ArtifactChanges = Partial<ReturnType<typeof artifactBody>>;
+export type ArtifactChanges = Partial<ReturnType<typeof artifactBody>> & { naFactors?: FactorId[] };
 
 /** The whole-row PUT body for an item edit. An item moved to another workload goes to its end. */
 export function artifactUpdate(artifact: AdminArtifact, changes: ArtifactChanges, artifacts: readonly AdminArtifact[]) {

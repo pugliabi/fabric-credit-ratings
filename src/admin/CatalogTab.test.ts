@@ -9,6 +9,7 @@ const item = (id: string, name: string, sortOrder: number, referenced = false): 
   name,
   workload: 'data-factory',
   status: 'ga',
+  naFactors: [],
   sortOrder,
   referenced,
 });

@@ -16,9 +16,9 @@ import {
 } from './draft';
 
 const artifacts: Artifact[] = [
-  { id: 'notebook', name: 'Notebook', workload: 'data-engineering', status: 'ga' },
-  { id: 'lakehouse', name: 'Lakehouse', workload: 'storage', status: 'ga' },
-  { id: 'kql', name: 'KQL database', workload: 'real-time', status: 'ga' },
+  { id: 'notebook', name: 'Notebook', workload: 'data-engineering', status: 'ga', naFactors: [] },
+  { id: 'lakehouse', name: 'Lakehouse', workload: 'storage', status: 'ga', naFactors: [] },
+  { id: 'kql', name: 'KQL database', workload: 'real-time', status: 'ga', naFactors: [] },
 ];
 
 describe('summarize', () => {

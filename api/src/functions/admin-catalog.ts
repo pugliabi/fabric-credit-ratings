@@ -1,4 +1,6 @@
-import type { AdminCatalog } from '../../../src/domain/api-types.ts';
+import type { AdminArtifact, AdminCatalog } from '../../../src/domain/api-types.ts';
+import { naFactorsProblem } from '../../../src/domain/factors-applicable.ts';
+import type { FactorId } from '../../../src/domain/types.ts';
 import {
   CONSTRAINT_CONFLICT,
   DEADLOCK_VICTIM,
@@ -38,7 +40,15 @@ function workloadFields(body: Record<string, unknown>) {
   };
 }
 
-function artifactFields(body: Record<string, unknown>, catalog: AdminCatalog) {
+/** PUT without naFactors keeps the current list; POST without it means every factor applies. */
+function naFactorsFrom(body: Record<string, unknown>, current?: AdminArtifact): FactorId[] {
+  if (body.naFactors === undefined) return current?.naFactors ?? [];
+  const problem = naFactorsProblem(body.naFactors);
+  if (problem) throw new HttpError(400, problem);
+  return body.naFactors as FactorId[];
+}
+
+function artifactFields(body: Record<string, unknown>, catalog: AdminCatalog, current?: AdminArtifact) {
   const workload = text(body, 'workload', 'Workload', 64);
   if (!catalog.workloads.some((item) => item.id === workload)) {
     throw new HttpError(400, `Workload ${workload} does not exist.`);
@@ -47,6 +57,7 @@ function artifactFields(body: Record<string, unknown>, catalog: AdminCatalog) {
     name: text(body, 'name', 'Name', 100),
     workload,
     status: oneOf(body, 'status', 'Status', RELEASE_STATUSES),
+    naFactors: naFactorsFrom(body, current),
   };
 }
 
@@ -108,7 +119,7 @@ route('adminArtifactUpdate', 'PUT', 'admin/artifacts/{id}', 'admin', async (ctx)
   const current = catalog.artifacts.find((item) => item.id === ctx.params.id);
   if (!current) throw new HttpError(404, 'That item does not exist.');
   const sortOrder = optionalInt(ctx.body, 'sortOrder', 'Order') ?? current.sortOrder;
-  const fields = artifactFields(ctx.body, catalog);
+  const fields = artifactFields(ctx.body, catalog, current);
   return saveCatalog((tx) => updateArtifact(tx, current.id, { ...fields, sortOrder }));
 });
 

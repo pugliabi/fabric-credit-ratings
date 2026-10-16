@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import type { AdminArtifact, AdminCatalog, AdminWorkload } from '../domain/api-types';
+import { FACTORS } from '../data/factors';
 import type { ReleaseStatus } from '../domain/types';
 import { useFocusIfLost } from '../hooks/useFocusIfLost';
 import { deleteFocus, focusKeys as keys, focusLost, moveFocus, pickFocus } from './catalog-focus';
@@ -239,6 +240,7 @@ function WorkloadBlock({ workload, catalog, busy, run, control, canMoveUp, canMo
                 <th>Id</th>
                 <th>Status</th>
                 <th>Workload</th>
+                <th>Not applicable</th>
                 <th>
                   <span className="visually-hidden">Actions</span>
                 </th>
@@ -411,6 +413,29 @@ export function ArtifactRowEditor({
             </option>
           ))}
         </select>
+      </td>
+      <td>
+        <fieldset className={styles.naFactors} disabled={busy}>
+          <legend className="visually-hidden">{`${artifact.name} not applicable`}</legend>
+          {FACTORS.map((factor) => (
+            <label key={factor.id} className={styles.check}>
+              <input
+                type="checkbox"
+                checked={artifact.naFactors.includes(factor.id)}
+                onChange={(event) => {
+                  const next = FACTORS.map((f) => f.id).filter((id) =>
+                    id === factor.id ? event.target.checked : artifact.naFactors.includes(id),
+                  );
+                  if (next.length >= FACTORS.length) return;
+                  update({ naFactors: next }, [keys.na(artifact.id, factor.id)]);
+                }}
+                ref={control(keys.na(artifact.id, factor.id))}
+                aria-label={`${artifact.name}: ${factor.label} not applicable`}
+              />
+              {factor.label}
+            </label>
+          ))}
+        </fieldset>
       </td>
       <td>
         <div className={styles.rowActions}>

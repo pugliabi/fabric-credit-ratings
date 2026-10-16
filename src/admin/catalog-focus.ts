@@ -8,6 +8,7 @@ export const focusKeys = {
   name: (item: string) => `name:${item}`,
   status: (item: string) => `status:${item}`,
   place: (item: string) => `place:${item}`,
+  na: (item: string, factor: string) => `na:${item}:${factor}`,
   remove: (item: string) => `delete:${item}`,
   add: (workload: string) => `add:${workload}`,
   addWorkload: 'add-workload',

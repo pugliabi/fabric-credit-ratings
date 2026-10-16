@@ -167,6 +167,15 @@
   font-size: 13px;
 }
 
+.naFactors {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  border: 0;
+  margin: 0;
+  padding: 0;
+}
+
 .toolbar {
   position: sticky;
   top: 0;

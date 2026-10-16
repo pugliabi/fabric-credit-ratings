@@ -13,18 +13,33 @@ const rater = { userId: 9, name: 'P2 Rater A' };
 const catalog: AdminCatalog = {
   workloads: [{ id: 'data-engineering', name: 'Data Engineering', shortName: 'Data Eng', blurb: '', sortOrder: 1 }],
   artifacts: [
-    { id: 'notebook', name: 'Notebook', workload: 'data-engineering', status: 'ga', sortOrder: 1, referenced: true },
+    {
+      id: 'notebook',
+      name: 'Notebook',
+      workload: 'data-engineering',
+      status: 'ga',
+      naFactors: [],
+      sortOrder: 1,
+      referenced: true,
+    },
     {
       id: 'environment',
       name: 'Environment',
       workload: 'data-engineering',
       status: 'ga',
+      naFactors: [],
       sortOrder: 2,
       referenced: true,
     },
   ],
 };
-const addedLater: Artifact = { id: 'added-later', name: 'Added later', workload: 'data-engineering', status: 'ga' };
+const addedLater: Artifact = {
+  id: 'added-later',
+  name: 'Added later',
+  workload: 'data-engineering',
+  status: 'ga',
+  naFactors: [],
+};
 
 function review(card: Record<string, ScoreTuple>): RoundReview {
   const known = [...catalog.artifacts, addedLater];
