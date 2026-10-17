@@ -1,10 +1,1 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
-  <defs>
-    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#117865" />
-      <stop offset="1" stop-color="#3E9A86" />
-    </linearGradient>
-  </defs>
-  <rect width="64" height="64" rx="14" fill="url(#g)" />
-  <text x="32" y="41" text-anchor="middle" font-family="Segoe UI, system-ui, sans-serif" font-size="22" font-weight="700" fill="#fff">AAA</text>
-</svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256"><title>Fabric Credit Ratings</title><style>@media (prefers-color-scheme: dark){path{fill:#8ccbbb}}</style><g transform="translate(-7.55 -12.67) scale(1.059)"><path fill="#117865" d="M36 224 L88 224 L94.33 208 L42.33 208 Z M67.67 144 L112 32 L144 32 L220 224 L168 224 L128 122.95 L119.67 144 Z M12 160 L125.46 160 L138.13 192 L12 192 Z M211.87 160 L244 160 L244 192 L224.54 192 Z"/></g></svg>

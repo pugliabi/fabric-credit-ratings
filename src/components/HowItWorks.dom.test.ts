@@ -80,4 +80,12 @@ describe('SiteNav', () => {
     expect(about?.textContent).toBe('About');
     expect(about?.closest('nav[aria-label="Sections"]')).toBeNull();
   });
+
+  it('shows the Threaded A mark in the home link, not the old AAA text', async () => {
+    const { container } = await render(SiteNav, { items: [], active: undefined, onNavigate: () => undefined });
+    const home = container.querySelector('header a[href="#top"]');
+    expect(home?.getAttribute('aria-label')).toBe('Fabric Credit Ratings');
+    expect(home?.querySelector('svg[aria-hidden="true"] path')).not.toBeNull();
+    expect(home?.textContent).not.toContain('AAA');
+  });
 });
