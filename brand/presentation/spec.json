@@ -1,0 +1,54 @@
+{
+  "brand": "Fabric Credit Ratings",
+  "tagline": "Bond-style ratings for every Microsoft Fabric item",
+  "brief": "An independent site that grades each Microsoft Fabric item the way a credit agency grades a bond, from AAA down to C, scored by Microsoft MVPs and practitioners. The mark should feel trustworthy, precise and independent, live in the site's Fabric green, and work as a 16 px favicon.",
+  "adjectives": [
+    "trustworthy",
+    "precise",
+    "independent",
+    "calm"
+  ],
+  "criteria": "Success: reads as a rating at a glance, ties to Fabric without copying Microsoft's branding, recognisable at 16 px, works in one colour.",
+  "mockups": [
+    "website",
+    "favicon-tab",
+    "app-icon",
+    "social",
+    "badge",
+    "sticker"
+  ],
+  "nav": [
+    "Ratings",
+    "How it works",
+    "About"
+  ],
+  "brand_color": "#117865",
+  "greyscale": false,
+  "final": true,
+  "concepts": [
+    {
+      "name": "Threaded A",
+      "symbol": "../svg/fcr-symbol-color.svg",
+      "lockup": "../svg/fcr-logo-horizontal-color.svg",
+      "stacked": "../svg/fcr-logo-stacked-color.svg",
+      "symbol_on_tile": "../svg/fcr-symbol-white.svg",
+      "stacked_on_tile": "../svg/fcr-logo-stacked-white.svg",
+      "symbol_on_dark": "../svg/fcr-symbol-white.svg",
+      "lockup_on_dark": "../svg/fcr-logo-horizontal-white.svg",
+      "stacked_on_dark": "../svg/fcr-logo-stacked-white.svg",
+      "idea": "The top grade's A, with a crossbar woven over one leg and under the other: the rating and the fabric in one letter.",
+      "rationale": [
+        "The A stands for the AAA end of the scale without spelling out a grade",
+        "The over-and-under crossbar is a woven thread, a quiet nod to Fabric",
+        "Built from straight cuts on a 256 grid, with a pixel-snapped cut for favicons",
+        "The wordmark's baseline sits on the crossbar's bottom edge, so symbol and name lock together"
+      ]
+    }
+  ],
+  "recommendation": "Threaded A in Fabric green (#117865), with the two-tone wordmark that matches the site's top bar.",
+  "next_steps": [
+    "Replace the site's favicon and top-bar mark with the new files",
+    "Run a trademark search before wider use",
+    "Pick the Pantone match from a physical guide before any spot-colour print"
+  ]
+}

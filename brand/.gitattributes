@@ -1,0 +1,4 @@
+# Artwork files are binary: no line-ending conversion.
+*.pdf binary
+*.png binary
+*.ico binary
