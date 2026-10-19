@@ -197,6 +197,7 @@ describe('myScoresSubmit', () => {
     const submittedAt = new Date('2026-10-19T15:02:00Z');
     vi.mocked(scoresFor).mockResolvedValueOnce([cardRow()]).mockResolvedValue([cardRow({ submittedAt })]);
     const result = await call('myScoresSubmit', { round: round.id, updatedAt: seen });
+    expect(scoresFor).toHaveBeenCalledWith(tx, round.id, 7);
     expect(submitCard).toHaveBeenCalledWith(tx, round.id, 7);
     const [locked = 0] = vi.mocked(lockRound).mock.invocationCallOrder;
     const [submitted = 0] = vi.mocked(submitCard).mock.invocationCallOrder;

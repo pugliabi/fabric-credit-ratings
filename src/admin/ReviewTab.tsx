@@ -185,7 +185,8 @@ export function RoundReviewPanel({ review, catalog, users, onReview }: RoundRevi
   };
 
   const blanks = counted.filter(({ artifact }) => !notes[artifact.id]?.trim());
-  const submittedCount = review.raters.filter((rater) => rater.submittedAt !== null).length;
+  // Loose check: an older API sends no submittedAt at all, and that must count as not submitted.
+  const submittedCount = review.raters.filter((rater) => rater.submittedAt != null).length;
   const draftCount = review.raters.length - submittedCount;
 
   const draftAllBlank = async () => {

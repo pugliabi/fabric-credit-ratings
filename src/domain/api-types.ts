@@ -20,7 +20,7 @@ export interface MyScores {
   updatedAt: string | null;
   /** When the rater submitted this card; null while it is a draft (or there is no card). */
   submittedAt: string | null;
-  /** The rater's card from the newest published round they scored. */
+  /** The rater's submitted card from the newest released round they submitted in. */
   previous: { roundLabel: string; scores: Record<string, ScoreTuple> } | null;
 }
 

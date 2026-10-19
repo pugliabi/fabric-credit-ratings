@@ -86,7 +86,8 @@
 
 .primary:disabled,
 .primary[aria-disabled='true'],
-.secondary:disabled {
+.secondary:disabled,
+.secondary[aria-disabled='true'] {
   opacity: 0.45;
   cursor: not-allowed;
 }

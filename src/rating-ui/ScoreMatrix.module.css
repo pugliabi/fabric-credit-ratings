@@ -162,6 +162,11 @@
   appearance: none;
 }
 
+.slider input:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
 .slider input::-webkit-slider-thumb {
   width: 18px;
   height: 18px;

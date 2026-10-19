@@ -246,6 +246,43 @@ describe('RaterCardEditor', () => {
     expect(ask).toHaveBeenCalledOnce();
   });
 
+  describe('the hint above the card', () => {
+    const released: Round = { ...q4, status: 'published', publishedOn: '2026-10-19' };
+    const hint = (root: ParentNode) => find(root, 'p', /save to remove the card\.$/)?.textContent ?? '';
+
+    async function open(round: Round, submittedAt: string | null) {
+      const base = review({ notebook: [2, 5, 4, 4] });
+      const opened: RoundReview = { ...base, round, raters: [{ ...rater, submittedAt }] };
+      vi.stubGlobal('fetch', fakeApi({ [`GET /api/admin/rounds/${round.id}/review`]: opened }).fetchMock);
+      const { container } = await render(Host, { initial: opened, onSaved: vi.fn() });
+      await settle();
+      return container;
+    }
+
+    it('keeps the released-round hint for a submitted card', async () => {
+      const container = await open(released, '2026-10-15T12:00:00.000Z');
+      expect(hint(container)).toBe(
+        'Q4 2026 is released. Saving changes its public averages at the next site update. ' +
+          'Clear every item and save to remove the card.',
+      );
+    });
+
+    it("says a draft the release left out isn't in the averages, and saving it makes it count", async () => {
+      const container = await open(released, null);
+      expect(hint(container)).toBe(
+        "P2 Rater A's card wasn't submitted, so it isn't in Q4 2026's averages. " +
+          'Saving it here makes it count at the next site update. Clear every item and save to remove the card.',
+      );
+    });
+
+    it('keeps the open-round hint for a draft in the open round', async () => {
+      const container = await open(q4, null);
+      expect(hint(container)).toBe(
+        "You are editing P2 Rater A's card for the open round. Clear every item and save to remove the card.",
+      );
+    });
+  });
+
   it('keeps a reviewed item the page has not loaded, so a save never drops its score', async () => {
     const opened = review({ notebook: [2, 5, 4, 4], 'added-later': [4, 4, 4, 4] });
     const routes = fakeApi({

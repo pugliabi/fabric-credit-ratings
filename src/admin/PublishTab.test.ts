@@ -129,6 +129,13 @@ describe('PublishForm', () => {
     expect(plain(html)).toContain('0 submitted · 1 saved but not submitted (Bo)');
   });
 
+  it('counts a rater with no submittedAt at all (an older API) as not submitted: Release stays refused', () => {
+    const older = [{ userId: 9, name: 'Bo' }] as unknown as RoundReview['raters'];
+    const html = form({ notebook: 'Because.', environment: 'Also because.' }, undefined, older);
+    expect(releaseButton(html)).toContain('aria-disabled="true"');
+    expect(plain(html)).toContain('0 submitted · 1 saved but not submitted (Bo)');
+  });
+
   it('lets Release go once every scored item has a why', () => {
     const html = form({ notebook: 'Because.', environment: 'Also because.' });
     expect(releaseButton(html)).toContain('aria-disabled="false"');

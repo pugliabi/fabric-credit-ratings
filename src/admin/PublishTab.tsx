@@ -449,8 +449,9 @@ export function PublishForm({
   // Only items a submitted card scored count; the ones only drafts scored have no point and stay off the site.
   const counted = review.items.filter((item) => item.point !== null);
   const missing = counted.filter((item) => !review.notes[item.artifact.id]?.trim());
-  const submitted = review.raters.filter((rater) => rater.submittedAt !== null);
-  const drafts = review.raters.filter((rater) => rater.submittedAt === null).map((rater) => rater.name);
+  // Loose checks: an older API sends no submittedAt at all, and that must count as not submitted.
+  const submitted = review.raters.filter((rater) => rater.submittedAt != null);
+  const drafts = review.raters.filter((rater) => rater.submittedAt == null).map((rater) => rater.name);
   const blocked = busy || submitted.length === 0 || !date || (missing.length > 0 && !force);
 
   const release = async () => {

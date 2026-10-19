@@ -148,6 +148,9 @@ export function RaterCardEditor({ review, rater, catalog, onSaved, onRefreshed, 
   };
 
   const status = saving ? 'Saving…' : fresh ? freshNote : 'Checking for newer scores…';
+  // A draft the release left out: a loose check, so a missing submittedAt (an older API) counts as a draft too.
+  const entry = review.raters.find((candidate) => candidate.userId === rater.userId);
+  const leftOut = round.status === 'published' && entry !== undefined && entry.submittedAt == null;
 
   return (
     <div className={styles.scoreTab}>
@@ -176,9 +179,12 @@ export function RaterCardEditor({ review, rater, catalog, onSaved, onRefreshed, 
         </div>
       </div>
       <p className={styles.hint}>
-        {round.status === 'published'
-          ? `${round.label} is released. Saving changes its public averages at the next site update.`
-          : `You are editing ${rater.name}'s card for the open round.`}{' '}
+        {leftOut
+          ? `${rater.name}'s card wasn't submitted, so it isn't in ${round.label}'s averages. ` +
+            'Saving it here makes it count at the next site update.'
+          : round.status === 'published'
+            ? `${round.label} is released. Saving changes its public averages at the next site update.`
+            : `You are editing ${rater.name}'s card for the open round.`}{' '}
         Clear every item and save to remove the card.
       </p>
       <ScoreMatrix workloads={workloads} artifacts={artifacts} draft={draft} onChange={setTriple} />
