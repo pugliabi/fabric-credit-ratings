@@ -137,12 +137,15 @@ export function RoundReviewPanel({ review, catalog, users, onReview }: RoundRevi
     if (!editing && (!document.activeElement || document.activeElement === document.body)) toolbar.current?.focus();
   }, [editing]);
 
+  // An item only drafts scored won't go live, so it needs no why and no AI draft.
+  const counted = review.items.filter((item) => item.point !== null);
+
   const notesNow = useRef(edits.notes);
   useEffect(() => {
     notesNow.current = edits.notes;
   }, [edits.notes]);
   useEffect(() => {
-    setMissingOnly((shown) => shown && refreezeMissing(shown, review.items, notesNow.current));
+    setMissingOnly((shown) => shown && refreezeMissing(shown, counted, notesNow.current));
   }, [review]);
 
   useEffect(() => {
@@ -181,8 +184,6 @@ export function RoundReviewPanel({ review, catalog, users, onReview }: RoundRevi
     edit: setEdits,
   };
 
-  // An item only drafts scored won't go live, so it needs no why and no AI draft.
-  const counted = review.items.filter((item) => item.point !== null);
   const blanks = counted.filter(({ artifact }) => !notes[artifact.id]?.trim());
   const submittedCount = review.raters.filter((rater) => rater.submittedAt !== null).length;
   const draftCount = review.raters.length - submittedCount;
@@ -279,7 +280,7 @@ export function RoundReviewPanel({ review, catalog, users, onReview }: RoundRevi
                   type="checkbox"
                   checked={missingOnly !== undefined}
                   onChange={(event) =>
-                    setMissingOnly(event.target.checked ? missingWhy(review.items, notes) : undefined)
+                    setMissingOnly(event.target.checked ? missingWhy(counted, notes) : undefined)
                   }
                 />
                 Only missing a why

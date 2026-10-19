@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+import { createElement, useState } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AdminCatalog, AdminRound, RoundReview } from '../domain/api-types';
 import type { ScoreTuple } from '../domain/types';
@@ -74,6 +75,47 @@ function review(notes: Record<string, string>, aiEnabled = false, roundId = '202
   };
 }
 
+/** Ann submitted Notebook; Bo's draft also scored it, and is the only one who scored Environment. */
+function reviewWithDraftOnly(): RoundReview {
+  const base = review({}, true);
+  const [notebook, environment] = base.items;
+  return {
+    ...base,
+    raters: [
+      { userId: 9, name: 'Ann', submittedAt: '2026-10-15T12:00:00.000Z' },
+      { userId: 2, name: 'Bo', submittedAt: null },
+    ],
+    items: [
+      {
+        ...notebook!,
+        breakdown: [
+          { userId: 9, name: 'Ann', submitted: true, scores: [4, 5, 4, 4] },
+          { userId: 2, name: 'Bo', submitted: false, scores: [1, 1, 1, 1] },
+        ],
+      },
+      {
+        ...environment!,
+        point: null,
+        change: { kind: 'draft', text: 'Only in drafts' },
+        breakdown: [{ userId: 2, name: 'Bo', submitted: false, scores: [3, 3, 3, 3] }],
+      },
+    ],
+  };
+}
+
+/** Holds the review the way ReviewTab does, so a reload (the button) feeds a new review into the panel. */
+function Reloading({ initial, reloaded }: { initial: RoundReview; reloaded: RoundReview }) {
+  const [current, setCurrent] = useState(initial);
+  return createElement(
+    'div',
+    null,
+    createElement('button', { type: 'button', onClick: () => setCurrent(reloaded) }, 'Reload'),
+    createElement(RoundReviewPanel, { review: current, catalog, users: [], onReview: setCurrent }),
+  );
+}
+
+const toggleMissingOnly = (root: HTMLElement) =>
+  click(find(root, 'label', 'Only missing a why')?.querySelector('input') ?? null);
 const box = (root: ParentNode, name: string) =>
   root.querySelector<HTMLTextAreaElement>(`textarea[aria-label="Why this rating for ${name}"]`);
 const shownItems = (root: ParentNode) =>
@@ -133,31 +175,7 @@ describe('RoundReviewPanel', () => {
   });
 
   it('lists a draft beside the submitted cards; an item only a draft scored has no grade and no AI draft', async () => {
-    const base = review({}, true);
-    const [notebook, environment] = base.items;
-    const draftOnly: RoundReview = {
-      ...base,
-      raters: [
-        { userId: 9, name: 'Ann', submittedAt: '2026-10-15T12:00:00.000Z' },
-        { userId: 2, name: 'Bo', submittedAt: null },
-      ],
-      items: [
-        {
-          ...notebook!,
-          breakdown: [
-            { userId: 9, name: 'Ann', submitted: true, scores: [4, 5, 4, 4] },
-            { userId: 2, name: 'Bo', submitted: false, scores: [1, 1, 1, 1] },
-          ],
-        },
-        {
-          ...environment!,
-          point: null,
-          change: { kind: 'draft', text: 'Only in drafts' },
-          breakdown: [{ userId: 2, name: 'Bo', submitted: false, scores: [3, 3, 3, 3] }],
-        },
-      ],
-    };
-    const { container } = await render(RoundReviewPanel, panelProps(draftOnly));
+    const { container } = await render(RoundReviewPanel, panelProps(reviewWithDraftOnly()));
     const toolbar = container.querySelector('[role="group"][aria-label="Review of Q4 2026"]');
     expect(toolbar?.textContent).toContain('1 item · 1 submitted · 1 draft');
     expect(toolbar?.textContent).toContain('1 missing a why');
@@ -168,6 +186,26 @@ describe('RoundReviewPanel', () => {
     expect(draft?.querySelector('[data-variant="pill"]')).toBeNull();
     expect(find(draft as HTMLElement, 'button', /Draft with AI/)).toBeNull();
     expect(find(counted as HTMLElement, 'button', /Draft with AI/)).not.toBeNull();
+  });
+
+  it('keeps an item only a draft scored out of "Only missing a why", since it needs no why', async () => {
+    const { container } = await render(RoundReviewPanel, panelProps(reviewWithDraftOnly()));
+    expect(shownItems(container)).toEqual(['Notebook', 'Environment']);
+    await toggleMissingOnly(container);
+    expect(shownItems(container)).toEqual(['Notebook']);
+    expect(container.textContent).toContain('1 missing a why');
+  });
+
+  it('does not add a draft-only item to "Only missing a why" when the review reloads', async () => {
+    const draftOnly = reviewWithDraftOnly();
+    const initial = { ...draftOnly, items: draftOnly.items.slice(0, 1) };
+    const { container } = await render(Reloading, { initial, reloaded: draftOnly });
+    await toggleMissingOnly(container);
+    expect(shownItems(container)).toEqual(['Notebook']);
+    await click(find(container, 'button', 'Reload'));
+    expect(shownItems(container)).toEqual(['Notebook']);
+    await toggleMissingOnly(container);
+    expect(shownItems(container)).toEqual(['Notebook', 'Environment']);
   });
 
   it("opens a rater's card only from Edit card, not from moving through the list", async () => {
