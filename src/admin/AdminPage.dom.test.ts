@@ -59,7 +59,7 @@ const json = (body: unknown, status = 200) => new Response(JSON.stringify(body),
 function server(overrides: Record<string, unknown> = {}) {
   return fakeApi({
     'GET /api/me': { id: 2, login: 'admin', displayName: 'Ada Admin', role: 'admin' },
-    'GET /api/admin/rounds': [{ ...q4, scorecards: 1, notes: 0 }],
+    'GET /api/admin/rounds': [{ ...q4, scorecards: 1, submitted: 1, notes: 0 }],
     'GET /api/admin/catalog': catalog,
     'GET /api/admin/users': [],
     'GET /api/catalog': catalog,

@@ -211,8 +211,16 @@ describe('RoundReviewPanel', () => {
 
 describe('ReviewTab', () => {
   const rounds: AdminRound[] = [
-    { id: '2026-Q4', label: 'Q4 2026', status: 'open', publishedOn: null, scorecards: 2, notes: 0 },
-    { id: '2026-Q3', label: 'Q3 2026', status: 'published', publishedOn: '2026-09-30', scorecards: 2, notes: 3 },
+    { id: '2026-Q4', label: 'Q4 2026', status: 'open', publishedOn: null, scorecards: 2, submitted: 2, notes: 0 },
+    {
+      id: '2026-Q3',
+      label: 'Q3 2026',
+      status: 'published',
+      publishedOn: '2026-09-30',
+      scorecards: 2,
+      submitted: 2,
+      notes: 3,
+    },
   ];
 
   it('asks before another round drops unsaved whys; Cancel stays on this round', async () => {

@@ -32,6 +32,8 @@ export interface Snapshot {
 
 export interface AdminRound extends Round {
   scorecards: number;
+  /** Submitted cards: the ones a release counts. */
+  submitted: number;
   notes: number;
 }
 

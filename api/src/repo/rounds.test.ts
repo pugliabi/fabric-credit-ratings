@@ -4,7 +4,7 @@ import { closeDb, db, transaction, varchar, type Db, type Params } from '../lib/
 import { ROUND_ID } from '../lib/validate.ts';
 import { useDevTarget } from '../test-target.ts';
 import { listArtifacts } from './catalog.ts';
-import { findLatestPublishedRound, lockRound } from './rounds.ts';
+import { countSubmitted, deleteRound, findLatestPublishedRound, listRoundsWithCounts, lockRound } from './rounds.ts';
 import { replaceScorecard, scoresFor, toTuples } from './scores.ts';
 import { createUser } from './users.ts';
 
@@ -44,6 +44,34 @@ describe('findLatestPublishedRound', () => {
     expect(calls).toHaveLength(1);
     expect(calls[0]?.text).toMatch(/SELECT TOP 1 .* FROM rounds r WHERE r\.status = 'published'/s);
     expect(calls[0]?.text).toMatch(/ORDER BY r\.published_on DESC, r\.id DESC$/);
+  });
+});
+
+describe('submission counts', () => {
+  it('listRoundsWithCounts counts submitted cards beside all cards', async () => {
+    const { calls, fake } = answering([]);
+    await listRoundsWithCounts(fake);
+    expect(calls[0]?.text).toMatch(
+      /\(SELECT COUNT\(\*\) FROM submissions sub WHERE sub\.round_id = r\.id\) AS submitted/,
+    );
+  });
+
+  it('countSubmitted counts the round\'s submissions', async () => {
+    const { calls, fake } = answering([{ n: 2 }]);
+    expect(await countSubmitted(fake, '2026-Q4')).toBe(2);
+    expect(calls[0]?.text).toBe('SELECT COUNT(*) AS n FROM submissions WHERE round_id = @id');
+    expect(calls[0]?.params).toEqual({ id: varchar('2026-Q4') });
+  });
+
+  it('deleteRound removes the submissions before the round', async () => {
+    const { calls, fake } = answering([]);
+    await deleteRound(fake, '2026-Q4');
+    expect(calls.map((call) => call.text)).toEqual([
+      'DELETE FROM notes WHERE round_id = @id',
+      'DELETE FROM scores WHERE round_id = @id',
+      'DELETE FROM submissions WHERE round_id = @id',
+      'DELETE FROM rounds WHERE id = @id',
+    ]);
   });
 });
 

@@ -46,6 +46,7 @@ export async function listRoundsWithCounts(db: Db): Promise<AdminRound[]> {
   return db.query<AdminRound>(
     `SELECT ${ROUND},
             (SELECT COUNT(DISTINCT s.user_id) FROM scores s WHERE s.round_id = r.id) AS scorecards,
+            (SELECT COUNT(*) FROM submissions sub WHERE sub.round_id = r.id) AS submitted,
             (SELECT COUNT(*) FROM notes n WHERE n.round_id = r.id) AS notes
      FROM rounds r
      ORDER BY r.id DESC`,
@@ -60,6 +61,14 @@ export async function countScorecards(db: Db, id: string): Promise<number> {
   return row?.n ?? 0;
 }
 
+/** How many cards in the round are submitted: the cards a release counts. */
+export async function countSubmitted(db: Db, id: string): Promise<number> {
+  const [row] = await db.query<{ n: number }>('SELECT COUNT(*) AS n FROM submissions WHERE round_id = @id', {
+    id: varchar(id),
+  });
+  return row?.n ?? 0;
+}
+
 export async function createRound(db: Db, id: string, label: string): Promise<void> {
   await db.query(`INSERT INTO rounds (id, label, status) VALUES (@id, @label, 'open')`, { id: varchar(id), label });
 }
@@ -69,6 +78,7 @@ export async function deleteRound(tx: Db, id: string): Promise<void> {
   const params = { id: varchar(id) };
   await tx.query('DELETE FROM notes WHERE round_id = @id', params);
   await tx.query('DELETE FROM scores WHERE round_id = @id', params);
+  await tx.query('DELETE FROM submissions WHERE round_id = @id', params);
   await tx.query('DELETE FROM rounds WHERE id = @id', params);
 }
 

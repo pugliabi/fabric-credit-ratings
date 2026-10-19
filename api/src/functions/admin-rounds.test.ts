@@ -77,7 +77,7 @@ const notebook: Artifact = {
   status: 'ga',
   naFactors: [],
 };
-const rounds: AdminRound[] = [{ ...published, scorecards: 2, notes: 0 }];
+const rounds: AdminRound[] = [{ ...published, scorecards: 2, submitted: 2, notes: 0 }];
 const deploy: DeployResult = { started: true, message: 'The public site is rebuilding.' };
 const dataset: Dataset = {
   workloads: [],

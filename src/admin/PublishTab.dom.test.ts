@@ -7,7 +7,15 @@ import { formatFullDate } from '../lib/format';
 import { cleanup, click, fakeApi, find, render, settle } from '../test/dom';
 import { PublishTab } from './PublishTab';
 
-const q4: AdminRound = { id: '2026-Q4', label: 'Q4 2026', status: 'open', publishedOn: null, scorecards: 2, notes: 1 };
+const q4: AdminRound = {
+  id: '2026-Q4',
+  label: 'Q4 2026',
+  status: 'open',
+  publishedOn: null,
+  scorecards: 2,
+  submitted: 2,
+  notes: 1,
+};
 const q4Published: AdminRound = { ...q4, status: 'published', publishedOn: '2026-10-15' };
 const q3: AdminRound = {
   id: '2026-Q3',
@@ -15,6 +23,7 @@ const q3: AdminRound = {
   status: 'published',
   publishedOn: '2026-09-30',
   scorecards: 2,
+  submitted: 2,
   notes: 3,
 };
 const NOT_SET_UP =
@@ -243,11 +252,11 @@ describe('PublishTab', () => {
     vi.stubGlobal('confirm', ask);
     const api = fakeApi({ 'GET /api/admin/site': behind, 'GET /api/admin/rounds/2026-Q4/review': review });
     vi.stubGlobal('fetch', api.fetchMock);
-    const one = await render(Host, { initial: [{ ...q4, scorecards: 1 }] });
+    const one = await render(Host, { initial: [{ ...q4, scorecards: 1, submitted: 1 }] });
     await settle();
     await click(find(one.container, 'button', 'Delete round'));
     expect(ask).toHaveBeenLastCalledWith('Delete Q4 2026 and its 1 scorecard? This cannot be undone.');
-    const none = await render(Host, { initial: [{ ...q4, scorecards: 0 }] });
+    const none = await render(Host, { initial: [{ ...q4, scorecards: 0, submitted: 0 }] });
     await settle();
     await click(find(none.container, 'button', 'Delete round'));
     expect(ask).toHaveBeenLastCalledWith('Delete Q4 2026? This cannot be undone.');
@@ -411,7 +420,7 @@ describe('PublishTab', () => {
         'fetch',
         fakeApi({ 'GET /api/admin/site': behind, 'GET /api/admin/rounds/2026-Q4/review': review }).fetchMock,
       );
-      const { container } = await render(Host, { initial: [{ ...q4, scorecards: 1 }] });
+      const { container } = await render(Host, { initial: [{ ...q4, scorecards: 1, submitted: 1 }] });
       await settle();
       expect(listed(sectionTitled(container, 'Rounds'))[0]).toContain('Q4 2026 · open · 1 card ·');
     });

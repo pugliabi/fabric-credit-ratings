@@ -90,6 +90,7 @@ describe('myScoresPut', () => {
       cost: 4,
       outlook: 4,
       updatedAt,
+      submittedAt: null,
     };
     vi.mocked(scoresFor).mockResolvedValue([row]);
 

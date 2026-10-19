@@ -10,6 +10,7 @@ const q4: AdminRound = {
   status: 'published',
   publishedOn: '2026-12-15',
   scorecards: 3,
+  submitted: 3,
   notes: 10,
 };
 

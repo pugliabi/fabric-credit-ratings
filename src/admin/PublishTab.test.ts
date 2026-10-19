@@ -4,7 +4,15 @@ import { describe, expect, it } from 'vitest';
 import type { AdminRound, RoundReview, SiteStatus } from '../domain/api-types';
 import { PublishForm, SitePanel } from './PublishTab';
 
-const q4: AdminRound = { id: '2026-Q4', label: 'Q4 2026', status: 'open', publishedOn: null, scorecards: 2, notes: 0 };
+const q4: AdminRound = {
+  id: '2026-Q4',
+  label: 'Q4 2026',
+  status: 'open',
+  publishedOn: null,
+  scorecards: 2,
+  submitted: 2,
+  notes: 0,
+};
 
 function review(notes: Record<string, string>): RoundReview {
   const item = (id: string, name: string) => ({

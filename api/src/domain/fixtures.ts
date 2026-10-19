@@ -6,7 +6,18 @@ const names: Record<number, string> = { 1: 'Ann', 2: 'Bo' };
 
 function row(roundId: string, userId: number, artifactId: string, scores: [number, number, number, number]): ScoreRow {
   const [capability, ux, cost, outlook] = scores;
-  return { roundId, userId, name: names[userId] ?? '', artifactId, capability, ux, cost, outlook, updatedAt: at };
+  return {
+    roundId,
+    userId,
+    name: names[userId] ?? '',
+    artifactId,
+    capability,
+    ux,
+    cost,
+    outlook,
+    updatedAt: at,
+    submittedAt: at,
+  };
 }
 
 export const workloads: Workload[] = [

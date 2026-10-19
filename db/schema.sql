@@ -112,6 +112,25 @@ IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ix_scores_artifact' AND o
 CREATE INDEX ix_scores_artifact ON dbo.scores (artifact_id);
 GO
 
+-- Submitted cards (Plan 7): one row per rater per round. Only submitted cards count toward a round's ratings. The
+-- table is created with a one-time backfill: every card in an already-published round counted before submissions
+-- existed. Re-running this file never backfills again, so a draft a release left out stays out.
+IF OBJECT_ID('dbo.submissions') IS NULL
+BEGIN
+  CREATE TABLE dbo.submissions (
+    round_id varchar(8) NOT NULL CONSTRAINT fk_submissions_round REFERENCES dbo.rounds (id),
+    user_id int NOT NULL CONSTRAINT fk_submissions_user REFERENCES dbo.users (id),
+    submitted_at datetime2 NOT NULL CONSTRAINT df_submissions_at DEFAULT SYSUTCDATETIME(),
+    CONSTRAINT pk_submissions PRIMARY KEY (round_id, user_id)
+  );
+  INSERT INTO dbo.submissions (round_id, user_id, submitted_at)
+  SELECT s.round_id, s.user_id, MAX(s.updated_at)
+  FROM dbo.scores s JOIN dbo.rounds r ON r.id = s.round_id
+  WHERE r.status = 'published'
+  GROUP BY s.round_id, s.user_id;
+END
+GO
+
 IF OBJECT_ID('dbo.notes') IS NULL
 CREATE TABLE dbo.notes (
   round_id varchar(8) NOT NULL CONSTRAINT fk_notes_round REFERENCES dbo.rounds (id),

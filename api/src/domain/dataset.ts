@@ -10,6 +10,8 @@ export interface ScoreRow {
   cost: number | null;
   outlook: number | null;
   updatedAt: Date;
+  /** When the card was submitted; null for a draft. */
+  submittedAt: Date | null;
 }
 
 export interface NoteRow {
