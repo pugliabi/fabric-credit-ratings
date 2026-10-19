@@ -37,6 +37,10 @@ describe('NewRoundForm', () => {
     expect(button).not.toMatch(/\sdisabled[\s=>]/);
   });
 
+  it('says the round stays off the public site until the admin releases it', () => {
+    expect(render()).toContain('Nothing shows on the public site until you release it.');
+  });
+
   it('marks no field as invalid or described by an error before one shows', () => {
     expect(render()).not.toMatch(/aria-invalid|aria-describedby/);
   });

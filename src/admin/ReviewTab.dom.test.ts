@@ -322,7 +322,17 @@ describe('ReviewTab', () => {
     await choose(picker, '2026-Q3');
     await settle();
     expect(picker?.value).toBe('2026-Q3');
-    expect(container.textContent).toContain('Q3 2026 is published');
+    expect(container.textContent).toContain('Q3 2026 is released. Score and note edits here reach the public site');
+    expect(container.textContent).toContain('at the next site update (Publish tab).');
+  });
+
+  it('labels a released round "released {date}" in the round picker', async () => {
+    vi.stubGlobal('fetch', fakeApi({ 'GET /api/admin/rounds/2026-Q4/review': review({}) }).fetchMock);
+    const { container } = await render(ReviewTab, { rounds, catalog, users: [] });
+    await settle();
+    const options = [...container.querySelectorAll('label select option')].map((option) => option.textContent);
+    expect(options).toContain('Q3 2026 (released 2026-09-30)');
+    expect(options).toContain('Q4 2026 (open)');
   });
 });
 

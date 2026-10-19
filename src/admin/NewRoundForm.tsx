@@ -52,7 +52,7 @@ export function NewRoundForm({ rounds, onCreated }: NewRoundFormProps) {
         Start a new round
       </h2>
       <p className={styles.muted}>
-        Opening a round lets raters log in and score it. Nothing shows on the public site until you publish it.
+        Opening a round lets raters log in and score it. Nothing shows on the public site until you release it.
       </p>
       <div className={styles.fields}>
         <label className={styles.field}>

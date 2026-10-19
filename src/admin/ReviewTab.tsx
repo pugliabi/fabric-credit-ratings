@@ -49,7 +49,7 @@ export function ReviewTab({ rounds, catalog, users }: ReviewTabProps) {
         >
           {ordered.map((round) => (
             <option key={round.id} value={round.id}>
-              {round.label} ({round.status === 'open' ? 'open' : `published ${round.publishedOn ?? ''}`})
+              {round.label} ({round.status === 'open' ? 'open' : `released ${round.publishedOn ?? ''}`})
             </option>
           ))}
         </select>
@@ -331,7 +331,7 @@ export function RoundReviewPanel({ review, catalog, users, onReview }: RoundRevi
 
           {review.round.status === 'published' && (
             <p className={styles.hint}>
-              {review.round.label} is published. Score and note edits here reach the public site at the next site
+              {review.round.label} is released. Score and note edits here reach the public site at the next site
               update (Publish tab).
             </p>
           )}
