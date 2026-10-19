@@ -18,7 +18,6 @@ const point = (round: string, date: string, grade = 'A') => ({
   roundLabel: round.replace('-', ' '),
   date,
   scores: { capability: 5, ux: 4.5, cost: 6, outlook: 3 },
-  raters: 2,
   grade,
   note: '',
 });
@@ -80,8 +79,8 @@ describe('snapshotProblem', () => {
     ['an unknown grade', (s) => (s.ratings[0].current.grade = 'Z'), 'snapshot.ratings[0].current.grade is not a grade'],
     ['a score sent as text', (s) => (s.ratings[0].current.scores.ux = '5'), 'snapshot.ratings[0].current.scores.ux is not a score from 1 to 7 or null'],
     ['a score out of range', (s) => (s.ratings[0].history[0].scores.cost = 9), 'snapshot.ratings[0].history[0].scores.cost is not a score from 1 to 7 or null'],
-    ['no raters', (s) => (s.ratings[0].current.raters = 0), 'snapshot.ratings[0].current.raters is not a whole number of raters'],
-    ['a fractional rater count', (s) => (s.ratings[0].current.raters = 1.5), 'snapshot.ratings[0].current.raters is not a whole number of raters'],
+    ['a rater count', (s) => (s.ratings[0].current.raters = 2), 'snapshot.ratings[0].current.raters must not be published'],
+    ['a rater count in the history', (s) => (s.ratings[0].history[0].raters = 1), 'snapshot.ratings[0].history[0].raters must not be published'],
     ['an impossible date', (s) => (s.ratings[0].history[1].date = '2026-02-30'), 'snapshot.ratings[0].history[1].date is not a YYYY-MM-DD date'],
     ['a point without outlook', (s) => delete s.ratings[0].current.scores.outlook, 'snapshot.ratings[0].current.scores.outlook is missing'],
     ['a missing note', (s) => delete s.ratings[0].current.note, 'snapshot.ratings[0].current.note is missing'],

@@ -1,5 +1,4 @@
 import type { Rating } from '../domain/types';
-import { formatFullDate } from '../lib/format';
 import { FactorBars } from './FactorBars';
 import { HistorySparkline } from './HistorySparkline';
 import { RatingHistory } from './RatingHistory';
@@ -19,10 +18,7 @@ export function ArtifactDetail({ rating, asOf }: ArtifactDetailProps) {
         <section>
           <h4 className={styles.title}>Why this rating</h4>
           {current.note && <p className={styles.rationale}>{current.note}</p>}
-          <p className={styles.meta}>
-            Rated {formatFullDate(current.date)} in the {current.roundLabel} review
-            {current.raters > 1 && ` · average of ${current.raters} raters`}
-          </p>
+          <p className={styles.meta}>From the {current.roundLabel} review.</p>
         </section>
 
         <section>

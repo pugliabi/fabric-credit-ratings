@@ -30,7 +30,8 @@ const scoreOrNa = leaf(
   (value) => value === null || (typeof value === 'number' && value >= MIN_SCORE && value <= MAX_SCORE),
   `is not a score from ${MIN_SCORE} to ${MAX_SCORE} or null`,
 );
-const raters = leaf((value) => Number.isInteger(value) && (value as number) >= 1, 'is not a whole number of raters');
+/** The public site never says how many people rated an item, so this field must be absent. */
+const unpublished: Check = (value) => (value === undefined ? undefined : ['', 'must not be published']);
 const oneOf = (allowed: readonly string[], what: string) =>
   leaf((value) => typeof value === 'string' && allowed.includes(value), `is not ${what}`);
 
@@ -64,7 +65,7 @@ const point = object({
   roundLabel: text,
   date,
   scores: object({ capability: scoreOrNa, ux: scoreOrNa, cost: scoreOrNa, outlook: scoreOrNa }),
-  raters,
+  raters: unpublished,
   grade: oneOf(GRADES, 'a grade'),
   note: text,
 });

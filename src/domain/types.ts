@@ -100,14 +100,18 @@ export interface RatingPoint {
   roundLabel: string;
   date: string;
   scores: FactorValues;
+  /** How many submitted cards scored the item. Admin-only: never in the public snapshot. */
   raters: number;
   grade: Grade;
   note: string;
 }
 
+/** A rating point as the public site gets it: no rater count. */
+export type PublicRatingPoint = Omit<RatingPoint, 'raters'>;
+
 export interface Rating {
   artifact: Artifact;
-  current: RatingPoint;
+  current: PublicRatingPoint;
   /** Oldest to newest, current included. */
-  history: RatingPoint[];
+  history: PublicRatingPoint[];
 }

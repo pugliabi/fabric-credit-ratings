@@ -1,5 +1,5 @@
 import { BAND_META, BAND_ORDER, GRADES, bandOf, gradeIndex, spokenGrade } from '../domain/grades';
-import type { Grade, RatingPoint } from '../domain/types';
+import type { Grade, PublicRatingPoint } from '../domain/types';
 import { formatMonth, formatMonthYear, parseDate } from '../lib/format';
 import styles from './HistorySparkline.module.css';
 
@@ -13,7 +13,7 @@ const MIN_SPAN = 6;
 const MIN_LABEL_GAP = 11;
 
 /** Zoom the y-axis to the notches this item has actually used, with a little headroom. */
-function gradeWindow(history: RatingPoint[]): { lo: number; hi: number } {
+function gradeWindow(history: PublicRatingPoint[]): { lo: number; hi: number } {
   const indexes = history.map((p) => gradeIndex(p.grade));
   let lo = Math.min(...indexes) - 2;
   let hi = Math.max(...indexes) + 2;
@@ -26,7 +26,7 @@ function gradeWindow(history: RatingPoint[]): { lo: number; hi: number } {
 }
 
 interface HistorySparklineProps {
-  history: RatingPoint[];
+  history: PublicRatingPoint[];
   asOf: string;
 }
 

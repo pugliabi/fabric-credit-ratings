@@ -15,9 +15,9 @@ describe('buildSnapshot', () => {
 
   it('keeps averages, history order, notes, and the retired rule', () => {
     const [lakehouse, legacy] = snapshot.ratings;
-    expect(lakehouse?.history.map((point) => [point.round, point.grade, point.raters])).toEqual([
-      ['2026-Q3', 'A-', 2],
-      ['2026-Q4', 'AAA', 1],
+    expect(lakehouse?.history.map((point) => [point.round, point.grade])).toEqual([
+      ['2026-Q3', 'A-'],
+      ['2026-Q4', 'AAA'],
     ]);
     expect(lakehouse?.history[0]?.scores).toEqual({ capability: 5.5, ux: 5, cost: 4, outlook: 5 });
     expect(lakehouse?.current.note).toBe('Now the default store.');
@@ -28,7 +28,13 @@ describe('buildSnapshot', () => {
     const history = snapshot.ratings.find((rating) => rating.artifact.id === 'lakehouse')?.history;
     const q4 = history?.find((point) => point.round === '2026-Q4');
     expect(q4?.scores.capability).toBe(7);
-    expect(q4?.raters).toBe(1);
+  });
+
+  it('publishes no rater counts', () => {
+    const points = snapshot.ratings.flatMap((rating) => [rating.current, ...rating.history]);
+    expect(points.length).toBeGreaterThan(0);
+    for (const point of points) expect(point).not.toHaveProperty('raters');
+    expect(JSON.stringify(snapshot)).not.toContain('"raters"');
   });
 
   it('dates the snapshot and the ratings', () => {

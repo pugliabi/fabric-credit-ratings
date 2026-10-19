@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { asOfDate, buildRatings, previousPoint } from './aggregate.ts';
+import { asOfDate, buildRatings, pointFor, previousPoint } from './aggregate.ts';
 import type { Artifact, RoundData, ScoreTuple } from '../../../src/domain/types.ts';
 
 const lakehouse: Artifact = { id: 'lakehouse', name: 'Lakehouse', workload: 'storage', status: 'ga', naFactors: [] };
@@ -66,7 +66,7 @@ describe('buildRatings', () => {
   it('averages each factor to one decimal and grades from the unrounded total', () => {
     const q3 = byId.get('lakehouse')?.history[0];
     expect(q3?.scores).toEqual({ capability: 5.5, ux: 5, cost: 4, outlook: 5 });
-    expect(q3?.raters).toBe(2);
+    expect(q3).not.toHaveProperty('raters');
     expect(q3?.grade).toBe('A-');
     expect(q3?.note).toBe('First look.');
   });
@@ -109,10 +109,11 @@ describe('buildRatings', () => {
       drafts: [],
     };
     const byId = new Map(buildRatings([lakehouse, fresh], [round]).map((r) => [r.artifact.id, r]));
-    expect(byId.get('fresh')?.current.raters).toBe(3);
     expect(byId.get('fresh')?.current.scores).toEqual({ capability: 3, ux: 3, cost: 3, outlook: 3 });
-    expect(byId.get('lakehouse')?.current.raters).toBe(5);
     expect(byId.get('lakehouse')?.current.scores).toEqual({ capability: 4.6, ux: 4.6, cost: 4.6, outlook: 4.6 });
+    // The admin review still counts who scored each item; the public ratings don't carry it.
+    expect(pointFor(fresh, round, '2026-07-01')?.raters).toBe(3);
+    expect(pointFor(lakehouse, round, '2026-07-01')?.raters).toBe(5);
   });
 
   it('keeps history oldest to newest with the newest as current', () => {

@@ -1,13 +1,16 @@
 import { FACTORS } from '../data/factors';
 import { notchDelta } from '../domain/grades';
-import type { RatingPoint } from '../domain/types';
-import { formatFullDate, formatScoreOrNa, pluralize } from '../lib/format';
+import type { PublicRatingPoint } from '../domain/types';
+import { formatScoreOrNa, pluralize } from '../lib/format';
 import { GradeBadge } from './GradeBadge';
 import styles from './RatingHistory.module.css';
 
 type ActionKind = 'initiated' | 'upgrade' | 'downgrade' | 'affirmed' | 'deprecated';
 
-function describe(point: RatingPoint, previous: RatingPoint | undefined): { kind: ActionKind; label: string } {
+function describe(
+  point: PublicRatingPoint,
+  previous: PublicRatingPoint | undefined,
+): { kind: ActionKind; label: string } {
   if (point.grade === 'D' && previous?.grade !== 'D') return { kind: 'deprecated', label: 'Deprecated' };
   if (!previous) return { kind: 'initiated', label: 'Initiated' };
   const delta = notchDelta(previous.grade, point.grade);
@@ -16,7 +19,7 @@ function describe(point: RatingPoint, previous: RatingPoint | undefined): { kind
   return { kind: 'affirmed', label: 'Affirmed' };
 }
 
-export function RatingHistory({ history }: { history: RatingPoint[] }) {
+export function RatingHistory({ history }: { history: PublicRatingPoint[] }) {
   const entries = history.map((point, i) => ({ point, action: describe(point, history[i - 1]) })).reverse();
 
   return (
@@ -29,9 +32,7 @@ export function RatingHistory({ history }: { history: RatingPoint[] }) {
         return (
           <li key={point.round} className={styles.entry} data-current={i === 0}>
             <div className={styles.top}>
-              <time className={styles.date} dateTime={point.date}>
-                {formatFullDate(point.date)}
-              </time>
+              <span className={styles.date}>{point.roundLabel}</span>
               <span className={styles.action} data-kind={action.kind}>
                 {action.label}
               </span>

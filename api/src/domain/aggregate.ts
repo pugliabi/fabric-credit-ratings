@@ -4,6 +4,7 @@ import type {
   Artifact,
   FactorId,
   FactorValues,
+  PublicRatingPoint,
   Rating,
   RatingPoint,
   RoundData,
@@ -112,9 +113,12 @@ export function buildRatings(artifacts: readonly Artifact[], rounds: readonly Ro
   const published = publishedRounds(rounds);
   const ratings: Rating[] = [];
   for (const artifact of artifacts) {
-    const history = published.flatMap((data) => {
+    const history = published.flatMap((data): PublicRatingPoint[] => {
       const point = pointFor(artifact, data, data.round.publishedOn ?? '');
-      return point ? [point] : [];
+      if (!point) return [];
+      // The public site never says how many people rated an item.
+      const { raters: _raters, ...shown } = point;
+      return [shown];
     });
     const current = history.at(-1);
     if (current) ratings.push({ artifact, current, history });
