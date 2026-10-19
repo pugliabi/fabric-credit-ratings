@@ -26,6 +26,8 @@ interface ScoreMatrixProps {
   /** Published values per artifact, shown under the name as a reminder. */
   reference?: Readonly<Record<string, FactorValues>>;
   referenceLabel?: string;
+  /** Shows the scores without letting them change: sliders disabled, no Clear buttons. */
+  readOnly?: boolean;
 }
 
 export function ScoreMatrix({
@@ -35,6 +37,7 @@ export function ScoreMatrix({
   onChange,
   reference,
   referenceLabel = 'Current',
+  readOnly = false,
 }: ScoreMatrixProps) {
   const idPrefix = useId();
   const [collapsed, setCollapsed] = useState<ReadonlySet<WorkloadId>>(new Set());
@@ -94,6 +97,7 @@ export function ScoreMatrix({
                     reference={reference?.[artifact.id]}
                     referenceLabel={referenceLabel}
                     onChange={onChange}
+                    readOnly={readOnly}
                   />
                 ))}
               </ul>
@@ -111,9 +115,17 @@ interface MatrixRowProps {
   reference: FactorValues | undefined;
   referenceLabel: string;
   onChange: (artifactId: string, triple: DraftTuple) => void;
+  readOnly: boolean;
 }
 
-const MatrixRow = memo(function MatrixRow({ artifact, triple, reference, referenceLabel, onChange }: MatrixRowProps) {
+const MatrixRow = memo(function MatrixRow({
+  artifact,
+  triple,
+  reference,
+  referenceLabel,
+  onChange,
+  readOnly,
+}: MatrixRowProps) {
   const blank = isBlank(triple);
   const complete = isComplete(triple, artifact);
   const applicable = applicableFactors(artifact);
@@ -155,6 +167,7 @@ const MatrixRow = memo(function MatrixRow({ artifact, triple, reference, referen
             factorLabel={factor.label}
             value={triple[index] ?? null}
             onChange={(score) => setAt(index, score)}
+            disabled={readOnly}
           />
         ) : (
           <span
@@ -167,15 +180,19 @@ const MatrixRow = memo(function MatrixRow({ artifact, triple, reference, referen
         ),
       )}
 
-      <button
-        type="button"
-        className={styles.clear}
-        onClick={() => onChange(artifact.id, EMPTY_TUPLE)}
-        disabled={blank}
-        aria-label={`Clear ${artifact.name}`}
-      >
-        Clear
-      </button>
+      {readOnly ? (
+        <span />
+      ) : (
+        <button
+          type="button"
+          className={styles.clear}
+          onClick={() => onChange(artifact.id, EMPTY_TUPLE)}
+          disabled={blank}
+          aria-label={`Clear ${artifact.name}`}
+        >
+          Clear
+        </button>
+      )}
     </li>
   );
 });
@@ -185,10 +202,11 @@ interface ScoreSliderProps {
   factorLabel: string;
   value: DraftScore;
   onChange: (score: Score) => void;
+  disabled: boolean;
 }
 
 /** A 1-7 range that starts unset: the first click, drag, or Enter sets it. */
-function ScoreSlider({ label, factorLabel, value, onChange }: ScoreSliderProps) {
+function ScoreSlider({ label, factorLabel, value, onChange, disabled }: ScoreSliderProps) {
   const unset = value === null;
   const commit = (event: SyntheticEvent<HTMLInputElement>) => onChange(toScore(event.currentTarget.valueAsNumber));
   const commitOnKey = (event: KeyboardEvent<HTMLInputElement>) => {
@@ -215,6 +233,7 @@ function ScoreSlider({ label, factorLabel, value, onChange }: ScoreSliderProps) 
         value={value ?? UNSET_POSITION}
         aria-label={label}
         aria-valuetext={unset ? 'Not set' : String(value)}
+        disabled={disabled}
         onChange={commit}
         onPointerUp={unset ? commit : undefined}
         onKeyDown={commitOnKey}

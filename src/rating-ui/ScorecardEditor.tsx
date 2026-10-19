@@ -3,6 +3,7 @@ import type { Catalog, MyScores, SessionUser } from '../domain/api-types';
 import type { FactorValues } from '../domain/types';
 import { useFocusIfLost } from '../hooks/useFocusIfLost';
 import { api, ApiError, errorMessage } from '../lib/api';
+import { formatTimestamp } from '../lib/format';
 import { draftFromScores, draftFromValues, hasChanges, summarize, type Draft, type DraftTuple } from './draft';
 import { pressSave, saveBlocked, saveStateText, type SaveStatus } from './save';
 import { ScoreMatrix } from './ScoreMatrix';
@@ -62,6 +63,19 @@ export function ScorecardEditor({ user, reference, onClosed, onReload }: Scoreca
   if (load.kind === 'loading') return <p className={styles.muted}>Loading your scorecard…</p>;
   if (load.kind === 'closed') return onClosed ? <p className={styles.muted}>Checking the rounds…</p> : <Closed />;
   if (load.kind === 'failed') return <LoadFailed message={load.message} onRetry={() => void fetchCard()} />;
+  const ready = (card: MyScores) => setLoad({ kind: 'ready', catalog: load.catalog, card });
+  if (load.card.submittedAt) {
+    return (
+      <SubmittedCard
+        key={load.card.round.id}
+        catalog={load.catalog}
+        card={load.card}
+        reference={reference}
+        onWithdrawn={ready}
+        onReload={onReload}
+      />
+    );
+  }
   return (
     <CardForm
       key={load.card.round.id}
@@ -69,7 +83,7 @@ export function ScorecardEditor({ user, reference, onClosed, onReload }: Scoreca
       catalog={load.catalog}
       card={load.card}
       reference={reference}
-      onSaved={(card) => setLoad({ kind: 'ready', catalog: load.catalog, card })}
+      onSaved={ready}
       onReload={onReload}
     />
   );
@@ -131,6 +145,7 @@ export function CardForm({ user, catalog, card, reference, onSaved, onReload }: 
   );
   const [status, setStatus] = useState<SaveStatus>({ kind: 'idle' });
   const [attempt, setAttempt] = useState(0);
+  const [submitting, setSubmitting] = useState(false);
   const toolbar = useFocusIfLost<HTMLDivElement>();
 
   const summary = summarize(draft, catalog.artifacts);
@@ -138,6 +153,8 @@ export function CardForm({ user, catalog, card, reference, onSaved, onReload }: 
   const touched = summary.rated + summary.partial.length > 0;
   const hasReference = Object.keys(reference).length > 0;
   const blocked = saveBlocked(dirty, summary.partial.length, status.kind === 'saving');
+  const canSubmit =
+    card.updatedAt !== null && Object.keys(card.scores).length > 0 && !dirty && status.kind !== 'saving';
 
   // An old error no longer describes the card once the user changes it.
   const dropError = useCallback(
@@ -174,6 +191,27 @@ export function CardForm({ user, catalog, card, reference, onSaved, onReload }: 
         failed: setStatus,
       },
     );
+
+  const submit = async () => {
+    if (submitting) return;
+    if (!confirm(`Submit your ${round.label} card? You can withdraw it to make changes until the round is released.`)) {
+      return;
+    }
+    setSubmitting(true);
+    setAttempt((count) => count + 1);
+    try {
+      onSaved(
+        await api<MyScores>('POST', '/rounds/open/my-scores/submit', { round: round.id, updatedAt: card.updatedAt }),
+      );
+    } catch (reason) {
+      setStatus({
+        kind: 'error',
+        message: errorMessage(reason),
+        reload: reason instanceof ApiError && reason.status === 409,
+      });
+      setSubmitting(false);
+    }
+  };
 
   const prefill = (next: Draft, what: string) => {
     if (touched && !confirm(`Replace your sliders with ${what}?`)) return;
@@ -257,15 +295,20 @@ export function CardForm({ user, catalog, card, reference, onSaved, onReload }: 
           <button type="button" className={styles.primary} aria-disabled={blocked} onClick={() => void save()}>
             Save scores
           </button>
+          {canSubmit && (
+            <button type="button" className={styles.primary} aria-disabled={submitting} onClick={() => void submit()}>
+              {submitting ? 'Submitting…' : 'Submit scores'}
+            </button>
+          )}
         </div>
       </div>
 
       <p className={styles.hint}>
         Drag or click a slider to set it; arrow keys adjust it and Enter sets an untouched one. Leave an item blank to skip
-        it, or clear everything and save to withdraw your card. Your scores on the factors that apply combine into the
-        item's grade; the public site shows the grade and the averaged factor scores, never a total. Only the admin sees
-        individual cards; the site shows
-        averages once {round.label} is published.
+        it, or clear everything and save to remove your card. Your scores on the factors that apply combine into the
+        item's grade; the public site shows the grade and the averaged factor scores, never a total. When your card is
+        ready, submit it. Only the admin sees individual cards. Submitted cards count toward the averages, which appear
+        on the site when the admin releases {round.label}.
       </p>
 
       <ScoreMatrix
@@ -274,6 +317,86 @@ export function CardForm({ user, catalog, card, reference, onSaved, onReload }: 
         draft={draft}
         onChange={edit}
         reference={reference}
+      />
+    </>
+  );
+}
+
+interface SubmittedCardProps {
+  catalog: Catalog;
+  card: MyScores;
+  reference: Readonly<Record<string, FactorValues>>;
+  /** Called with the card the withdraw returned: a draft again. */
+  onWithdrawn: (card: MyScores) => void;
+  onReload?: () => void;
+}
+
+const IGNORE = () => {};
+
+/** A submitted card: read-only until the rater withdraws it. Exported for markup tests; pages use ScorecardEditor. */
+export function SubmittedCard({ catalog, card, reference, onWithdrawn, onReload }: SubmittedCardProps) {
+  const { round } = card;
+  const draft = useMemo(() => draftFromScores(card.scores), [card.scores]);
+  const summary = summarize(draft, catalog.artifacts);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<{ message: string; reload: boolean }>();
+  const [attempt, setAttempt] = useState(0);
+  const toolbar = useFocusIfLost<HTMLDivElement>();
+
+  const withdraw = async () => {
+    if (busy) return;
+    setBusy(true);
+    setError(undefined);
+    setAttempt((count) => count + 1);
+    try {
+      onWithdrawn(await api<MyScores>('POST', '/rounds/open/my-scores/withdraw', { round: round.id }));
+    } catch (reason) {
+      setError({ message: errorMessage(reason), reload: reason instanceof ApiError && reason.status === 409 });
+      setBusy(false);
+    }
+  };
+
+  return (
+    <>
+      <div ref={toolbar} tabIndex={-1} role="group" aria-label="Your scorecard" className={styles.toolbar}>
+        <div className={styles.toolbarText}>
+          <strong>
+            {round.label} · {summary.rated} of {catalog.artifacts.length} rated
+          </strong>
+          <span className={styles.muted}> · Submitted</span>
+          {error && (
+            <span key={attempt} className={styles.error} role="alert">
+              {' '}
+              {error.message}
+            </span>
+          )}
+        </div>
+        <div className={styles.toolbarActions}>
+          {error?.reload && (
+            <button
+              type="button"
+              className={styles.secondary}
+              onClick={() => (onReload ? onReload() : location.reload())}
+            >
+              Reload page
+            </button>
+          )}
+          <button type="button" className={styles.secondary} aria-disabled={busy} onClick={() => void withdraw()}>
+            {busy ? 'Withdrawing…' : 'Withdraw submission'}
+          </button>
+        </div>
+      </div>
+      <p className={styles.hint}>
+        Submitted {formatTimestamp(card.submittedAt ?? '')}. Your scores count when {round.label} is released.
+        Withdraw your submission to change them.
+      </p>
+      <ScoreMatrix
+        workloads={catalog.workloads}
+        artifacts={catalog.artifacts}
+        draft={draft}
+        onChange={IGNORE}
+        reference={reference}
+        readOnly
       />
     </>
   );
