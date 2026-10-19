@@ -37,19 +37,22 @@ export interface AdminRound extends Round {
   notes: number;
 }
 
-export type ChangeKind = 'new' | 'up' | 'down' | 'same';
+export type ChangeKind = 'new' | 'up' | 'down' | 'same' | 'draft';
 
 export interface ReviewItem {
   artifact: Artifact;
-  point: RatingPoint;
+  /** From submitted cards only; null when only drafts scored the item. */
+  point: RatingPoint | null;
   previous: RatingPoint | null;
   change: { kind: ChangeKind; text: string };
-  breakdown: { userId: number; name: string; scores: ScoreTuple }[];
+  /** Every card that scored the item, drafts included; only submitted ones are in `point`. */
+  breakdown: { userId: number; name: string; submitted: boolean; scores: ScoreTuple }[];
 }
 
 export interface RoundReview {
   round: Round;
-  raters: { userId: number; name: string }[];
+  /** Everyone with a card in the round: submitted cards first, then drafts. */
+  raters: { userId: number; name: string; submittedAt: string | null }[];
   items: ReviewItem[];
   notes: RoundNotes;
   aiEnabled: boolean;

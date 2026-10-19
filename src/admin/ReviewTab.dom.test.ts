@@ -48,8 +48,8 @@ function review(notes: Record<string, string>, aiEnabled = false, roundId = '202
   return {
     round: { id: roundId, label, status: roundId === '2026-Q4' ? 'open' : 'published', publishedOn: null },
     raters: [
-      { userId: 9, name: 'P2 Rater A' },
-      { userId: 2, name: 'Tommy Puglia' },
+      { userId: 9, name: 'P2 Rater A', submittedAt: '2026-10-15T12:00:00.000Z' },
+      { userId: 2, name: 'Tommy Puglia', submittedAt: '2026-10-15T12:00:00.000Z' },
     ],
     items: catalog.artifacts.map((artifact) => ({
       artifact,
@@ -65,8 +65,8 @@ function review(notes: Record<string, string>, aiEnabled = false, roundId = '202
       previous: null,
       change: { kind: 'new', text: 'First rating' },
       breakdown: [
-        { userId: 9, name: 'P2 Rater A', scores },
-        { userId: 2, name: 'Tommy Puglia', scores },
+        { userId: 9, name: 'P2 Rater A', submitted: true, scores },
+        { userId: 2, name: 'Tommy Puglia', submitted: true, scores },
       ],
     })),
     notes,
@@ -122,14 +122,52 @@ describe('RoundReviewPanel', () => {
       ...base,
       items: base.items.map((item) => ({
         ...item,
-        point: { ...item.point, scores: { capability: 6, ux: 5, cost: null, outlook: 4 } },
-        breakdown: [{ userId: 9, name: 'Ann', scores: [6, 5, null, 4] as ScoreTuple }],
+        point: { ...item.point!, scores: { capability: 6, ux: 5, cost: null, outlook: 4 } },
+        breakdown: [{ userId: 9, name: 'Ann', submitted: true, scores: [6, 5, null, 4] as ScoreTuple }],
       })),
     };
     const { container } = await render(RoundReviewPanel, { review: withNa, catalog, users: [], onReview: () => {} });
     const text = container.textContent ?? '';
     expect(text).toContain('6 · 5 · n/a · 4');
     expect(text).toContain('Ann 6 · 5 · n/a · 4');
+  });
+
+  it('lists a draft beside the submitted cards; an item only a draft scored has no grade and no AI draft', async () => {
+    const base = review({}, true);
+    const [notebook, environment] = base.items;
+    const draftOnly: RoundReview = {
+      ...base,
+      raters: [
+        { userId: 9, name: 'Ann', submittedAt: '2026-10-15T12:00:00.000Z' },
+        { userId: 2, name: 'Bo', submittedAt: null },
+      ],
+      items: [
+        {
+          ...notebook!,
+          breakdown: [
+            { userId: 9, name: 'Ann', submitted: true, scores: [4, 5, 4, 4] },
+            { userId: 2, name: 'Bo', submitted: false, scores: [1, 1, 1, 1] },
+          ],
+        },
+        {
+          ...environment!,
+          point: null,
+          change: { kind: 'draft', text: 'Only in drafts' },
+          breakdown: [{ userId: 2, name: 'Bo', submitted: false, scores: [3, 3, 3, 3] }],
+        },
+      ],
+    };
+    const { container } = await render(RoundReviewPanel, panelProps(draftOnly));
+    const toolbar = container.querySelector('[role="group"][aria-label="Review of Q4 2026"]');
+    expect(toolbar?.textContent).toContain('1 item · 1 submitted · 1 draft');
+    expect(toolbar?.textContent).toContain('1 missing a why');
+    const [counted, draft] = [...container.querySelectorAll('article')];
+    expect(counted?.querySelector('p')?.textContent).toContain('Bo (draft) 1 · 1 · 1 · 1');
+    expect(counted?.querySelector('[data-variant="pill"]')).not.toBeNull();
+    expect(draft?.textContent).toContain('No submitted scores');
+    expect(draft?.querySelector('[data-variant="pill"]')).toBeNull();
+    expect(find(draft as HTMLElement, 'button', /Draft with AI/)).toBeNull();
+    expect(find(counted as HTMLElement, 'button', /Draft with AI/)).not.toBeNull();
   });
 
   it("opens a rater's card only from Edit card, not from moving through the list", async () => {

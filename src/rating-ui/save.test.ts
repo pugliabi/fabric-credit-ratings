@@ -189,7 +189,7 @@ function review(cards: Record<number, Record<string, ScoreTuple>>): RoundReview 
   const ids = [...new Set(Object.values(cards).flatMap((scores) => Object.keys(scores)))];
   return {
     round,
-    raters: raters.map((userId) => ({ userId, name: NAMES[userId] ?? '' })),
+    raters: raters.map((userId) => ({ userId, name: NAMES[userId] ?? '', submittedAt: '2026-10-15T12:00:00.000Z' })),
     items: ids.map((id) => ({
       artifact: { id, name: id, workload: 'data-engineering', status: 'ga', naFactors: [] },
       point: {
@@ -205,7 +205,7 @@ function review(cards: Record<number, Record<string, ScoreTuple>>): RoundReview 
       change: { kind: 'new', text: 'First rating' },
       breakdown: raters.flatMap((userId) => {
         const scores = cards[userId]?.[id];
-        return scores ? [{ userId, name: NAMES[userId] ?? '', scores }] : [];
+        return scores ? [{ userId, name: NAMES[userId] ?? '', submitted: true, scores }] : [];
       }),
     })),
     notes: {},

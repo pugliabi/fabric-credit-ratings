@@ -258,7 +258,13 @@ describe.skipIf(!BASE)('API against the dev database', () => {
   it('shows the card in the admin review', async () => {
     const review = await admin.send('GET', `/api/admin/rounds/${roundId}/review`);
     const item = review.body.items.find((entry: { artifact: { id: string } }) => entry.artifact.id === artifactId);
-    expect(item.breakdown).toContainEqual({ userId: raterId, name: 'Integration Rater', scores: [5, 6, 7, 3] });
+    // Saved, not submitted: the review lists the card as a draft.
+    expect(item.breakdown).toContainEqual({
+      userId: raterId,
+      name: 'Integration Rater',
+      submitted: false,
+      scores: [5, 6, 7, 3],
+    });
   });
 
   it('skips factors an item marks not applicable', async () => {
@@ -281,7 +287,12 @@ describe.skipIf(!BASE)('API against the dev database', () => {
     expect(refused.body.error).toContain('Feature Capability, User Experience, Outlook');
     const review = await admin.send('GET', `/api/admin/rounds/${roundId}/review`);
     const item = review.body.items.find((entry: { artifact: { id: string } }) => entry.artifact.id === naArtifactId);
-    expect(item.breakdown).toContainEqual({ userId: raterId, name: 'Integration Rater', scores: [5, 6, null, 3] });
+    expect(item.breakdown).toContainEqual({
+      userId: raterId,
+      name: 'Integration Rater',
+      submitted: false,
+      scores: [5, 6, null, 3],
+    });
   });
 
   it('serves the snapshot only with the build token', async () => {

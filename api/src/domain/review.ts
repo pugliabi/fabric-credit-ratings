@@ -14,29 +14,34 @@ export function changeLabel(point: RatingPoint, previous: RatingPoint | undefine
   return { kind: 'same', text: `Unchanged ${from}` };
 }
 
+const DRAFTS_ONLY = { kind: 'draft', text: 'Only in drafts' } as const;
+
 /** Everything the admin Review tab shows for one round. Open rounds are dated `today`. */
 export function buildReview(data: Dataset, roundId: string, today: string, aiEnabled: boolean): RoundReview | undefined {
   const target = data.rounds.find((item) => item.round.id === roundId);
   if (!target) return undefined;
   const date = target.round.publishedOn ?? today;
   const rater = (id: string) => ({ userId: Number(id), name: data.raterNames.get(Number(id)) ?? id });
+  const cards = [...target.scorecards, ...target.drafts];
+  // An item only drafts scored is still listed, so the card editor (built from these breakdowns) never drops it.
   const items = data.artifacts.flatMap((artifact): ReviewItem[] => {
-    const point = pointFor(artifact, target, date);
-    if (!point) return [];
-    const previous = previousPoint(artifact, data.rounds, roundId);
-    const breakdown = target.scorecards.flatMap((card) => {
+    const breakdown = cards.flatMap((card) => {
       const scores = card.scores[artifact.id];
       if (!scores) return [];
       const shown = scores.map((value, i) =>
         artifact.naFactors.includes(FACTOR_ORDER[i] ?? 'capability') ? null : value,
       ) as unknown as ScoreTuple;
-      return [{ ...rater(card.rater), scores: shown }];
+      return [{ ...rater(card.rater), submitted: card.submittedAt !== null, scores: shown }];
     });
+    if (breakdown.length === 0) return [];
+    const point = pointFor(artifact, target, date);
+    if (!point) return [{ artifact, point: null, previous: null, change: { ...DRAFTS_ONLY }, breakdown }];
+    const previous = previousPoint(artifact, data.rounds, roundId);
     return [{ artifact, point, previous: previous ?? null, change: changeLabel(point, previous), breakdown }];
   });
   return {
     round: target.round,
-    raters: target.scorecards.map((card) => rater(card.rater)),
+    raters: cards.map((card) => ({ ...rater(card.rater), submittedAt: card.submittedAt })),
     items,
     notes: target.notes,
     aiEnabled,

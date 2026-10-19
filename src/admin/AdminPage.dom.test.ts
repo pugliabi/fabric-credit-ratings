@@ -26,7 +26,7 @@ const catalog: AdminCatalog = {
 };
 const review: RoundReview = {
   round: q4,
-  raters: [{ userId: 9, name: 'P2 Rater A' }],
+  raters: [{ userId: 9, name: 'P2 Rater A', submittedAt: '2026-10-15T12:00:00.000Z' }],
   items: [
     {
       artifact: { id: 'notebook', name: 'Notebook', workload: 'data-engineering', status: 'ga', naFactors: [] },
@@ -41,7 +41,7 @@ const review: RoundReview = {
       },
       previous: null,
       change: { kind: 'new', text: 'First rating' },
-      breakdown: [{ userId: 9, name: 'P2 Rater A', scores: [4, 5, 4, 4] }],
+      breakdown: [{ userId: 9, name: 'P2 Rater A', submitted: true, scores: [4, 5, 4, 4] }],
     },
   ],
   notes: {},

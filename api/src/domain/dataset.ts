@@ -44,7 +44,9 @@ export function assembleDataset(
   scoreRows: readonly ScoreRow[],
   noteRows: readonly NoteRow[],
 ): Dataset {
-  const byRound = new Map<string, RoundData>(rounds.map((round) => [round.id, { round, notes: {}, scorecards: [] }]));
+  const byRound = new Map<string, RoundData>(
+    rounds.map((round) => [round.id, { round, notes: {}, scorecards: [], drafts: [] }]),
+  );
   for (const note of noteRows) {
     const data = byRound.get(note.roundId);
     if (data) data.notes[note.artifactId] = note.body;
@@ -59,12 +61,13 @@ export function assembleDataset(
     const at = row.updatedAt.toISOString();
     let card = cards.get(key);
     if (!card) {
-      card = { rater: String(row.userId), submittedAt: at, scores: {} };
+      const submittedAt = row.submittedAt?.toISOString() ?? null;
+      card = { rater: String(row.userId), savedAt: at, submittedAt, scores: {} };
       cards.set(key, card);
-      data.scorecards.push(card);
+      (card.submittedAt === null ? data.drafts : data.scorecards).push(card);
     }
     card.scores[row.artifactId] = tuple(row);
-    if (at > card.submittedAt) card.submittedAt = at;
+    if (at > card.savedAt) card.savedAt = at;
   }
   return { workloads, artifacts, rounds: [...byRound.values()], raterNames };
 }

@@ -11,20 +11,47 @@ const rounds: RoundData[] = [
   {
     round: { id: '2026-Q4', label: 'Q4 2026', status: 'published', publishedOn: '2026-10-01' },
     notes: {},
-    scorecards: [{ rater: 'ann', submittedAt: '2026-09-30T00:00:00Z', scores: { lakehouse: [7, 7, 7, 7] } }],
+    scorecards: [
+      {
+        rater: 'ann',
+        savedAt: '2026-09-30T00:00:00Z',
+        submittedAt: '2026-09-30T00:00:00Z',
+        scores: { lakehouse: [7, 7, 7, 7] },
+      },
+    ],
+    drafts: [],
   },
   {
     round: { id: '2026-Q3', label: 'Q3 2026', status: 'published', publishedOn: '2026-07-01' },
     notes: { lakehouse: 'First look.' },
     scorecards: [
-      { rater: 'ann', submittedAt: '2026-06-30T00:00:00Z', scores: { lakehouse: [6, 5, 4, 6], legacy: [7, 7, 7, 7] } },
-      { rater: 'bo', submittedAt: '2026-06-30T00:00:00Z', scores: { lakehouse: [5, 5, 4, 4] } },
+      {
+        rater: 'ann',
+        savedAt: '2026-06-30T00:00:00Z',
+        submittedAt: '2026-06-30T00:00:00Z',
+        scores: { lakehouse: [6, 5, 4, 6], legacy: [7, 7, 7, 7] },
+      },
+      {
+        rater: 'bo',
+        savedAt: '2026-06-30T00:00:00Z',
+        submittedAt: '2026-06-30T00:00:00Z',
+        scores: { lakehouse: [5, 5, 4, 4] },
+      },
     ],
+    drafts: [],
   },
   {
     round: { id: '2027-Q1', label: 'Q1 2027', status: 'open', publishedOn: null },
     notes: {},
-    scorecards: [{ rater: 'ann', submittedAt: '2026-12-30T00:00:00Z', scores: { fresh: [4, 4, 4, 4] } }],
+    scorecards: [
+      {
+        rater: 'ann',
+        savedAt: '2026-12-30T00:00:00Z',
+        submittedAt: '2026-12-30T00:00:00Z',
+        scores: { fresh: [4, 4, 4, 4] },
+      },
+    ],
+    drafts: [],
   },
 ];
 
@@ -47,6 +74,7 @@ describe('buildRatings', () => {
   it('grades from the unrounded total even when rounded factors would drop a notch', () => {
     const card = (rater: string, tuple: ScoreTuple) => ({
       rater,
+      savedAt: '2026-06-30T00:00:00Z',
       submittedAt: '2026-06-30T00:00:00Z',
       scores: { lakehouse: tuple },
     });
@@ -54,6 +82,7 @@ describe('buildRatings', () => {
       round: { id: '2026-Q3', label: 'Q3 2026', status: 'published', publishedOn: '2026-07-01' },
       notes: {},
       scorecards: [card('a', [4, 4, 4, 4]), ...['b', 'c', 'd', 'e', 'f'].map((rater) => card(rater, [5, 5, 5, 5]))],
+      drafts: [],
     };
     const point = buildRatings([lakehouse], [sixRaters])[0]?.current;
     expect(point?.scores).toEqual({ capability: 4.8, ux: 4.8, cost: 4.8, outlook: 4.8 });
@@ -63,6 +92,7 @@ describe('buildRatings', () => {
   it('averages an item over the raters who scored it, not every rater in the round', () => {
     const card = (rater: string, scores: Record<string, ScoreTuple>) => ({
       rater,
+      savedAt: '2026-06-30T00:00:00Z',
       submittedAt: '2026-06-30T00:00:00Z',
       scores,
     });
@@ -76,6 +106,7 @@ describe('buildRatings', () => {
         card('d', { lakehouse: [1, 1, 1, 1] }),
         card('e', { lakehouse: [1, 1, 1, 1] }),
       ],
+      drafts: [],
     };
     const byId = new Map(buildRatings([lakehouse, fresh], [round]).map((r) => [r.artifact.id, r]));
     expect(byId.get('fresh')?.current.raters).toBe(3);
@@ -122,9 +153,10 @@ describe('not-applicable factors', () => {
       round: { id: '2026-Q4', label: 'Q4 2026', status: 'published', publishedOn: '2026-10-01' },
       notes: {},
       scorecards: [
-        { rater: 'ann', submittedAt: '2026-09-30T00:00:00Z', scores: { git: a } },
-        { rater: 'bo', submittedAt: '2026-09-30T00:00:00Z', scores: { git: b } },
+        { rater: 'ann', savedAt: '2026-09-30T00:00:00Z', submittedAt: '2026-09-30T00:00:00Z', scores: { git: a } },
+        { rater: 'bo', savedAt: '2026-09-30T00:00:00Z', submittedAt: '2026-09-30T00:00:00Z', scores: { git: b } },
       ],
+      drafts: [],
     },
   ];
 

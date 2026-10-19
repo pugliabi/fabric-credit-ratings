@@ -24,6 +24,13 @@ describe('buildSnapshot', () => {
     expect(legacy?.current.grade).toBe('D');
   });
 
+  it("ignores a rater's draft: Lakehouse's Q4 point is Ann's card alone", () => {
+    const history = snapshot.ratings.find((rating) => rating.artifact.id === 'lakehouse')?.history;
+    const q4 = history?.find((point) => point.round === '2026-Q4');
+    expect(q4?.scores.capability).toBe(7);
+    expect(q4?.raters).toBe(1);
+  });
+
   it('dates the snapshot and the ratings', () => {
     expect(snapshot.generatedAt).toBe('2026-10-15T00:00:00.000Z');
     expect(snapshot.asOf).toBe('2026-10-01');

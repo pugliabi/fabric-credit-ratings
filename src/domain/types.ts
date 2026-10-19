@@ -73,10 +73,13 @@ export interface Round {
   publishedOn: string | null;
 }
 
-/** Everything one rater submitted for one round. A resubmission replaces it. */
+/** Everything one rater saved for one round. A save replaces it. */
 export interface Scorecard {
   rater: string;
-  submittedAt: string;
+  /** The newest save of any score on the card. */
+  savedAt: string;
+  /** When the rater submitted the card; null for a draft. Only submitted cards count. */
+  submittedAt: string | null;
   scores: Record<string, ScoreTuple>;
 }
 
@@ -86,7 +89,10 @@ export type RoundNotes = Record<string, string>;
 export interface RoundData {
   round: Round;
   notes: RoundNotes;
+  /** Submitted cards: the only ones that count toward ratings. */
   scorecards: Scorecard[];
+  /** Saved but not submitted. Never counted; the admin review lists them. */
+  drafts: Scorecard[];
 }
 
 export interface RatingPoint {

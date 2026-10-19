@@ -4,7 +4,7 @@ import { FACTORS } from '../data/factors';
 import type { AdminCatalog, AdminRound, AdminUser, RoundReview } from '../domain/api-types';
 import { mayLeave, useUnsavedWork } from '../hooks/useUnsavedWork';
 import { api, errorMessage } from '../lib/api';
-import { formatScoreOrNa } from '../lib/format';
+import { formatScoreOrNa, pluralize } from '../lib/format';
 import { raterCardWorkloads } from '../rating-ui/save';
 import { draftBlanks, draftItem, requestDraft, type DraftPage } from './draft-loop';
 import {
@@ -181,7 +181,11 @@ export function RoundReviewPanel({ review, catalog, users, onReview }: RoundRevi
     edit: setEdits,
   };
 
-  const blanks = review.items.filter(({ artifact }) => !notes[artifact.id]?.trim());
+  // An item only drafts scored won't go live, so it needs no why and no AI draft.
+  const counted = review.items.filter((item) => item.point !== null);
+  const blanks = counted.filter(({ artifact }) => !notes[artifact.id]?.trim());
+  const submittedCount = review.raters.filter((rater) => rater.submittedAt !== null).length;
+  const draftCount = review.raters.length - submittedCount;
 
   const draftAllBlank = async () => {
     cancelRef.current = false;
@@ -240,8 +244,8 @@ export function RoundReviewPanel({ review, catalog, users, onReview }: RoundRevi
           >
             <div className={styles.toolbarText}>
               <strong>
-                {review.items.length} items scored by {review.raters.length}{' '}
-                {review.raters.length === 1 ? 'rater' : 'raters'}
+                {pluralize(counted.length, 'item', 'items')} · {submittedCount} submitted
+                {draftCount > 0 && ` · ${pluralize(draftCount, 'draft', 'drafts')}`}
               </strong>
               <span className={styles.muted}>
                 {' · '}
@@ -341,7 +345,9 @@ export function RoundReviewPanel({ review, catalog, users, onReview }: RoundRevi
               <section key={workload.id} className={styles.reviewGroup}>
                 <h2 className={styles.groupTitle}>{workload.name}</h2>
                 {group.map(({ artifact, point, change, breakdown }) => {
-                  const scoreText = FACTORS.map((factor) => formatScoreOrNa(point.scores[factor.id])).join(' · ');
+                  const scoreText = point
+                    ? FACTORS.map((factor) => formatScoreOrNa(point.scores[factor.id])).join(' · ')
+                    : 'No submitted scores';
                   const note = notes[artifact.id] ?? '';
                   const tooLong = noteTooLong(note);
                   const limitId = `${idPrefix}-${artifact.id}-limit`;
@@ -357,11 +363,14 @@ export function RoundReviewPanel({ review, catalog, users, onReview }: RoundRevi
                         <span className={styles.cardScores} title={FACTORS.map((factor) => factor.label).join(' · ')}>
                           {scoreText}
                         </span>
-                        <GradeBadge grade={point.grade} size="md" variant="pill" />
+                        {point && <GradeBadge grade={point.grade} size="md" variant="pill" />}
                       </header>
                       <p className={styles.breakdown}>
                         {breakdown
-                          .map((row) => `${row.name} ${row.scores.map(formatScoreOrNa).join(' · ')}`)
+                          .map((row) => {
+                            const who = `${row.name}${row.submitted ? '' : ' (draft)'}`;
+                            return `${who} ${row.scores.map(formatScoreOrNa).join(' · ')}`;
+                          })
                           .join('   |   ')}
                       </p>
                       {/* No maxLength: it would cut a paste short without saying so, and count untrimmed text. */}
@@ -381,19 +390,21 @@ export function RoundReviewPanel({ review, catalog, users, onReview }: RoundRevi
                         </p>
                       )}
                       <div className={styles.cardActions}>
-                        <button
-                          type="button"
-                          className={styles.secondary}
-                          aria-disabled={!review.aiEnabled || drafting}
-                          title={review.aiEnabled ? undefined : 'Set ANTHROPIC_API_KEY in the Function App settings'}
-                          onClick={() => {
-                            if (!review.aiEnabled || drafting) return;
-                            if (note.trim() && !confirm('Replace the current text with an AI draft?')) return;
-                            void draftItem(draftPage, artifact.id, false);
-                          }}
-                        >
-                          {busy === artifact.id ? 'Drafting…' : note.trim() ? 'Redraft with AI' : 'Draft with AI'}
-                        </button>
+                        {point && (
+                          <button
+                            type="button"
+                            className={styles.secondary}
+                            aria-disabled={!review.aiEnabled || drafting}
+                            title={review.aiEnabled ? undefined : 'Set ANTHROPIC_API_KEY in the Function App settings'}
+                            onClick={() => {
+                              if (!review.aiEnabled || drafting) return;
+                              if (note.trim() && !confirm('Replace the current text with an AI draft?')) return;
+                              void draftItem(draftPage, artifact.id, false);
+                            }}
+                          >
+                            {busy === artifact.id ? 'Drafting…' : note.trim() ? 'Redraft with AI' : 'Draft with AI'}
+                          </button>
+                        )}
                         {draftErrors[artifact.id] && (
                           <span className={styles.error} role="alert">
                             {draftErrors[artifact.id]}

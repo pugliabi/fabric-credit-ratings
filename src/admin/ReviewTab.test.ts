@@ -56,7 +56,7 @@ const users: AdminUser[] = [
 function review(notes: Record<string, string> = {}, aiEnabled = true): RoundReview {
   return {
     round: { id: '2026-Q4', label: 'Q4 2026', status: 'open', publishedOn: null },
-    raters: [{ userId: 9, name: 'P2 Rater A' }],
+    raters: [{ userId: 9, name: 'P2 Rater A', submittedAt: '2026-10-15T12:00:00.000Z' }],
     items: [
       {
         artifact: catalog.artifacts[0]!,
@@ -71,7 +71,7 @@ function review(notes: Record<string, string> = {}, aiEnabled = true): RoundRevi
         },
         previous: null,
         change: { kind: 'new', text: 'First rating' },
-        breakdown: [{ userId: 9, name: 'P2 Rater A', scores: [2, 5, 4, 4] }],
+        breakdown: [{ userId: 9, name: 'P2 Rater A', submitted: true, scores: [2, 5, 4, 4] }],
       },
     ],
     notes,

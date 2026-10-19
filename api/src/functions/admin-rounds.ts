@@ -187,7 +187,7 @@ route('adminDraft', 'POST', 'admin/rounds/{id}/draft/{artifactId}', 'admin', asy
   const artifact = data.artifacts.find((item) => item.id === ctx.params.artifactId);
   if (!artifact) throw new HttpError(404, 'That item does not exist.');
   const point = pointFor(artifact, target, target.round.publishedOn ?? today());
-  if (!point) throw new HttpError(400, `${artifact.name} has no scores in ${target.round.label} yet.`);
+  if (!point) throw new HttpError(400, `${artifact.name} has no submitted scores in ${target.round.label} yet.`);
   const previous = previousPoint(artifact, data.rounds, target.round.id);
   // Outside the try below: a database failure here is not an AI failure. The description is admin-only, so it isn't
   // part of the public dataset.

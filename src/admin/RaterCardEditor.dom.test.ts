@@ -47,7 +47,7 @@ function review(card: Record<string, ScoreTuple>): RoundReview {
   const known = [...catalog.artifacts, addedLater];
   return {
     round: q4,
-    raters: [rater],
+    raters: [{ ...rater, submittedAt: '2026-10-15T12:00:00.000Z' }],
     items: Object.entries(card).map(([id, scores]) => ({
       artifact: known.find((artifact) => artifact.id === id) ?? addedLater,
       point: {
@@ -61,7 +61,7 @@ function review(card: Record<string, ScoreTuple>): RoundReview {
       },
       previous: null,
       change: { kind: 'new', text: 'First rating' },
-      breakdown: [{ ...rater, scores }],
+      breakdown: [{ ...rater, submitted: true, scores }],
     })),
     notes: {},
     aiEnabled: false,

@@ -33,8 +33,8 @@ function review(notes: Record<string, string>): RoundReview {
   return {
     round: q4,
     raters: [
-      { userId: 9, name: 'P2 Rater A' },
-      { userId: 2, name: 'Tommy Puglia' },
+      { userId: 9, name: 'P2 Rater A', submittedAt: '2026-10-15T12:00:00.000Z' },
+      { userId: 2, name: 'Tommy Puglia', submittedAt: '2026-10-15T12:00:00.000Z' },
     ],
     items: [item('notebook', 'Notebook'), item('environment', 'Environment')],
     notes,

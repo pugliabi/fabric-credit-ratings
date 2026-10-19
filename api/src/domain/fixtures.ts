@@ -4,7 +4,14 @@ import { assembleDataset, type NoteRow, type ScoreRow } from './dataset.ts';
 const at = new Date('2026-09-30T12:00:00Z');
 const names: Record<number, string> = { 1: 'Ann', 2: 'Bo' };
 
-function row(roundId: string, userId: number, artifactId: string, scores: [number, number, number, number]): ScoreRow {
+/** One saved score; `submitted` false makes it part of a draft card. */
+export function row(
+  roundId: string,
+  userId: number,
+  artifactId: string,
+  scores: [number, number, number, number],
+  submitted = true,
+): ScoreRow {
   const [capability, ux, cost, outlook] = scores;
   return {
     roundId,
@@ -16,7 +23,7 @@ function row(roundId: string, userId: number, artifactId: string, scores: [numbe
     cost,
     outlook,
     updatedAt: at,
-    submittedAt: at,
+    submittedAt: submitted ? at : null,
   };
 }
 
@@ -43,6 +50,8 @@ export const scoreRows: ScoreRow[] = [
   row('2026-Q3', 2, 'lakehouse', [5, 5, 4, 4]),
   row('2026-Q3', 1, 'legacy', [7, 7, 7, 7]),
   row('2026-Q4', 1, 'lakehouse', [7, 7, 7, 7]),
+  // Bo saved Q4 but never submitted: a draft, which no rating counts.
+  row('2026-Q4', 2, 'lakehouse', [1, 1, 1, 1], false),
   row('2027-Q1', 1, 'mcp-server', [4, 4, 4, 4]),
 ];
 

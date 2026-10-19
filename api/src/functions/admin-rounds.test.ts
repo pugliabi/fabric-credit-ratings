@@ -82,7 +82,7 @@ const deploy: DeployResult = { started: true, message: 'The public site is rebui
 const dataset: Dataset = {
   workloads: [],
   artifacts: [notebook],
-  rounds: [{ round: open, notes: {}, scorecards: [] }],
+  rounds: [{ round: open, notes: {}, scorecards: [], drafts: [] }],
   raterNames: new Map(),
 };
 const admin: SessionUser = { id: 1, login: 'admin', displayName: 'Admin', role: 'admin' };
@@ -593,7 +593,15 @@ describe('adminDraft', () => {
       {
         round: open,
         notes: {},
-        scorecards: [{ rater: '7', submittedAt: '2026-10-15T12:00:00.000Z', scores: { notebook: [6, 5, 4, 4] } }],
+        scorecards: [
+          {
+            rater: '7',
+            savedAt: '2026-10-15T12:00:00.000Z',
+            submittedAt: '2026-10-15T12:00:00.000Z',
+            scores: { notebook: [6, 5, 4, 4] },
+          },
+        ],
+        drafts: [],
       },
     ],
   };
@@ -723,7 +731,7 @@ describe('adminDraft', () => {
     vi.mocked(loadDataset).mockResolvedValue(dataset);
     await expect(call('adminDraft', { id: open.id, artifactId: 'notebook' })).rejects.toMatchObject({
       status: 400,
-      message: 'Notebook has no scores in Q4 2026 yet.',
+      message: 'Notebook has no submitted scores in Q4 2026 yet.',
     });
     expect(findArtifactDescription).not.toHaveBeenCalled();
     expect(drafter).not.toHaveBeenCalled();
