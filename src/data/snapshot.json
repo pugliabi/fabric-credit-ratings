@@ -1,6 +1,2404 @@
 {
-  "generatedAt": "",
-  "asOf": "",
-  "workloads": [],
-  "ratings": []
+  "generatedAt": "2026-10-19T16:20:58.901Z",
+  "asOf": "2026-10-19",
+  "workloads": [
+    {
+      "id": "data-engineering",
+      "name": "Data Engineering",
+      "shortName": "Data Eng",
+      "blurb": "Notebooks, Spark, pipelines, and data movement"
+    },
+    {
+      "id": "storage",
+      "name": "Storage & Databases",
+      "shortName": "Storage",
+      "blurb": "Lakehouses, warehouses, and databases"
+    },
+    {
+      "id": "mirroring",
+      "name": "Mirroring",
+      "shortName": "Mirroring",
+      "blurb": "Near real-time replicas of external databases in OneLake"
+    },
+    {
+      "id": "real-time",
+      "name": "Real-Time Intelligence",
+      "shortName": "Real-Time",
+      "blurb": "Streaming ingestion, KQL, and alerts"
+    },
+    {
+      "id": "power-bi",
+      "name": "Power BI",
+      "shortName": "Power BI",
+      "blurb": "Semantic models, reports, and dashboards"
+    },
+    {
+      "id": "fabric-iq",
+      "name": "Fabric IQ",
+      "shortName": "Fabric IQ",
+      "blurb": "Ontology, graph, agents, and planning"
+    },
+    {
+      "id": "onelake",
+      "name": "OneLake",
+      "shortName": "OneLake",
+      "blurb": "Catalog, shortcuts, security, and open table formats"
+    },
+    {
+      "id": "data-science-ai",
+      "name": "Data Science & AI",
+      "shortName": "Data Science",
+      "blurb": "Models, experiments, Copilot, and AI functions"
+    },
+    {
+      "id": "cicd",
+      "name": "Developer Controls (CI/CD)",
+      "shortName": "CI/CD",
+      "blurb": "Git, deployment, and automation tooling"
+    },
+    {
+      "id": "mcp",
+      "name": "MCP Servers",
+      "shortName": "MCP",
+      "blurb": "Model Context Protocol servers for agents and IDEs"
+    },
+    {
+      "id": "developer-platform",
+      "name": "Developer & Platform",
+      "shortName": "Developer",
+      "blurb": "APIs, functions, monitoring, and extensibility"
+    },
+    {
+      "id": "governance",
+      "name": "Governance & Security",
+      "shortName": "Governance",
+      "blurb": "Purview, domains, lineage, and access control"
+    }
+  ],
+  "ratings": [
+    {
+      "artifact": {
+        "id": "notebook",
+        "name": "Notebook",
+        "workload": "data-engineering",
+        "status": "ga",
+        "naFactors": []
+      },
+      "current": {
+        "round": "2026-Q4",
+        "roundLabel": "Q4 2026",
+        "date": "2026-10-19",
+        "scores": {
+          "capability": 6.5,
+          "ux": 5,
+          "cost": 6,
+          "outlook": 6
+        },
+        "raters": 2,
+        "grade": "AA-",
+        "note": "Notebooks cover nearly every authoring need in Fabric data engineering: PySpark, Scala, SQL, and pure Python in one place, with built-in resources, Git integration, and tight links to lakehouses and pipelines. Day-to-day use is less polished, since session start-up can be slow, errors in long Spark runs are hard to trace, and the editing experience still feels uneven next to dedicated IDEs. Capacity use is reasonable when sessions are sized and shut down with care, and the item shows steady investment with new capabilities arriving regularly."
+      },
+      "history": [
+        {
+          "round": "2026-Q4",
+          "roundLabel": "Q4 2026",
+          "date": "2026-10-19",
+          "scores": {
+            "capability": 6.5,
+            "ux": 5,
+            "cost": 6,
+            "outlook": 6
+          },
+          "raters": 2,
+          "grade": "AA-",
+          "note": "Notebooks cover nearly every authoring need in Fabric data engineering: PySpark, Scala, SQL, and pure Python in one place, with built-in resources, Git integration, and tight links to lakehouses and pipelines. Day-to-day use is less polished, since session start-up can be slow, errors in long Spark runs are hard to trace, and the editing experience still feels uneven next to dedicated IDEs. Capacity use is reasonable when sessions are sized and shut down with care, and the item shows steady investment with new capabilities arriving regularly."
+        }
+      ]
+    },
+    {
+      "artifact": {
+        "id": "environment",
+        "name": "Environment",
+        "workload": "data-engineering",
+        "status": "ga",
+        "naFactors": [
+          "cost"
+        ]
+      },
+      "current": {
+        "round": "2026-Q4",
+        "roundLabel": "Q4 2026",
+        "date": "2026-10-19",
+        "scores": {
+          "capability": 5,
+          "ux": 4,
+          "cost": null,
+          "outlook": 5.5
+        },
+        "raters": 2,
+        "grade": "BBB+",
+        "note": "Environment is the right place to pin a Spark runtime, Spark compute settings, and shared libraries once and attach them to many notebooks and Spark job definitions. That keeps per-notebook install cells out of the code and avoids paying for repeated setup in every session. Publishing changes is slow, though, and failed library installs are hard to diagnose. Sessions that use custom libraries also start more slowly than the default pools."
+      },
+      "history": [
+        {
+          "round": "2026-Q4",
+          "roundLabel": "Q4 2026",
+          "date": "2026-10-19",
+          "scores": {
+            "capability": 5,
+            "ux": 4,
+            "cost": null,
+            "outlook": 5.5
+          },
+          "raters": 2,
+          "grade": "BBB+",
+          "note": "Environment is the right place to pin a Spark runtime, Spark compute settings, and shared libraries once and attach them to many notebooks and Spark job definitions. That keeps per-notebook install cells out of the code and avoids paying for repeated setup in every session. Publishing changes is slow, though, and failed library installs are hard to diagnose. Sessions that use custom libraries also start more slowly than the default pools."
+        }
+      ]
+    },
+    {
+      "artifact": {
+        "id": "spark-job-definition",
+        "name": "Spark job definition",
+        "workload": "data-engineering",
+        "status": "ga",
+        "naFactors": [
+          "cost"
+        ]
+      },
+      "current": {
+        "round": "2026-Q4",
+        "roundLabel": "Q4 2026",
+        "date": "2026-10-19",
+        "scores": {
+          "capability": 4,
+          "ux": 4,
+          "cost": null,
+          "outlook": 3
+        },
+        "raters": 1,
+        "grade": "BBB-",
+        "note": ""
+      },
+      "history": [
+        {
+          "round": "2026-Q4",
+          "roundLabel": "Q4 2026",
+          "date": "2026-10-19",
+          "scores": {
+            "capability": 4,
+            "ux": 4,
+            "cost": null,
+            "outlook": 3
+          },
+          "raters": 1,
+          "grade": "BBB-",
+          "note": ""
+        }
+      ]
+    },
+    {
+      "artifact": {
+        "id": "pipeline",
+        "name": "Pipeline",
+        "workload": "data-engineering",
+        "status": "ga",
+        "naFactors": [
+          "cost"
+        ]
+      },
+      "current": {
+        "round": "2026-Q4",
+        "roundLabel": "Q4 2026",
+        "date": "2026-10-19",
+        "scores": {
+          "capability": 7,
+          "ux": 6,
+          "cost": null,
+          "outlook": 6
+        },
+        "raters": 2,
+        "grade": "AA+",
+        "note": "Pipeline is the orchestration backbone of Fabric data engineering, with a full set of activities for moving data, running notebooks and Spark jobs, and chaining them together with branching, looping, and scheduling. Authoring is mostly clear and the canvas holds up well as workflows grow, though debugging a failed run in a deeply nested pipeline can still mean digging through several layers of activity output. Capacity use is reasonable for light orchestration but climbs on copy-heavy workloads, where data movement consumes more than a purpose-built alternative would. Microsoft keeps investing in it as the center of the workload, so it is a safe choice to build on."
+      },
+      "history": [
+        {
+          "round": "2026-Q4",
+          "roundLabel": "Q4 2026",
+          "date": "2026-10-19",
+          "scores": {
+            "capability": 7,
+            "ux": 6,
+            "cost": null,
+            "outlook": 6
+          },
+          "raters": 2,
+          "grade": "AA+",
+          "note": "Pipeline is the orchestration backbone of Fabric data engineering, with a full set of activities for moving data, running notebooks and Spark jobs, and chaining them together with branching, looping, and scheduling. Authoring is mostly clear and the canvas holds up well as workflows grow, though debugging a failed run in a deeply nested pipeline can still mean digging through several layers of activity output. Capacity use is reasonable for light orchestration but climbs on copy-heavy workloads, where data movement consumes more than a purpose-built alternative would. Microsoft keeps investing in it as the center of the workload, so it is a safe choice to build on."
+        }
+      ]
+    },
+    {
+      "artifact": {
+        "id": "dataflow-gen2",
+        "name": "Dataflow Gen2",
+        "workload": "data-engineering",
+        "status": "ga",
+        "naFactors": []
+      },
+      "current": {
+        "round": "2026-Q4",
+        "roundLabel": "Q4 2026",
+        "date": "2026-10-19",
+        "scores": {
+          "capability": 4.5,
+          "ux": 5.5,
+          "cost": 2,
+          "outlook": 3
+        },
+        "raters": 2,
+        "grade": "BBB-",
+        "note": "Dataflow Gen2 is the easiest way in Fabric to get from a messy source to a clean table: the Power Query editor is visual and forgiving, previews are immediate, and a failed refresh is usually simple to trace to the step that caused it. That polish hides real limits, because the item handles only a narrow range of scenarios well and teams hit walls on large volumes"
+      },
+      "history": [
+        {
+          "round": "2026-Q4",
+          "roundLabel": "Q4 2026",
+          "date": "2026-10-19",
+          "scores": {
+            "capability": 4.5,
+            "ux": 5.5,
+            "cost": 2,
+            "outlook": 3
+          },
+          "raters": 2,
+          "grade": "BBB-",
+          "note": "Dataflow Gen2 is the easiest way in Fabric to get from a messy source to a clean table: the Power Query editor is visual and forgiving, previews are immediate, and a failed refresh is usually simple to trace to the step that caused it. That polish hides real limits, because the item handles only a narrow range of scenarios well and teams hit walls on large volumes"
+        }
+      ]
+    },
+    {
+      "artifact": {
+        "id": "copy-job",
+        "name": "Copy job",
+        "workload": "data-engineering",
+        "status": "ga",
+        "naFactors": []
+      },
+      "current": {
+        "round": "2026-Q4",
+        "roundLabel": "Q4 2026",
+        "date": "2026-10-19",
+        "scores": {
+          "capability": 5.5,
+          "ux": 6,
+          "cost": 3,
+          "outlook": 5
+        },
+        "raters": 2,
+        "grade": "A-",
+        "note": "Copy job gives Fabric a guided way to move data, with full and incremental loads and change-capture options, and no pipeline to build or maintain."
+      },
+      "history": [
+        {
+          "round": "2026-Q4",
+          "roundLabel": "Q4 2026",
+          "date": "2026-10-19",
+          "scores": {
+            "capability": 5.5,
+            "ux": 6,
+            "cost": 3,
+            "outlook": 5
+          },
+          "raters": 2,
+          "grade": "A-",
+          "note": "Copy job gives Fabric a guided way to move data, with full and incremental loads and change-capture options, and no pipeline to build or maintain."
+        }
+      ]
+    },
+    {
+      "artifact": {
+        "id": "materialized-lake-view",
+        "name": "Materialized lake view",
+        "workload": "data-engineering",
+        "status": "preview",
+        "naFactors": []
+      },
+      "current": {
+        "round": "2026-Q4",
+        "roundLabel": "Q4 2026",
+        "date": "2026-10-19",
+        "scores": {
+          "capability": 4,
+          "ux": 6,
+          "cost": 6,
+          "outlook": 5
+        },
+        "raters": 1,
+        "grade": "A-",
+        "note": ""
+      },
+      "history": [
+        {
+          "round": "2026-Q4",
+          "roundLabel": "Q4 2026",
+          "date": "2026-10-19",
+          "scores": {
+            "capability": 4,
+            "ux": 6,
+            "cost": 6,
+            "outlook": 5
+          },
+          "raters": 1,
+          "grade": "A-",
+          "note": ""
+        }
+      ]
+    },
+    {
+      "artifact": {
+        "id": "lakehouse",
+        "name": "Lakehouse",
+        "workload": "storage",
+        "status": "ga",
+        "naFactors": []
+      },
+      "current": {
+        "round": "2026-Q4",
+        "roundLabel": "Q4 2026",
+        "date": "2026-10-19",
+        "scores": {
+          "capability": 7,
+          "ux": 5.5,
+          "cost": 6.5,
+          "outlook": 7
+        },
+        "raters": 2,
+        "grade": "AA+",
+        "note": "The Lakehouse is the natural home for data in Fabric: Delta tables and raw files sit side by side in OneLake, with a SQL analytics endpoint, shortcuts, and schema support, and Spark, SQL, and Power BI can all work on the same copy. It covers essentially every storage scenario we would ask of it, and it is cheap to run for the result you get. What holds it back is day-to-day polish, since table maintenance such as compaction and vacuuming still needs deliberate attention and troubleshooting a slow or stale SQL endpoint is less obvious than it should be. As a first review there is no earlier direction to report, but investment across the platform is clearly heavy and the Lakehouse is at the center of it."
+      },
+      "history": [
+        {
+          "round": "2026-Q4",
+          "roundLabel": "Q4 2026",
+          "date": "2026-10-19",
+          "scores": {
+            "capability": 7,
+            "ux": 5.5,
+            "cost": 6.5,
+            "outlook": 7
+          },
+          "raters": 2,
+          "grade": "AA+",
+          "note": "The Lakehouse is the natural home for data in Fabric: Delta tables and raw files sit side by side in OneLake, with a SQL analytics endpoint, shortcuts, and schema support, and Spark, SQL, and Power BI can all work on the same copy. It covers essentially every storage scenario we would ask of it, and it is cheap to run for the result you get. What holds it back is day-to-day polish, since table maintenance such as compaction and vacuuming still needs deliberate attention and troubleshooting a slow or stale SQL endpoint is less obvious than it should be. As a first review there is no earlier direction to report, but investment across the platform is clearly heavy and the Lakehouse is at the center of it."
+        }
+      ]
+    },
+    {
+      "artifact": {
+        "id": "warehouse",
+        "name": "Warehouse",
+        "workload": "storage",
+        "status": "ga",
+        "naFactors": []
+      },
+      "current": {
+        "round": "2026-Q4",
+        "roundLabel": "Q4 2026",
+        "date": "2026-10-19",
+        "scores": {
+          "capability": 4.5,
+          "ux": 4.5,
+          "cost": 4,
+          "outlook": 5
+        },
+        "raters": 2,
+        "grade": "BBB",
+        "note": "Fabric Warehouse is a fully transactional T-SQL engine over open Delta storage, and it handles multi-table transactions, cross-database queries, and zero-copy cloning well enough to be the natural home for governed, SQL-first analytics. Authoring, monitoring, and troubleshooting are smooth, and the roadmap shows steady investment in closing the remaining T-SQL surface gaps. Those gaps still matter, since some familiar constructs and migration paths from traditional SQL Server remain unsupported, and heavy or poorly tuned workloads can consume more capacity than comparable Lakehouse queries would. This is the first review, so there is no prior direction to report."
+      },
+      "history": [
+        {
+          "round": "2026-Q4",
+          "roundLabel": "Q4 2026",
+          "date": "2026-10-19",
+          "scores": {
+            "capability": 4.5,
+            "ux": 4.5,
+            "cost": 4,
+            "outlook": 5
+          },
+          "raters": 2,
+          "grade": "BBB",
+          "note": "Fabric Warehouse is a fully transactional T-SQL engine over open Delta storage, and it handles multi-table transactions, cross-database queries, and zero-copy cloning well enough to be the natural home for governed, SQL-first analytics. Authoring, monitoring, and troubleshooting are smooth, and the roadmap shows steady investment in closing the remaining T-SQL surface gaps. Those gaps still matter, since some familiar constructs and migration paths from traditional SQL Server remain unsupported, and heavy or poorly tuned workloads can consume more capacity than comparable Lakehouse queries would. This is the first review, so there is no prior direction to report."
+        }
+      ]
+    },
+    {
+      "artifact": {
+        "id": "sql-database",
+        "name": "SQL database",
+        "workload": "storage",
+        "status": "ga",
+        "naFactors": []
+      },
+      "current": {
+        "round": "2026-Q4",
+        "roundLabel": "Q4 2026",
+        "date": "2026-10-19",
+        "scores": {
+          "capability": 5.5,
+          "ux": 5.5,
+          "cost": 3,
+          "outlook": 6
+        },
+        "raters": 2,
+        "grade": "A-",
+        "note": "SQL database in Fabric brings a familiar, autonomous SQL Server-engine experience into the platform, with automatic mirroring to OneLake that makes transactional data available for analytics without any pipeline work. Setup is quick and the tooling will feel natural to anyone who already knows T-SQL, though the feature set still has gaps compared with a full Azure SQL deployment. Capacity consumption is the main drawback, since the database draws on CUs even when activity is light, which makes it a pricier way to host small or intermittent workloads. Microsoft is clearly investing in it as the operational counterpart to the lakehouse and warehouse, so the trajectory looks strong."
+      },
+      "history": [
+        {
+          "round": "2026-Q4",
+          "roundLabel": "Q4 2026",
+          "date": "2026-10-19",
+          "scores": {
+            "capability": 5.5,
+            "ux": 5.5,
+            "cost": 3,
+            "outlook": 6
+          },
+          "raters": 2,
+          "grade": "A-",
+          "note": "SQL database in Fabric brings a familiar, autonomous SQL Server-engine experience into the platform, with automatic mirroring to OneLake that makes transactional data available for analytics without any pipeline work. Setup is quick and the tooling will feel natural to anyone who already knows T-SQL, though the feature set still has gaps compared with a full Azure SQL deployment. Capacity consumption is the main drawback, since the database draws on CUs even when activity is light, which makes it a pricier way to host small or intermittent workloads. Microsoft is clearly investing in it as the operational counterpart to the lakehouse and warehouse, so the trajectory looks strong."
+        }
+      ]
+    },
+    {
+      "artifact": {
+        "id": "sql-analytics-endpoint",
+        "name": "SQL analytics endpoint",
+        "workload": "storage",
+        "status": "ga",
+        "naFactors": []
+      },
+      "current": {
+        "round": "2026-Q4",
+        "roundLabel": "Q4 2026",
+        "date": "2026-10-19",
+        "scores": {
+          "capability": 5,
+          "ux": 5,
+          "cost": 4.5,
+          "outlook": 5.5
+        },
+        "raters": 2,
+        "grade": "A-",
+        "note": "The SQL analytics endpoint arrives automatically with every lakehouse, warehouse, and mirrored database, giving Power BI and T-SQL users a simple, dependable way to query Delta tables. It is read-only, so you can't write back through it. Strong momentum suggests it will keep getting better."
+      },
+      "history": [
+        {
+          "round": "2026-Q4",
+          "roundLabel": "Q4 2026",
+          "date": "2026-10-19",
+          "scores": {
+            "capability": 5,
+            "ux": 5,
+            "cost": 4.5,
+            "outlook": 5.5
+          },
+          "raters": 2,
+          "grade": "A-",
+          "note": "The SQL analytics endpoint arrives automatically with every lakehouse, warehouse, and mirrored database, giving Power BI and T-SQL users a simple, dependable way to query Delta tables. It is read-only, so you can't write back through it. Strong momentum suggests it will keep getting better."
+        }
+      ]
+    },
+    {
+      "artifact": {
+        "id": "cosmos-db",
+        "name": "Cosmos DB in Fabric",
+        "workload": "storage",
+        "status": "preview",
+        "naFactors": []
+      },
+      "current": {
+        "round": "2026-Q4",
+        "roundLabel": "Q4 2026",
+        "date": "2026-10-19",
+        "scores": {
+          "capability": 4,
+          "ux": 4,
+          "cost": 4,
+          "outlook": 4
+        },
+        "raters": 1,
+        "grade": "BBB-",
+        "note": ""
+      },
+      "history": [
+        {
+          "round": "2026-Q4",
+          "roundLabel": "Q4 2026",
+          "date": "2026-10-19",
+          "scores": {
+            "capability": 4,
+            "ux": 4,
+            "cost": 4,
+            "outlook": 4
+          },
+          "raters": 1,
+          "grade": "BBB-",
+          "note": ""
+        }
+      ]
+    },
+    {
+      "artifact": {
+        "id": "mirror-azure-sql",
+        "name": "Azure SQL Database / Managed Instance / SQL Server",
+        "workload": "mirroring",
+        "status": "ga",
+        "naFactors": [
+          "cost"
+        ]
+      },
+      "current": {
+        "round": "2026-Q4",
+        "roundLabel": "Q4 2026",
+        "date": "2026-10-19",
+        "scores": {
+          "capability": 4,
+          "ux": 5,
+          "cost": null,
+          "outlook": 5
+        },
+        "raters": 1,
+        "grade": "BBB",
+        "note": ""
+      },
+      "history": [
+        {
+          "round": "2026-Q4",
+          "roundLabel": "Q4 2026",
+          "date": "2026-10-19",
+          "scores": {
+            "capability": 4,
+            "ux": 5,
+            "cost": null,
+            "outlook": 5
+          },
+          "raters": 1,
+          "grade": "BBB",
+          "note": ""
+        }
+      ]
+    },
+    {
+      "artifact": {
+        "id": "mirror-snowflake",
+        "name": "Snowflake",
+        "workload": "mirroring",
+        "status": "ga",
+        "naFactors": [
+          "cost"
+        ]
+      },
+      "current": {
+        "round": "2026-Q4",
+        "roundLabel": "Q4 2026",
+        "date": "2026-10-19",
+        "scores": {
+          "capability": 5,
+          "ux": 4,
+          "cost": null,
+          "outlook": 6
+        },
+        "raters": 1,
+        "grade": "BBB+",
+        "note": ""
+      },
+      "history": [
+        {
+          "round": "2026-Q4",
+          "roundLabel": "Q4 2026",
+          "date": "2026-10-19",
+          "scores": {
+            "capability": 5,
+            "ux": 4,
+            "cost": null,
+            "outlook": 6
+          },
+          "raters": 1,
+          "grade": "BBB+",
+          "note": ""
+        }
+      ]
+    },
+    {
+      "artifact": {
+        "id": "mirror-azure-databricks",
+        "name": "Azure Databricks",
+        "workload": "mirroring",
+        "status": "ga",
+        "naFactors": [
+          "cost"
+        ]
+      },
+      "current": {
+        "round": "2026-Q4",
+        "roundLabel": "Q4 2026",
+        "date": "2026-10-19",
+        "scores": {
+          "capability": 3,
+          "ux": 3,
+          "cost": null,
+          "outlook": 5
+        },
+        "raters": 1,
+        "grade": "BB",
+        "note": ""
+      },
+      "history": [
+        {
+          "round": "2026-Q4",
+          "roundLabel": "Q4 2026",
+          "date": "2026-10-19",
+          "scores": {
+            "capability": 3,
+            "ux": 3,
+            "cost": null,
+            "outlook": 5
+          },
+          "raters": 1,
+          "grade": "BB",
+          "note": ""
+        }
+      ]
+    },
+    {
+      "artifact": {
+        "id": "open-mirroring",
+        "name": "Open mirroring",
+        "workload": "mirroring",
+        "status": "ga",
+        "naFactors": [
+          "cost"
+        ]
+      },
+      "current": {
+        "round": "2026-Q4",
+        "roundLabel": "Q4 2026",
+        "date": "2026-10-19",
+        "scores": {
+          "capability": 5,
+          "ux": 5,
+          "cost": null,
+          "outlook": 5
+        },
+        "raters": 1,
+        "grade": "A-",
+        "note": ""
+      },
+      "history": [
+        {
+          "round": "2026-Q4",
+          "roundLabel": "Q4 2026",
+          "date": "2026-10-19",
+          "scores": {
+            "capability": 5,
+            "ux": 5,
+            "cost": null,
+            "outlook": 5
+          },
+          "raters": 1,
+          "grade": "A-",
+          "note": ""
+        }
+      ]
+    },
+    {
+      "artifact": {
+        "id": "activator",
+        "name": "Activator",
+        "workload": "real-time",
+        "status": "ga",
+        "naFactors": []
+      },
+      "current": {
+        "round": "2026-Q4",
+        "roundLabel": "Q4 2026",
+        "date": "2026-10-19",
+        "scores": {
+          "capability": 4,
+          "ux": 2,
+          "cost": 2,
+          "outlook": 3
+        },
+        "raters": 1,
+        "grade": "BB-",
+        "note": ""
+      },
+      "history": [
+        {
+          "round": "2026-Q4",
+          "roundLabel": "Q4 2026",
+          "date": "2026-10-19",
+          "scores": {
+            "capability": 4,
+            "ux": 2,
+            "cost": 2,
+            "outlook": 3
+          },
+          "raters": 1,
+          "grade": "BB-",
+          "note": ""
+        }
+      ]
+    },
+    {
+      "artifact": {
+        "id": "semantic-model",
+        "name": "Semantic model",
+        "workload": "power-bi",
+        "status": "ga",
+        "naFactors": []
+      },
+      "current": {
+        "round": "2026-Q4",
+        "roundLabel": "Q4 2026",
+        "date": "2026-10-19",
+        "scores": {
+          "capability": 7,
+          "ux": 6.5,
+          "cost": 6,
+          "outlook": 7
+        },
+        "raters": 2,
+        "grade": "AA+",
+        "note": "Semantic models are the governed center of Power BI: DAX measures, row-level security, calculation groups, Direct Lake, and composite models cover nearly every analytical scenario, and Git integration and XMLA endpoints let teams manage them like real engineering assets. Refresh and storage costs are reasonable for most workloads, especially when Direct Lake avoids duplicating data into the model. Day-to-day authoring and troubleshooting are less smooth, since diagnosing slow DAX, refresh failures, or fallback to DirectQuery often means leaving the main interface for external tools. Microsoft's continued investment in the model as the shared layer for reports, Copilot, and notebooks keeps its direction clearly positive."
+      },
+      "history": [
+        {
+          "round": "2026-Q4",
+          "roundLabel": "Q4 2026",
+          "date": "2026-10-19",
+          "scores": {
+            "capability": 7,
+            "ux": 6.5,
+            "cost": 6,
+            "outlook": 7
+          },
+          "raters": 2,
+          "grade": "AA+",
+          "note": "Semantic models are the governed center of Power BI: DAX measures, row-level security, calculation groups, Direct Lake, and composite models cover nearly every analytical scenario, and Git integration and XMLA endpoints let teams manage them like real engineering assets. Refresh and storage costs are reasonable for most workloads, especially when Direct Lake avoids duplicating data into the model. Day-to-day authoring and troubleshooting are less smooth, since diagnosing slow DAX, refresh failures, or fallback to DirectQuery often means leaving the main interface for external tools. Microsoft's continued investment in the model as the shared layer for reports, Copilot, and notebooks keeps its direction clearly positive."
+        }
+      ]
+    },
+    {
+      "artifact": {
+        "id": "report",
+        "name": "Report",
+        "workload": "power-bi",
+        "status": "ga",
+        "naFactors": [
+          "cost"
+        ]
+      },
+      "current": {
+        "round": "2026-Q4",
+        "roundLabel": "Q4 2026",
+        "date": "2026-10-19",
+        "scores": {
+          "capability": 5,
+          "ux": 5,
+          "cost": null,
+          "outlook": 5.5
+        },
+        "raters": 2,
+        "grade": "A-",
+        "note": "A polished, intuitive way to turn a semantic model into interactive pages, with cross-filtering, drill-through, and bookmarks that business users pick up quickly. Authoring in Desktop and the service is easy to follow. A few niche layout and formatting needs still call for workarounds, but momentum remains strong."
+      },
+      "history": [
+        {
+          "round": "2026-Q4",
+          "roundLabel": "Q4 2026",
+          "date": "2026-10-19",
+          "scores": {
+            "capability": 5,
+            "ux": 5,
+            "cost": null,
+            "outlook": 5.5
+          },
+          "raters": 2,
+          "grade": "A-",
+          "note": "A polished, intuitive way to turn a semantic model into interactive pages, with cross-filtering, drill-through, and bookmarks that business users pick up quickly. Authoring in Desktop and the service is easy to follow. A few niche layout and formatting needs still call for workarounds, but momentum remains strong."
+        }
+      ]
+    },
+    {
+      "artifact": {
+        "id": "dashboard",
+        "name": "Dashboard",
+        "workload": "power-bi",
+        "status": "ga",
+        "naFactors": [
+          "cost"
+        ]
+      },
+      "current": {
+        "round": "2026-Q4",
+        "roundLabel": "Q4 2026",
+        "date": "2026-10-19",
+        "scores": {
+          "capability": 2,
+          "ux": 2.5,
+          "cost": null,
+          "outlook": 1.5
+        },
+        "raters": 2,
+        "grade": "B-",
+        "note": "A quick way to pull key metrics from several semantic models onto one page, with data alerts and natural-language questions on top. It has no filters or slicers, can only be built in the Power BI service, and tile refreshes count as background queries. Little suggests it is getting investment."
+      },
+      "history": [
+        {
+          "round": "2026-Q4",
+          "roundLabel": "Q4 2026",
+          "date": "2026-10-19",
+          "scores": {
+            "capability": 2,
+            "ux": 2.5,
+            "cost": null,
+            "outlook": 1.5
+          },
+          "raters": 2,
+          "grade": "B-",
+          "note": "A quick way to pull key metrics from several semantic models onto one page, with data alerts and natural-language questions on top. It has no filters or slicers, can only be built in the Power BI service, and tile refreshes count as background queries. Little suggests it is getting investment."
+        }
+      ]
+    },
+    {
+      "artifact": {
+        "id": "paginated-report",
+        "name": "Paginated report",
+        "workload": "power-bi",
+        "status": "ga",
+        "naFactors": []
+      },
+      "current": {
+        "round": "2026-Q4",
+        "roundLabel": "Q4 2026",
+        "date": "2026-10-19",
+        "scores": {
+          "capability": 4,
+          "ux": 3.5,
+          "cost": 4,
+          "outlook": 4.5
+        },
+        "raters": 2,
+        "grade": "BBB-",
+        "note": "Still the right tool for pixel-perfect invoices and multi-page tables that must print or export cleanly to PDF and Excel. Report Builder authoring is familiar and viewing is straightforward, but the feature set trails modern Power BI reports and rendering draws on capacity for every view and export."
+      },
+      "history": [
+        {
+          "round": "2026-Q4",
+          "roundLabel": "Q4 2026",
+          "date": "2026-10-19",
+          "scores": {
+            "capability": 4,
+            "ux": 3.5,
+            "cost": 4,
+            "outlook": 4.5
+          },
+          "raters": 2,
+          "grade": "BBB-",
+          "note": "Still the right tool for pixel-perfect invoices and multi-page tables that must print or export cleanly to PDF and Excel. Report Builder authoring is familiar and viewing is straightforward, but the feature set trails modern Power BI reports and rendering draws on capacity for every view and export."
+        }
+      ]
+    },
+    {
+      "artifact": {
+        "id": "metrics-scorecards",
+        "name": "Metrics / scorecards",
+        "workload": "power-bi",
+        "status": "ga",
+        "naFactors": [
+          "cost"
+        ]
+      },
+      "current": {
+        "round": "2026-Q4",
+        "roundLabel": "Q4 2026",
+        "date": "2026-10-19",
+        "scores": {
+          "capability": 4,
+          "ux": 4,
+          "cost": null,
+          "outlook": 4
+        },
+        "raters": 1,
+        "grade": "BBB-",
+        "note": ""
+      },
+      "history": [
+        {
+          "round": "2026-Q4",
+          "roundLabel": "Q4 2026",
+          "date": "2026-10-19",
+          "scores": {
+            "capability": 4,
+            "ux": 4,
+            "cost": null,
+            "outlook": 4
+          },
+          "raters": 1,
+          "grade": "BBB-",
+          "note": ""
+        }
+      ]
+    },
+    {
+      "artifact": {
+        "id": "org-apps",
+        "name": "Org apps",
+        "workload": "power-bi",
+        "status": "preview",
+        "naFactors": [
+          "cost"
+        ]
+      },
+      "current": {
+        "round": "2026-Q4",
+        "roundLabel": "Q4 2026",
+        "date": "2026-10-19",
+        "scores": {
+          "capability": 5.5,
+          "ux": 3.5,
+          "cost": null,
+          "outlook": 4
+        },
+        "raters": 2,
+        "grade": "BBB+",
+        "note": "Org apps package reports, paginated reports, notebooks, and real-time dashboards into one shareable item for people outside the workspace, and a workspace can hold several. The experience is still rough and the item remains in preview, so treat it as promising rather than settled. This is its first review."
+      },
+      "history": [
+        {
+          "round": "2026-Q4",
+          "roundLabel": "Q4 2026",
+          "date": "2026-10-19",
+          "scores": {
+            "capability": 5.5,
+            "ux": 3.5,
+            "cost": null,
+            "outlook": 4
+          },
+          "raters": 2,
+          "grade": "BBB+",
+          "note": "Org apps package reports, paginated reports, notebooks, and real-time dashboards into one shareable item for people outside the workspace, and a workspace can hold several. The experience is still rough and the item remains in preview, so treat it as promising rather than settled. This is its first review."
+        }
+      ]
+    },
+    {
+      "artifact": {
+        "id": "dataflow-gen1",
+        "name": "Dataflow Gen1",
+        "workload": "power-bi",
+        "status": "ga",
+        "naFactors": []
+      },
+      "current": {
+        "round": "2026-Q4",
+        "roundLabel": "Q4 2026",
+        "date": "2026-10-19",
+        "scores": {
+          "capability": 5.5,
+          "ux": 6,
+          "cost": 3.5,
+          "outlook": 2
+        },
+        "raters": 2,
+        "grade": "BBB+",
+        "note": "Dataflow Gen1 is still an approachable way to share reusable Power Query logic across several semantic models, and the authoring experience is easy to work with. But Microsoft labels it legacy and points Premium and Fabric users to Dataflow Gen2. Refreshes also consume more capacity than they should."
+      },
+      "history": [
+        {
+          "round": "2026-Q4",
+          "roundLabel": "Q4 2026",
+          "date": "2026-10-19",
+          "scores": {
+            "capability": 5.5,
+            "ux": 6,
+            "cost": 3.5,
+            "outlook": 2
+          },
+          "raters": 2,
+          "grade": "BBB+",
+          "note": "Dataflow Gen1 is still an approachable way to share reusable Power Query logic across several semantic models, and the authoring experience is easy to work with. But Microsoft labels it legacy and points Premium and Fabric users to Dataflow Gen2. Refreshes also consume more capacity than they should."
+        }
+      ]
+    },
+    {
+      "artifact": {
+        "id": "datamart",
+        "name": "Datamart",
+        "workload": "power-bi",
+        "status": "retired",
+        "naFactors": []
+      },
+      "current": {
+        "round": "2026-Q4",
+        "roundLabel": "Q4 2026",
+        "date": "2026-10-19",
+        "scores": {
+          "capability": 5,
+          "ux": 4,
+          "cost": 5,
+          "outlook": 1
+        },
+        "raters": 1,
+        "grade": "D",
+        "note": ""
+      },
+      "history": [
+        {
+          "round": "2026-Q4",
+          "roundLabel": "Q4 2026",
+          "date": "2026-10-19",
+          "scores": {
+            "capability": 5,
+            "ux": 4,
+            "cost": 5,
+            "outlook": 1
+          },
+          "raters": 1,
+          "grade": "D",
+          "note": ""
+        }
+      ]
+    },
+    {
+      "artifact": {
+        "id": "exploration",
+        "name": "Exploration",
+        "workload": "power-bi",
+        "status": "preview",
+        "naFactors": [
+          "cost"
+        ]
+      },
+      "current": {
+        "round": "2026-Q4",
+        "roundLabel": "Q4 2026",
+        "date": "2026-10-19",
+        "scores": {
+          "capability": 5,
+          "ux": 3.5,
+          "cost": null,
+          "outlook": 3.5
+        },
+        "raters": 2,
+        "grade": "BBB",
+        "note": "A handy way to poke at a semantic model with a matrix and visuals, then save the result without building a full report. It is still in preview and needs a Fabric or Premium workspace to save, and the experience and long-term direction are not yet settled."
+      },
+      "history": [
+        {
+          "round": "2026-Q4",
+          "roundLabel": "Q4 2026",
+          "date": "2026-10-19",
+          "scores": {
+            "capability": 5,
+            "ux": 3.5,
+            "cost": null,
+            "outlook": 3.5
+          },
+          "raters": 2,
+          "grade": "BBB",
+          "note": "A handy way to poke at a semantic model with a matrix and visuals, then save the result without building a full report. It is still in preview and needs a Fabric or Premium workspace to save, and the experience and long-term direction are not yet settled."
+        }
+      ]
+    },
+    {
+      "artifact": {
+        "id": "ontology",
+        "name": "Ontology",
+        "workload": "fabric-iq",
+        "status": "preview",
+        "naFactors": []
+      },
+      "current": {
+        "round": "2026-Q4",
+        "roundLabel": "Q4 2026",
+        "date": "2026-10-19",
+        "scores": {
+          "capability": 2,
+          "ux": 1.5,
+          "cost": 2,
+          "outlook": 4
+        },
+        "raters": 2,
+        "grade": "B-",
+        "note": "Ontology gives Fabric a shared business vocabulary, with entity types, relationships, and properties mapped onto OneLake data, so that agents and downstream tools can reason over the same definitions. The idea is sound, but the preview still has gaps in modeling and binding that stop it from covering many everyday scenarios. Setup is also hard to follow, and errors give little help in finding the cause."
+      },
+      "history": [
+        {
+          "round": "2026-Q4",
+          "roundLabel": "Q4 2026",
+          "date": "2026-10-19",
+          "scores": {
+            "capability": 2,
+            "ux": 1.5,
+            "cost": 2,
+            "outlook": 4
+          },
+          "raters": 2,
+          "grade": "B-",
+          "note": "Ontology gives Fabric a shared business vocabulary, with entity types, relationships, and properties mapped onto OneLake data, so that agents and downstream tools can reason over the same definitions. The idea is sound, but the preview still has gaps in modeling and binding that stop it from covering many everyday scenarios. Setup is also hard to follow, and errors give little help in finding the cause."
+        }
+      ]
+    },
+    {
+      "artifact": {
+        "id": "graph",
+        "name": "Graph",
+        "workload": "fabric-iq",
+        "status": "preview",
+        "naFactors": [
+          "cost"
+        ]
+      },
+      "current": {
+        "round": "2026-Q4",
+        "roundLabel": "Q4 2026",
+        "date": "2026-10-19",
+        "scores": {
+          "capability": 3,
+          "ux": 3,
+          "cost": null,
+          "outlook": 4
+        },
+        "raters": 1,
+        "grade": "BB-",
+        "note": ""
+      },
+      "history": [
+        {
+          "round": "2026-Q4",
+          "roundLabel": "Q4 2026",
+          "date": "2026-10-19",
+          "scores": {
+            "capability": 3,
+            "ux": 3,
+            "cost": null,
+            "outlook": 4
+          },
+          "raters": 1,
+          "grade": "BB-",
+          "note": ""
+        }
+      ]
+    },
+    {
+      "artifact": {
+        "id": "data-agent",
+        "name": "Data agent",
+        "workload": "fabric-iq",
+        "status": "preview",
+        "naFactors": []
+      },
+      "current": {
+        "round": "2026-Q4",
+        "roundLabel": "Q4 2026",
+        "date": "2026-10-19",
+        "scores": {
+          "capability": 3,
+          "ux": 3.5,
+          "cost": 2,
+          "outlook": 4.5
+        },
+        "raters": 2,
+        "grade": "BB-",
+        "note": "A conversational layer that turns plain-English questions into read-only SQL, DAX, or KQL across up to five sources, including lakehouses, semantic models, and ontologies. Still in preview, with capability gaps for real scenarios, and token-metered AI query charges make heavier use costly."
+      },
+      "history": [
+        {
+          "round": "2026-Q4",
+          "roundLabel": "Q4 2026",
+          "date": "2026-10-19",
+          "scores": {
+            "capability": 3,
+            "ux": 3.5,
+            "cost": 2,
+            "outlook": 4.5
+          },
+          "raters": 2,
+          "grade": "BB-",
+          "note": "A conversational layer that turns plain-English questions into read-only SQL, DAX, or KQL across up to five sources, including lakehouses, semantic models, and ontologies. Still in preview, with capability gaps for real scenarios, and token-metered AI query charges make heavier use costly."
+        }
+      ]
+    },
+    {
+      "artifact": {
+        "id": "plan",
+        "name": "Plan",
+        "workload": "fabric-iq",
+        "status": "preview",
+        "naFactors": []
+      },
+      "current": {
+        "round": "2026-Q4",
+        "roundLabel": "Q4 2026",
+        "date": "2026-10-19",
+        "scores": {
+          "capability": 2,
+          "ux": 2,
+          "cost": 3,
+          "outlook": 2
+        },
+        "raters": 1,
+        "grade": "B",
+        "note": ""
+      },
+      "history": [
+        {
+          "round": "2026-Q4",
+          "roundLabel": "Q4 2026",
+          "date": "2026-10-19",
+          "scores": {
+            "capability": 2,
+            "ux": 2,
+            "cost": 3,
+            "outlook": 2
+          },
+          "raters": 1,
+          "grade": "B",
+          "note": ""
+        }
+      ]
+    },
+    {
+      "artifact": {
+        "id": "onelake-catalog",
+        "name": "OneLake catalog",
+        "workload": "onelake",
+        "status": "ga",
+        "naFactors": [
+          "cost"
+        ]
+      },
+      "current": {
+        "round": "2026-Q4",
+        "roundLabel": "Q4 2026",
+        "date": "2026-10-19",
+        "scores": {
+          "capability": 6,
+          "ux": 5.5,
+          "cost": null,
+          "outlook": 6.5
+        },
+        "raters": 2,
+        "grade": "AA-",
+        "note": "OneLake catalog gives you one place to discover, govern, and understand data across every workspace, with endorsement, lineage, and security insight sitting right beside the items they describe. It is quick to learn and easy to trust, and it covers the full job of finding and managing data without needing add-on tooling. The one drag is capacity: browsing and governance activity at scale uses more compute than its lightweight feel would suggest. Since this is the first review, there is no earlier direction to compare against, but Microsoft's steady investment suggests it will keep deepening."
+      },
+      "history": [
+        {
+          "round": "2026-Q4",
+          "roundLabel": "Q4 2026",
+          "date": "2026-10-19",
+          "scores": {
+            "capability": 6,
+            "ux": 5.5,
+            "cost": null,
+            "outlook": 6.5
+          },
+          "raters": 2,
+          "grade": "AA-",
+          "note": "OneLake catalog gives you one place to discover, govern, and understand data across every workspace, with endorsement, lineage, and security insight sitting right beside the items they describe. It is quick to learn and easy to trust, and it covers the full job of finding and managing data without needing add-on tooling. The one drag is capacity: browsing and governance activity at scale uses more compute than its lightweight feel would suggest. Since this is the first review, there is no earlier direction to compare against, but Microsoft's steady investment suggests it will keep deepening."
+        }
+      ]
+    },
+    {
+      "artifact": {
+        "id": "shortcuts",
+        "name": "Shortcuts",
+        "workload": "onelake",
+        "status": "ga",
+        "naFactors": []
+      },
+      "current": {
+        "round": "2026-Q4",
+        "roundLabel": "Q4 2026",
+        "date": "2026-10-19",
+        "scores": {
+          "capability": 7,
+          "ux": 4.5,
+          "cost": 5.5,
+          "outlook": 5.5
+        },
+        "raters": 2,
+        "grade": "AA-",
+        "note": "Shortcuts let you reference data in place across OneLake, ADLS, S3, and other sources without copying it, and they cover nearly every scenario that matters, including table and file sources, cross-workspace sharing, and transparent use from Spark, SQL, and Power BI. Because nothing is duplicated, there is little pipeline or storage overhead, and capacity cost stays low for most reads. Where it falls short is day-to-day handling: creating shortcuts takes more clicks than it should, and when one breaks from an expired credential, a moved target, or a permissions mismatch, the error messages rarely say which it was. Momentum is strong, with steady new source types and wider support across workloads, though this is a first review with no earlier direction to compare against."
+      },
+      "history": [
+        {
+          "round": "2026-Q4",
+          "roundLabel": "Q4 2026",
+          "date": "2026-10-19",
+          "scores": {
+            "capability": 7,
+            "ux": 4.5,
+            "cost": 5.5,
+            "outlook": 5.5
+          },
+          "raters": 2,
+          "grade": "AA-",
+          "note": "Shortcuts let you reference data in place across OneLake, ADLS, S3, and other sources without copying it, and they cover nearly every scenario that matters, including table and file sources, cross-workspace sharing, and transparent use from Spark, SQL, and Power BI. Because nothing is duplicated, there is little pipeline or storage overhead, and capacity cost stays low for most reads. Where it falls short is day-to-day handling: creating shortcuts takes more clicks than it should, and when one breaks from an expired credential, a moved target, or a permissions mismatch, the error messages rarely say which it was. Momentum is strong, with steady new source types and wider support across workloads, though this is a first review with no earlier direction to compare against."
+        }
+      ]
+    },
+    {
+      "artifact": {
+        "id": "onelake-security",
+        "name": "OneLake security",
+        "workload": "onelake",
+        "status": "preview",
+        "naFactors": [
+          "cost"
+        ]
+      },
+      "current": {
+        "round": "2026-Q4",
+        "roundLabel": "Q4 2026",
+        "date": "2026-10-19",
+        "scores": {
+          "capability": 3,
+          "ux": 3,
+          "cost": null,
+          "outlook": 5
+        },
+        "raters": 1,
+        "grade": "BB",
+        "note": ""
+      },
+      "history": [
+        {
+          "round": "2026-Q4",
+          "roundLabel": "Q4 2026",
+          "date": "2026-10-19",
+          "scores": {
+            "capability": 3,
+            "ux": 3,
+            "cost": null,
+            "outlook": 5
+          },
+          "raters": 1,
+          "grade": "BB",
+          "note": ""
+        }
+      ]
+    },
+    {
+      "artifact": {
+        "id": "copilot",
+        "name": "Copilot in Fabric",
+        "workload": "data-science-ai",
+        "status": "ga",
+        "naFactors": []
+      },
+      "current": {
+        "round": "2026-Q4",
+        "roundLabel": "Q4 2026",
+        "date": "2026-10-19",
+        "scores": {
+          "capability": 2,
+          "ux": 2,
+          "cost": 1.5,
+          "outlook": 4.5
+        },
+        "raters": 2,
+        "grade": "B-",
+        "note": "Copilot in Fabric reaches across Power BI, Data Factory, notebooks, the warehouse, and Real-Time Intelligence, turning plain-language requests into code, queries, and reports. Output is uneven and the experience often needs rework, while token metering makes heavy use costly in capacity. Investment is clearly strong."
+      },
+      "history": [
+        {
+          "round": "2026-Q4",
+          "roundLabel": "Q4 2026",
+          "date": "2026-10-19",
+          "scores": {
+            "capability": 2,
+            "ux": 2,
+            "cost": 1.5,
+            "outlook": 4.5
+          },
+          "raters": 2,
+          "grade": "B-",
+          "note": "Copilot in Fabric reaches across Power BI, Data Factory, notebooks, the warehouse, and Real-Time Intelligence, turning plain-language requests into code, queries, and reports. Output is uneven and the experience often needs rework, while token metering makes heavy use costly in capacity. Investment is clearly strong."
+        }
+      ]
+    },
+    {
+      "artifact": {
+        "id": "semantic-link",
+        "name": "Semantic link",
+        "workload": "data-science-ai",
+        "status": "ga",
+        "naFactors": [
+          "cost"
+        ]
+      },
+      "current": {
+        "round": "2026-Q4",
+        "roundLabel": "Q4 2026",
+        "date": "2026-10-19",
+        "scores": {
+          "capability": 6.5,
+          "ux": 4,
+          "cost": null,
+          "outlook": 6
+        },
+        "raters": 2,
+        "grade": "A+",
+        "note": "Semantic link does its job completely, bringing Power BI semantic model data and relationships into notebooks as FabricDataFrames for analysis, validation, and machine learning. Day-to-day use is less smooth, since it only runs inside notebooks and expects Python or Spark fluency. Momentum looks strong."
+      },
+      "history": [
+        {
+          "round": "2026-Q4",
+          "roundLabel": "Q4 2026",
+          "date": "2026-10-19",
+          "scores": {
+            "capability": 6.5,
+            "ux": 4,
+            "cost": null,
+            "outlook": 6
+          },
+          "raters": 2,
+          "grade": "A+",
+          "note": "Semantic link does its job completely, bringing Power BI semantic model data and relationships into notebooks as FabricDataFrames for analysis, validation, and machine learning. Day-to-day use is less smooth, since it only runs inside notebooks and expects Python or Spark fluency. Momentum looks strong."
+        }
+      ]
+    },
+    {
+      "artifact": {
+        "id": "git-integration",
+        "name": "Git integration",
+        "workload": "cicd",
+        "status": "ga",
+        "naFactors": [
+          "cost"
+        ]
+      },
+      "current": {
+        "round": "2026-Q4",
+        "roundLabel": "Q4 2026",
+        "date": "2026-10-19",
+        "scores": {
+          "capability": 6,
+          "ux": 4.5,
+          "cost": null,
+          "outlook": 6.5
+        },
+        "raters": 2,
+        "grade": "A+",
+        "note": "Solid, broadly capable source control for Fabric, with Azure DevOps and GitHub support and every item serialized as definition files that diff and sync cleanly. Day-to-day use is clunkier: only admins can connect, and one workspace maps to a single branch and folder. Investment is clearly strong."
+      },
+      "history": [
+        {
+          "round": "2026-Q4",
+          "roundLabel": "Q4 2026",
+          "date": "2026-10-19",
+          "scores": {
+            "capability": 6,
+            "ux": 4.5,
+            "cost": null,
+            "outlook": 6.5
+          },
+          "raters": 2,
+          "grade": "A+",
+          "note": "Solid, broadly capable source control for Fabric, with Azure DevOps and GitHub support and every item serialized as definition files that diff and sync cleanly. Day-to-day use is clunkier: only admins can connect, and one workspace maps to a single branch and folder. Investment is clearly strong."
+        }
+      ]
+    },
+    {
+      "artifact": {
+        "id": "deployment-pipelines",
+        "name": "Deployment pipelines",
+        "workload": "cicd",
+        "status": "ga",
+        "naFactors": [
+          "cost"
+        ]
+      },
+      "current": {
+        "round": "2026-Q4",
+        "roundLabel": "Q4 2026",
+        "date": "2026-10-19",
+        "scores": {
+          "capability": 5,
+          "ux": 4,
+          "cost": null,
+          "outlook": 5
+        },
+        "raters": 2,
+        "grade": "BBB+",
+        "note": "Deployment pipelines give Fabric a dependable dev, test, and production promotion path, with stage pairing that overwrites rather than duplicates and deployment rules that handle per-stage data sources. The experience is less polished, and troubleshooting a failed deployment takes more effort than it should. Momentum looks steady."
+      },
+      "history": [
+        {
+          "round": "2026-Q4",
+          "roundLabel": "Q4 2026",
+          "date": "2026-10-19",
+          "scores": {
+            "capability": 5,
+            "ux": 4,
+            "cost": null,
+            "outlook": 5
+          },
+          "raters": 2,
+          "grade": "BBB+",
+          "note": "Deployment pipelines give Fabric a dependable dev, test, and production promotion path, with stage pairing that overwrites rather than duplicates and deployment rules that handle per-stage data sources. The experience is less polished, and troubleshooting a failed deployment takes more effort than it should. Momentum looks steady."
+        }
+      ]
+    },
+    {
+      "artifact": {
+        "id": "variable-library",
+        "name": "Variable library",
+        "workload": "cicd",
+        "status": "ga",
+        "naFactors": [
+          "cost"
+        ]
+      },
+      "current": {
+        "round": "2026-Q4",
+        "roundLabel": "Q4 2026",
+        "date": "2026-10-19",
+        "scores": {
+          "capability": 4,
+          "ux": 5,
+          "cost": null,
+          "outlook": 5
+        },
+        "raters": 1,
+        "grade": "BBB",
+        "note": ""
+      },
+      "history": [
+        {
+          "round": "2026-Q4",
+          "roundLabel": "Q4 2026",
+          "date": "2026-10-19",
+          "scores": {
+            "capability": 4,
+            "ux": 5,
+            "cost": null,
+            "outlook": 5
+          },
+          "raters": 1,
+          "grade": "BBB",
+          "note": ""
+        }
+      ]
+    },
+    {
+      "artifact": {
+        "id": "fabric-cicd",
+        "name": "fabric-cicd",
+        "workload": "cicd",
+        "status": "ga",
+        "naFactors": [
+          "cost"
+        ]
+      },
+      "current": {
+        "round": "2026-Q4",
+        "roundLabel": "Q4 2026",
+        "date": "2026-10-19",
+        "scores": {
+          "capability": 4,
+          "ux": 4,
+          "cost": null,
+          "outlook": 5
+        },
+        "raters": 1,
+        "grade": "BBB-",
+        "note": ""
+      },
+      "history": [
+        {
+          "round": "2026-Q4",
+          "roundLabel": "Q4 2026",
+          "date": "2026-10-19",
+          "scores": {
+            "capability": 4,
+            "ux": 4,
+            "cost": null,
+            "outlook": 5
+          },
+          "raters": 1,
+          "grade": "BBB-",
+          "note": ""
+        }
+      ]
+    },
+    {
+      "artifact": {
+        "id": "fabric-cli",
+        "name": "Fabric CLI",
+        "workload": "cicd",
+        "status": "ga",
+        "naFactors": [
+          "cost"
+        ]
+      },
+      "current": {
+        "round": "2026-Q4",
+        "roundLabel": "Q4 2026",
+        "date": "2026-10-19",
+        "scores": {
+          "capability": 6,
+          "ux": 4,
+          "cost": null,
+          "outlook": 5
+        },
+        "raters": 2,
+        "grade": "A",
+        "note": "A capable terminal tool that treats workspaces and items like a file system, runs jobs, and scripts CI/CD as a service principal, all on the public REST APIs and now open source. Day-to-day use is the weak point, and being new, it has no track record yet, though investment looks steady."
+      },
+      "history": [
+        {
+          "round": "2026-Q4",
+          "roundLabel": "Q4 2026",
+          "date": "2026-10-19",
+          "scores": {
+            "capability": 6,
+            "ux": 4,
+            "cost": null,
+            "outlook": 5
+          },
+          "raters": 2,
+          "grade": "A",
+          "note": "A capable terminal tool that treats workspaces and items like a file system, runs jobs, and scripts CI/CD as a service principal, all on the public REST APIs and now open source. Day-to-day use is the weak point, and being new, it has no track record yet, though investment looks steady."
+        }
+      ]
+    },
+    {
+      "artifact": {
+        "id": "vscode-extension",
+        "name": "VS Code extension",
+        "workload": "cicd",
+        "status": "ga",
+        "naFactors": [
+          "cost"
+        ]
+      },
+      "current": {
+        "round": "2026-Q4",
+        "roundLabel": "Q4 2026",
+        "date": "2026-10-19",
+        "scores": {
+          "capability": 4,
+          "ux": 4.5,
+          "cost": null,
+          "outlook": 5.5
+        },
+        "raters": 2,
+        "grade": "BBB",
+        "note": "A smooth, familiar way to sign in, browse workspaces, edit items as files, and work with Git-enabled workspaces without leaving VS Code. Real data engineering work depends on companion extensions, so the core extension covers only part of the job. Investment looks healthy, but this is a first review."
+      },
+      "history": [
+        {
+          "round": "2026-Q4",
+          "roundLabel": "Q4 2026",
+          "date": "2026-10-19",
+          "scores": {
+            "capability": 4,
+            "ux": 4.5,
+            "cost": null,
+            "outlook": 5.5
+          },
+          "raters": 2,
+          "grade": "BBB",
+          "note": "A smooth, familiar way to sign in, browse workspaces, edit items as files, and work with Git-enabled workspaces without leaving VS Code. Real data engineering work depends on companion extensions, so the core extension covers only part of the job. Investment looks healthy, but this is a first review."
+        }
+      ]
+    },
+    {
+      "artifact": {
+        "id": "fabric-mcp-local",
+        "name": "Fabric MCP server (local)",
+        "workload": "mcp",
+        "status": "preview",
+        "naFactors": []
+      },
+      "current": {
+        "round": "2026-Q4",
+        "roundLabel": "Q4 2026",
+        "date": "2026-10-19",
+        "scores": {
+          "capability": 6,
+          "ux": 4,
+          "cost": 7,
+          "outlook": 5
+        },
+        "raters": 1,
+        "grade": "A+",
+        "note": ""
+      },
+      "history": [
+        {
+          "round": "2026-Q4",
+          "roundLabel": "Q4 2026",
+          "date": "2026-10-19",
+          "scores": {
+            "capability": 6,
+            "ux": 4,
+            "cost": 7,
+            "outlook": 5
+          },
+          "raters": 1,
+          "grade": "A+",
+          "note": ""
+        }
+      ]
+    },
+    {
+      "artifact": {
+        "id": "fabric-mcp-remote",
+        "name": "Fabric remote MCP",
+        "workload": "mcp",
+        "status": "preview",
+        "naFactors": []
+      },
+      "current": {
+        "round": "2026-Q4",
+        "roundLabel": "Q4 2026",
+        "date": "2026-10-19",
+        "scores": {
+          "capability": 6.5,
+          "ux": 4,
+          "cost": 5.5,
+          "outlook": 6
+        },
+        "raters": 2,
+        "grade": "A+",
+        "note": "The hosted endpoint is simple to adopt: add a URL, sign in with Entra ID, and the agent works within the caller's Fabric role, with workspace and permission management covered. It is still in preview, and the experience is less polished than the capability. Cost follows whatever operations the agent triggers."
+      },
+      "history": [
+        {
+          "round": "2026-Q4",
+          "roundLabel": "Q4 2026",
+          "date": "2026-10-19",
+          "scores": {
+            "capability": 6.5,
+            "ux": 4,
+            "cost": 5.5,
+            "outlook": 6
+          },
+          "raters": 2,
+          "grade": "A+",
+          "note": "The hosted endpoint is simple to adopt: add a URL, sign in with Entra ID, and the agent works within the caller's Fabric role, with workspace and permission management covered. It is still in preview, and the experience is less polished than the capability. Cost follows whatever operations the agent triggers."
+        }
+      ]
+    },
+    {
+      "artifact": {
+        "id": "powerbi-modeling-mcp",
+        "name": "Power BI Modeling MCP server",
+        "workload": "mcp",
+        "status": "preview",
+        "naFactors": []
+      },
+      "current": {
+        "round": "2026-Q4",
+        "roundLabel": "Q4 2026",
+        "date": "2026-10-19",
+        "scores": {
+          "capability": 6.5,
+          "ux": 4,
+          "cost": 5.5,
+          "outlook": 5.5
+        },
+        "raters": 2,
+        "grade": "A+",
+        "note": "Gives AI agents broad, hands-on control of semantic modeling, from tables, measures, and relationships to bulk edits, TMDL and Power BI Project files, and DAX validation, in both Desktop and Fabric models."
+      },
+      "history": [
+        {
+          "round": "2026-Q4",
+          "roundLabel": "Q4 2026",
+          "date": "2026-10-19",
+          "scores": {
+            "capability": 6.5,
+            "ux": 4,
+            "cost": 5.5,
+            "outlook": 5.5
+          },
+          "raters": 2,
+          "grade": "A+",
+          "note": "Gives AI agents broad, hands-on control of semantic modeling, from tables, measures, and relationships to bulk edits, TMDL and Power BI Project files, and DAX validation, in both Desktop and Fabric models."
+        }
+      ]
+    },
+    {
+      "artifact": {
+        "id": "powerbi-mcp-remote",
+        "name": "Power BI remote MCP server",
+        "workload": "mcp",
+        "status": "preview",
+        "naFactors": []
+      },
+      "current": {
+        "round": "2026-Q4",
+        "roundLabel": "Q4 2026",
+        "date": "2026-10-19",
+        "scores": {
+          "capability": 6,
+          "ux": 4,
+          "cost": 6,
+          "outlook": 5
+        },
+        "raters": 1,
+        "grade": "A",
+        "note": ""
+      },
+      "history": [
+        {
+          "round": "2026-Q4",
+          "roundLabel": "Q4 2026",
+          "date": "2026-10-19",
+          "scores": {
+            "capability": 6,
+            "ux": 4,
+            "cost": 6,
+            "outlook": 5
+          },
+          "raters": 1,
+          "grade": "A",
+          "note": ""
+        }
+      ]
+    },
+    {
+      "artifact": {
+        "id": "data-agent-mcp",
+        "name": "Data agent MCP",
+        "workload": "mcp",
+        "status": "preview",
+        "naFactors": []
+      },
+      "current": {
+        "round": "2026-Q4",
+        "roundLabel": "Q4 2026",
+        "date": "2026-10-19",
+        "scores": {
+          "capability": 5,
+          "ux": 3,
+          "cost": 4,
+          "outlook": 5
+        },
+        "raters": 1,
+        "grade": "BBB",
+        "note": ""
+      },
+      "history": [
+        {
+          "round": "2026-Q4",
+          "roundLabel": "Q4 2026",
+          "date": "2026-10-19",
+          "scores": {
+            "capability": 5,
+            "ux": 3,
+            "cost": 4,
+            "outlook": 5
+          },
+          "raters": 1,
+          "grade": "BBB",
+          "note": ""
+        }
+      ]
+    },
+    {
+      "artifact": {
+        "id": "user-data-functions",
+        "name": "User data functions",
+        "workload": "developer-platform",
+        "status": "ga",
+        "naFactors": []
+      },
+      "current": {
+        "round": "2026-Q4",
+        "roundLabel": "Q4 2026",
+        "date": "2026-10-19",
+        "scores": {
+          "capability": 4.5,
+          "ux": 2.5,
+          "cost": 5,
+          "outlook": 6
+        },
+        "raters": 2,
+        "grade": "BBB",
+        "note": "User data functions cover the job well: serverless Python that pipelines, notebooks, Activator, Power BI, and REST clients can all call, editable in the portal or VS Code. The experience is the weak spot, and the 15-minute minimum on portal test sessions makes iterating costlier than it should be. Momentum looks strong."
+      },
+      "history": [
+        {
+          "round": "2026-Q4",
+          "roundLabel": "Q4 2026",
+          "date": "2026-10-19",
+          "scores": {
+            "capability": 4.5,
+            "ux": 2.5,
+            "cost": 5,
+            "outlook": 6
+          },
+          "raters": 2,
+          "grade": "BBB",
+          "note": "User data functions cover the job well: serverless Python that pipelines, notebooks, Activator, Power BI, and REST clients can all call, editable in the portal or VS Code. The experience is the weak spot, and the 15-minute minimum on portal test sessions makes iterating costlier than it should be. Momentum looks strong."
+        }
+      ]
+    },
+    {
+      "artifact": {
+        "id": "graphql-api",
+        "name": "API for GraphQL",
+        "workload": "developer-platform",
+        "status": "ga",
+        "naFactors": [
+          "cost"
+        ]
+      },
+      "current": {
+        "round": "2026-Q4",
+        "roundLabel": "Q4 2026",
+        "date": "2026-10-19",
+        "scores": {
+          "capability": 5,
+          "ux": 3,
+          "cost": null,
+          "outlook": 5
+        },
+        "raters": 1,
+        "grade": "BBB",
+        "note": ""
+      },
+      "history": [
+        {
+          "round": "2026-Q4",
+          "roundLabel": "Q4 2026",
+          "date": "2026-10-19",
+          "scores": {
+            "capability": 5,
+            "ux": 3,
+            "cost": null,
+            "outlook": 5
+          },
+          "raters": 1,
+          "grade": "BBB",
+          "note": ""
+        }
+      ]
+    },
+    {
+      "artifact": {
+        "id": "task-flows",
+        "name": "Task flows",
+        "workload": "developer-platform",
+        "status": "preview",
+        "naFactors": [
+          "cost"
+        ]
+      },
+      "current": {
+        "round": "2026-Q4",
+        "roundLabel": "Q4 2026",
+        "date": "2026-10-19",
+        "scores": {
+          "capability": 1.5,
+          "ux": 3,
+          "cost": null,
+          "outlook": 2.5
+        },
+        "raters": 2,
+        "grade": "B-",
+        "note": "Task flows give a workspace a clear visual map of a solution, with templates, a blank canvas, and item filtering by task that make it easy to navigate. As a preview feature it is mostly organizational: connectors do not create real data connections, so it documents a design rather than builds one."
+      },
+      "history": [
+        {
+          "round": "2026-Q4",
+          "roundLabel": "Q4 2026",
+          "date": "2026-10-19",
+          "scores": {
+            "capability": 1.5,
+            "ux": 3,
+            "cost": null,
+            "outlook": 2.5
+          },
+          "raters": 2,
+          "grade": "B-",
+          "note": "Task flows give a workspace a clear visual map of a solution, with templates, a blank canvas, and item filtering by task that make it easy to navigate. As a preview feature it is mostly organizational: connectors do not create real data connections, so it documents a design rather than builds one."
+        }
+      ]
+    },
+    {
+      "artifact": {
+        "id": "workspace-monitoring",
+        "name": "Workspace monitoring",
+        "workload": "developer-platform",
+        "status": "preview",
+        "naFactors": []
+      },
+      "current": {
+        "round": "2026-Q4",
+        "roundLabel": "Q4 2026",
+        "date": "2026-10-19",
+        "scores": {
+          "capability": 5,
+          "ux": 4,
+          "cost": 3,
+          "outlook": 5
+        },
+        "raters": 1,
+        "grade": "BBB",
+        "note": ""
+      },
+      "history": [
+        {
+          "round": "2026-Q4",
+          "roundLabel": "Q4 2026",
+          "date": "2026-10-19",
+          "scores": {
+            "capability": 5,
+            "ux": 4,
+            "cost": 3,
+            "outlook": 5
+          },
+          "raters": 1,
+          "grade": "BBB",
+          "note": ""
+        }
+      ]
+    },
+    {
+      "artifact": {
+        "id": "monitoring-hub",
+        "name": "Monitoring hub",
+        "workload": "developer-platform",
+        "status": "ga",
+        "naFactors": [
+          "cost"
+        ]
+      },
+      "current": {
+        "round": "2026-Q4",
+        "roundLabel": "Q4 2026",
+        "date": "2026-10-19",
+        "scores": {
+          "capability": 5,
+          "ux": 5,
+          "cost": null,
+          "outlook": 5
+        },
+        "raters": 2,
+        "grade": "A-",
+        "note": "A single, permission-aware view of job status, duration, and errors across pipelines, notebooks, dataflows, copy jobs, and model refreshes makes it the natural first stop when something fails. Capability is only middling: the default window of 100 recent activities over 30 days limits deeper analysis and cross-workspace alerting."
+      },
+      "history": [
+        {
+          "round": "2026-Q4",
+          "roundLabel": "Q4 2026",
+          "date": "2026-10-19",
+          "scores": {
+            "capability": 5,
+            "ux": 5,
+            "cost": null,
+            "outlook": 5
+          },
+          "raters": 2,
+          "grade": "A-",
+          "note": "A single, permission-aware view of job status, duration, and errors across pipelines, notebooks, dataflows, copy jobs, and model refreshes makes it the natural first stop when something fails. Capability is only middling: the default window of 100 recent activities over 30 days limits deeper analysis and cross-workspace alerting."
+        }
+      ]
+    },
+    {
+      "artifact": {
+        "id": "capacity-metrics-app",
+        "name": "Capacity Metrics app",
+        "workload": "developer-platform",
+        "status": "ga",
+        "naFactors": [
+          "cost"
+        ]
+      },
+      "current": {
+        "round": "2026-Q4",
+        "roundLabel": "Q4 2026",
+        "date": "2026-10-19",
+        "scores": {
+          "capability": 6,
+          "ux": 4.5,
+          "cost": null,
+          "outlook": 6
+        },
+        "raters": 2,
+        "grade": "A+",
+        "note": "The go-to tool for seeing who is spending capacity, with 14 days of compute by item and operation, 30 days of storage, and 30-second timepoint drilldowns for diagnosing throttling. Strong momentum, though the retention windows are short and it takes a capacity admin install and some skill to read."
+      },
+      "history": [
+        {
+          "round": "2026-Q4",
+          "roundLabel": "Q4 2026",
+          "date": "2026-10-19",
+          "scores": {
+            "capability": 6,
+            "ux": 4.5,
+            "cost": null,
+            "outlook": 6
+          },
+          "raters": 2,
+          "grade": "A+",
+          "note": "The go-to tool for seeing who is spending capacity, with 14 days of compute by item and operation, 30 days of storage, and 30-second timepoint drilldowns for diagnosing throttling. Strong momentum, though the retention windows are short and it takes a capacity admin install and some skill to read."
+        }
+      ]
+    },
+    {
+      "artifact": {
+        "id": "extensibility-toolkit",
+        "name": "Fabric extensibility toolkit",
+        "workload": "developer-platform",
+        "status": "preview",
+        "naFactors": []
+      },
+      "current": {
+        "round": "2026-Q4",
+        "roundLabel": "Q4 2026",
+        "date": "2026-10-19",
+        "scores": {
+          "capability": 7,
+          "ux": 3,
+          "cost": 7,
+          "outlook": 5
+        },
+        "raters": 1,
+        "grade": "A+",
+        "note": ""
+      },
+      "history": [
+        {
+          "round": "2026-Q4",
+          "roundLabel": "Q4 2026",
+          "date": "2026-10-19",
+          "scores": {
+            "capability": 7,
+            "ux": 3,
+            "cost": 7,
+            "outlook": 5
+          },
+          "raters": 1,
+          "grade": "A+",
+          "note": ""
+        }
+      ]
+    },
+    {
+      "artifact": {
+        "id": "domains",
+        "name": "Domains",
+        "workload": "governance",
+        "status": "ga",
+        "naFactors": [
+          "cost"
+        ]
+      },
+      "current": {
+        "round": "2026-Q4",
+        "roundLabel": "Q4 2026",
+        "date": "2026-10-19",
+        "scores": {
+          "capability": 6,
+          "ux": 3.5,
+          "cost": null,
+          "outlook": 6
+        },
+        "raters": 2,
+        "grade": "A",
+        "note": "Domains cover what governance teams need: grouping workspaces by business area, filtering in the OneLake catalog, and delegating settings like certification to domain admins. Investment looks steady. Day-to-day use is the weak spot, since setup and administration are not intuitive and are hard to troubleshoot."
+      },
+      "history": [
+        {
+          "round": "2026-Q4",
+          "roundLabel": "Q4 2026",
+          "date": "2026-10-19",
+          "scores": {
+            "capability": 6,
+            "ux": 3.5,
+            "cost": null,
+            "outlook": 6
+          },
+          "raters": 2,
+          "grade": "A",
+          "note": "Domains cover what governance teams need: grouping workspaces by business area, filtering in the OneLake catalog, and delegating settings like certification to domain admins. Investment looks steady. Day-to-day use is the weak spot, since setup and administration are not intuitive and are hard to troubleshoot."
+        }
+      ]
+    },
+    {
+      "artifact": {
+        "id": "endorsement",
+        "name": "Endorsement",
+        "workload": "governance",
+        "status": "ga",
+        "naFactors": [
+          "cost"
+        ]
+      },
+      "current": {
+        "round": "2026-Q4",
+        "roundLabel": "Q4 2026",
+        "date": "2026-10-19",
+        "scores": {
+          "capability": 5.5,
+          "ux": 5,
+          "cost": null,
+          "outlook": 5.5
+        },
+        "raters": 2,
+        "grade": "A",
+        "note": "Endorsement gives teams a simple, visible way to separate trusted items from the rest. Admin-designated certifiers give the label real weight, and endorsed items can rank higher in search. It covers only part of the job, though: Power BI dashboards cannot be certified, and the experience is basic."
+      },
+      "history": [
+        {
+          "round": "2026-Q4",
+          "roundLabel": "Q4 2026",
+          "date": "2026-10-19",
+          "scores": {
+            "capability": 5.5,
+            "ux": 5,
+            "cost": null,
+            "outlook": 5.5
+          },
+          "raters": 2,
+          "grade": "A",
+          "note": "Endorsement gives teams a simple, visible way to separate trusted items from the rest. Admin-designated certifiers give the label real weight, and endorsed items can rank higher in search. It covers only part of the job, though: Power BI dashboards cannot be certified, and the experience is basic."
+        }
+      ]
+    },
+    {
+      "artifact": {
+        "id": "lineage",
+        "name": "Lineage",
+        "workload": "governance",
+        "status": "ga",
+        "naFactors": [
+          "cost"
+        ]
+      },
+      "current": {
+        "round": "2026-Q4",
+        "roundLabel": "Q4 2026",
+        "date": "2026-10-19",
+        "scores": {
+          "capability": 2.5,
+          "ux": 4.5,
+          "cost": null,
+          "outlook": 5
+        },
+        "raters": 2,
+        "grade": "BB+",
+        "note": "Lineage is automatic in every workspace and easy to read, tracing data from external sources through to semantic models and reports. Impact analysis shows which downstream items and workspaces a change would touch. Capability is still limited to the workspace view, and Microsoft is clearly investing in it."
+      },
+      "history": [
+        {
+          "round": "2026-Q4",
+          "roundLabel": "Q4 2026",
+          "date": "2026-10-19",
+          "scores": {
+            "capability": 2.5,
+            "ux": 4.5,
+            "cost": null,
+            "outlook": 5
+          },
+          "raters": 2,
+          "grade": "BB+",
+          "note": "Lineage is automatic in every workspace and easy to read, tracing data from external sources through to semantic models and reports. Impact analysis shows which downstream items and workspaces a change would touch. Capability is still limited to the workspace view, and Microsoft is clearly investing in it."
+        }
+      ]
+    },
+    {
+      "artifact": {
+        "id": "private-links",
+        "name": "Private links / managed VNets",
+        "workload": "governance",
+        "status": "ga",
+        "naFactors": [
+          "cost"
+        ]
+      },
+      "current": {
+        "round": "2026-Q4",
+        "roundLabel": "Q4 2026",
+        "date": "2026-10-19",
+        "scores": {
+          "capability": 3,
+          "ux": 2,
+          "cost": null,
+          "outlook": 3
+        },
+        "raters": 1,
+        "grade": "B+",
+        "note": ""
+      },
+      "history": [
+        {
+          "round": "2026-Q4",
+          "roundLabel": "Q4 2026",
+          "date": "2026-10-19",
+          "scores": {
+            "capability": 3,
+            "ux": 2,
+            "cost": null,
+            "outlook": 3
+          },
+          "raters": 1,
+          "grade": "B+",
+          "note": ""
+        }
+      ]
+    },
+    {
+      "artifact": {
+        "id": "workspace-roles",
+        "name": "Workspace roles / item permissions",
+        "workload": "governance",
+        "status": "ga",
+        "naFactors": [
+          "cost"
+        ]
+      },
+      "current": {
+        "round": "2026-Q4",
+        "roundLabel": "Q4 2026",
+        "date": "2026-10-19",
+        "scores": {
+          "capability": 3,
+          "ux": 4,
+          "cost": null,
+          "outlook": 4
+        },
+        "raters": 1,
+        "grade": "BB",
+        "note": ""
+      },
+      "history": [
+        {
+          "round": "2026-Q4",
+          "roundLabel": "Q4 2026",
+          "date": "2026-10-19",
+          "scores": {
+            "capability": 3,
+            "ux": 4,
+            "cost": null,
+            "outlook": 4
+          },
+          "raters": 1,
+          "grade": "BB",
+          "note": ""
+        }
+      ]
+    }
+  ]
 }
