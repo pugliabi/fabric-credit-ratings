@@ -26,7 +26,7 @@ const round: Round = { id: '2026-Q4', label: 'Q4 2026', status: 'open', publishe
 const loaded = { notebook: [5, 5, 5, 5] } as const;
 
 function card(scores: MyScores['scores'], updatedAt = '2026-10-15T23:00:00.000Z', open = round): MyScores {
-  return { round: open, scores, updatedAt, previous: null };
+  return { round: open, scores, updatedAt, submittedAt: null, previous: null };
 }
 
 function reply(status: number, body: unknown): Response {

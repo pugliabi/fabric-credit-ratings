@@ -13,6 +13,7 @@ const card: MyScores = {
   round: { id: '2026-Q4', label: 'Q4 2026', status: 'open', publishedOn: null },
   scores: { notebook: [5, 5, 5, 5] },
   updatedAt: '2026-10-15T23:00:00.000Z',
+  submittedAt: null,
   previous: null,
 };
 const KEY = 'fcr-card:7:2026-Q4';

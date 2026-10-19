@@ -85,6 +85,7 @@ async function clearTestRows(): Promise<void> {
   if (published?.n) {
     throw new Error('An itest- card is in a published round. Remove it by hand, then stamp site_state.');
   }
+  await db.query(`DELETE FROM submissions WHERE user_id IN (${testUsers})`, { pattern });
   await db.query(`DELETE FROM scores WHERE user_id IN (${testUsers})`, { pattern });
   await db.query(`DELETE FROM notes WHERE updated_by IN (${testUsers})`, { pattern });
   await db.query(`DELETE FROM sessions WHERE user_id IN (${testUsers})`, { pattern });
@@ -109,6 +110,8 @@ describe.skipIf(!BASE)('API against the dev database', () => {
   let raterId = 0;
   let roundId = '';
   let artifactId = '';
+  // The save time of the rater's card, which submitting must name.
+  let savedAt = '';
   // The throwaway item that is created for the not-applicable test; empty until it exists.
   let naArtifactId = '';
   let onDevDatabase = false;
@@ -251,6 +254,7 @@ describe.skipIf(!BASE)('API against the dev database', () => {
     });
     expect(saved.status).toBe(200);
     expect(saved.body.scores).toEqual({ [artifactId]: [5, 6, 7, 3] });
+    savedAt = saved.body.updatedAt;
     const stale = await rater.send('PUT', '/api/rounds/open/my-scores', { round: '1999-Q1', scores: {} });
     expect(stale.status).toBe(409);
   });
@@ -265,6 +269,24 @@ describe.skipIf(!BASE)('API against the dev database', () => {
       submitted: false,
       scores: [5, 6, 7, 3],
     });
+  });
+
+  it('submits a card, refuses saving over it, and withdraws it', async () => {
+    const submitted = await rater.send('POST', '/api/rounds/open/my-scores/submit', {
+      round: roundId,
+      updatedAt: savedAt,
+    });
+    expect(submitted.status).toBe(200);
+    expect(typeof submitted.body.submittedAt).toBe('string');
+    const blocked = await rater.send('PUT', '/api/rounds/open/my-scores', { round: roundId, scores: {} });
+    expect(blocked.status).toBe(409);
+    const review = await admin.send('GET', `/api/admin/rounds/${roundId}/review`);
+    expect(review.body.raters).toContainEqual(
+      expect.objectContaining({ userId: raterId, submittedAt: expect.any(String) }),
+    );
+    const withdrawn = await rater.send('POST', '/api/rounds/open/my-scores/withdraw', { round: roundId });
+    expect(withdrawn.status).toBe(200);
+    expect(withdrawn.body.submittedAt).toBeNull();
   });
 
   it('skips factors an item marks not applicable', async () => {

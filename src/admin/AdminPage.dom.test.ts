@@ -51,6 +51,7 @@ const card: MyScores = {
   round: q4,
   scores: { notebook: [5, 5, 5, 5] },
   updatedAt: '2026-10-15T23:00:00Z',
+  submittedAt: null,
   previous: null,
 };
 const WAKING = 'The ratings database is not responding. Try again in a minute.';
