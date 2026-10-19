@@ -94,7 +94,6 @@
           "cost": 6,
           "outlook": 6
         },
-        "raters": 2,
         "grade": "AA-",
         "note": "Notebooks cover nearly every authoring need in Fabric data engineering: PySpark, Scala, SQL, and pure Python in one place, with built-in resources, Git integration, and tight links to lakehouses and pipelines. Day-to-day use is less polished, since session start-up can be slow, errors in long Spark runs are hard to trace, and the editing experience still feels uneven next to dedicated IDEs. Capacity use is reasonable when sessions are sized and shut down with care, and the item shows steady investment with new capabilities arriving regularly."
       },
@@ -109,7 +108,6 @@
             "cost": 6,
             "outlook": 6
           },
-          "raters": 2,
           "grade": "AA-",
           "note": "Notebooks cover nearly every authoring need in Fabric data engineering: PySpark, Scala, SQL, and pure Python in one place, with built-in resources, Git integration, and tight links to lakehouses and pipelines. Day-to-day use is less polished, since session start-up can be slow, errors in long Spark runs are hard to trace, and the editing experience still feels uneven next to dedicated IDEs. Capacity use is reasonable when sessions are sized and shut down with care, and the item shows steady investment with new capabilities arriving regularly."
         }
@@ -135,7 +133,6 @@
           "cost": null,
           "outlook": 5.5
         },
-        "raters": 2,
         "grade": "BBB+",
         "note": "Environment is the right place to pin a Spark runtime, Spark compute settings, and shared libraries once and attach them to many notebooks and Spark job definitions. That keeps per-notebook install cells out of the code and avoids paying for repeated setup in every session. Publishing changes is slow, though, and failed library installs are hard to diagnose. Sessions that use custom libraries also start more slowly than the default pools."
       },
@@ -150,7 +147,6 @@
             "cost": null,
             "outlook": 5.5
           },
-          "raters": 2,
           "grade": "BBB+",
           "note": "Environment is the right place to pin a Spark runtime, Spark compute settings, and shared libraries once and attach them to many notebooks and Spark job definitions. That keeps per-notebook install cells out of the code and avoids paying for repeated setup in every session. Publishing changes is slow, though, and failed library installs are hard to diagnose. Sessions that use custom libraries also start more slowly than the default pools."
         }
@@ -176,7 +172,6 @@
           "cost": null,
           "outlook": 3
         },
-        "raters": 1,
         "grade": "BBB-",
         "note": ""
       },
@@ -191,7 +186,6 @@
             "cost": null,
             "outlook": 3
           },
-          "raters": 1,
           "grade": "BBB-",
           "note": ""
         }
@@ -217,7 +211,6 @@
           "cost": null,
           "outlook": 6
         },
-        "raters": 2,
         "grade": "AA+",
         "note": "Pipeline is the orchestration backbone of Fabric data engineering, with a full set of activities for moving data, running notebooks and Spark jobs, and chaining them together with branching, looping, and scheduling. Authoring is mostly clear and the canvas holds up well as workflows grow, though debugging a failed run in a deeply nested pipeline can still mean digging through several layers of activity output. Capacity use is reasonable for light orchestration but climbs on copy-heavy workloads, where data movement consumes more than a purpose-built alternative would. Microsoft keeps investing in it as the center of the workload, so it is a safe choice to build on."
       },
@@ -232,7 +225,6 @@
             "cost": null,
             "outlook": 6
           },
-          "raters": 2,
           "grade": "AA+",
           "note": "Pipeline is the orchestration backbone of Fabric data engineering, with a full set of activities for moving data, running notebooks and Spark jobs, and chaining them together with branching, looping, and scheduling. Authoring is mostly clear and the canvas holds up well as workflows grow, though debugging a failed run in a deeply nested pipeline can still mean digging through several layers of activity output. Capacity use is reasonable for light orchestration but climbs on copy-heavy workloads, where data movement consumes more than a purpose-built alternative would. Microsoft keeps investing in it as the center of the workload, so it is a safe choice to build on."
         }
@@ -256,7 +248,6 @@
           "cost": 2,
           "outlook": 3
         },
-        "raters": 2,
         "grade": "BBB-",
         "note": "Dataflow Gen2 is the easiest way in Fabric to get from a messy source to a clean table: the Power Query editor is visual and forgiving, previews are immediate, and a failed refresh is usually simple to trace to the step that caused it. That polish hides real limits, because the item handles only a narrow range of scenarios well and teams hit walls on large volumes"
       },
@@ -271,7 +262,6 @@
             "cost": 2,
             "outlook": 3
           },
-          "raters": 2,
           "grade": "BBB-",
           "note": "Dataflow Gen2 is the easiest way in Fabric to get from a messy source to a clean table: the Power Query editor is visual and forgiving, previews are immediate, and a failed refresh is usually simple to trace to the step that caused it. That polish hides real limits, because the item handles only a narrow range of scenarios well and teams hit walls on large volumes"
         }
@@ -295,7 +285,6 @@
           "cost": 3,
           "outlook": 5
         },
-        "raters": 2,
         "grade": "A-",
         "note": "Copy job gives Fabric a guided way to move data, with full and incremental loads and change-capture options, and no pipeline to build or maintain."
       },
@@ -310,7 +299,6 @@
             "cost": 3,
             "outlook": 5
           },
-          "raters": 2,
           "grade": "A-",
           "note": "Copy job gives Fabric a guided way to move data, with full and incremental loads and change-capture options, and no pipeline to build or maintain."
         }
@@ -334,7 +322,6 @@
           "cost": 6,
           "outlook": 5
         },
-        "raters": 1,
         "grade": "A-",
         "note": ""
       },
@@ -349,7 +336,6 @@
             "cost": 6,
             "outlook": 5
           },
-          "raters": 1,
           "grade": "A-",
           "note": ""
         }
@@ -373,7 +359,6 @@
           "cost": 6.5,
           "outlook": 7
         },
-        "raters": 2,
         "grade": "AA+",
         "note": "The Lakehouse is the natural home for data in Fabric: Delta tables and raw files sit side by side in OneLake, with a SQL analytics endpoint, shortcuts, and schema support, and Spark, SQL, and Power BI can all work on the same copy. It covers essentially every storage scenario we would ask of it, and it is cheap to run for the result you get. What holds it back is day-to-day polish, since table maintenance such as compaction and vacuuming still needs deliberate attention and troubleshooting a slow or stale SQL endpoint is less obvious than it should be. As a first review there is no earlier direction to report, but investment across the platform is clearly heavy and the Lakehouse is at the center of it."
       },
@@ -388,7 +373,6 @@
             "cost": 6.5,
             "outlook": 7
           },
-          "raters": 2,
           "grade": "AA+",
           "note": "The Lakehouse is the natural home for data in Fabric: Delta tables and raw files sit side by side in OneLake, with a SQL analytics endpoint, shortcuts, and schema support, and Spark, SQL, and Power BI can all work on the same copy. It covers essentially every storage scenario we would ask of it, and it is cheap to run for the result you get. What holds it back is day-to-day polish, since table maintenance such as compaction and vacuuming still needs deliberate attention and troubleshooting a slow or stale SQL endpoint is less obvious than it should be. As a first review there is no earlier direction to report, but investment across the platform is clearly heavy and the Lakehouse is at the center of it."
         }
@@ -412,7 +396,6 @@
           "cost": 4,
           "outlook": 5
         },
-        "raters": 2,
         "grade": "BBB",
         "note": "Fabric Warehouse is a fully transactional T-SQL engine over open Delta storage, and it handles multi-table transactions, cross-database queries, and zero-copy cloning well enough to be the natural home for governed, SQL-first analytics. Authoring, monitoring, and troubleshooting are smooth, and the roadmap shows steady investment in closing the remaining T-SQL surface gaps. Those gaps still matter, since some familiar constructs and migration paths from traditional SQL Server remain unsupported, and heavy or poorly tuned workloads can consume more capacity than comparable Lakehouse queries would. This is the first review, so there is no prior direction to report."
       },
@@ -427,7 +410,6 @@
             "cost": 4,
             "outlook": 5
           },
-          "raters": 2,
           "grade": "BBB",
           "note": "Fabric Warehouse is a fully transactional T-SQL engine over open Delta storage, and it handles multi-table transactions, cross-database queries, and zero-copy cloning well enough to be the natural home for governed, SQL-first analytics. Authoring, monitoring, and troubleshooting are smooth, and the roadmap shows steady investment in closing the remaining T-SQL surface gaps. Those gaps still matter, since some familiar constructs and migration paths from traditional SQL Server remain unsupported, and heavy or poorly tuned workloads can consume more capacity than comparable Lakehouse queries would. This is the first review, so there is no prior direction to report."
         }
@@ -451,7 +433,6 @@
           "cost": 3,
           "outlook": 6
         },
-        "raters": 2,
         "grade": "A-",
         "note": "SQL database in Fabric brings a familiar, autonomous SQL Server-engine experience into the platform, with automatic mirroring to OneLake that makes transactional data available for analytics without any pipeline work. Setup is quick and the tooling will feel natural to anyone who already knows T-SQL, though the feature set still has gaps compared with a full Azure SQL deployment. Capacity consumption is the main drawback, since the database draws on CUs even when activity is light, which makes it a pricier way to host small or intermittent workloads. Microsoft is clearly investing in it as the operational counterpart to the lakehouse and warehouse, so the trajectory looks strong."
       },
@@ -466,7 +447,6 @@
             "cost": 3,
             "outlook": 6
           },
-          "raters": 2,
           "grade": "A-",
           "note": "SQL database in Fabric brings a familiar, autonomous SQL Server-engine experience into the platform, with automatic mirroring to OneLake that makes transactional data available for analytics without any pipeline work. Setup is quick and the tooling will feel natural to anyone who already knows T-SQL, though the feature set still has gaps compared with a full Azure SQL deployment. Capacity consumption is the main drawback, since the database draws on CUs even when activity is light, which makes it a pricier way to host small or intermittent workloads. Microsoft is clearly investing in it as the operational counterpart to the lakehouse and warehouse, so the trajectory looks strong."
         }
@@ -490,7 +470,6 @@
           "cost": 4.5,
           "outlook": 5.5
         },
-        "raters": 2,
         "grade": "A-",
         "note": "The SQL analytics endpoint arrives automatically with every lakehouse, warehouse, and mirrored database, giving Power BI and T-SQL users a simple, dependable way to query Delta tables. It is read-only, so you can't write back through it. Strong momentum suggests it will keep getting better."
       },
@@ -505,7 +484,6 @@
             "cost": 4.5,
             "outlook": 5.5
           },
-          "raters": 2,
           "grade": "A-",
           "note": "The SQL analytics endpoint arrives automatically with every lakehouse, warehouse, and mirrored database, giving Power BI and T-SQL users a simple, dependable way to query Delta tables. It is read-only, so you can't write back through it. Strong momentum suggests it will keep getting better."
         }
@@ -529,7 +507,6 @@
           "cost": 4,
           "outlook": 4
         },
-        "raters": 1,
         "grade": "BBB-",
         "note": ""
       },
@@ -544,7 +521,6 @@
             "cost": 4,
             "outlook": 4
           },
-          "raters": 1,
           "grade": "BBB-",
           "note": ""
         }
@@ -570,7 +546,6 @@
           "cost": null,
           "outlook": 5
         },
-        "raters": 1,
         "grade": "BBB",
         "note": ""
       },
@@ -585,7 +560,6 @@
             "cost": null,
             "outlook": 5
           },
-          "raters": 1,
           "grade": "BBB",
           "note": ""
         }
@@ -611,7 +585,6 @@
           "cost": null,
           "outlook": 6
         },
-        "raters": 1,
         "grade": "BBB+",
         "note": ""
       },
@@ -626,7 +599,6 @@
             "cost": null,
             "outlook": 6
           },
-          "raters": 1,
           "grade": "BBB+",
           "note": ""
         }
@@ -652,7 +624,6 @@
           "cost": null,
           "outlook": 5
         },
-        "raters": 1,
         "grade": "BB",
         "note": ""
       },
@@ -667,7 +638,6 @@
             "cost": null,
             "outlook": 5
           },
-          "raters": 1,
           "grade": "BB",
           "note": ""
         }
@@ -693,7 +663,6 @@
           "cost": null,
           "outlook": 5
         },
-        "raters": 1,
         "grade": "A-",
         "note": ""
       },
@@ -708,7 +677,6 @@
             "cost": null,
             "outlook": 5
           },
-          "raters": 1,
           "grade": "A-",
           "note": ""
         }
@@ -732,7 +700,6 @@
           "cost": 2,
           "outlook": 3
         },
-        "raters": 1,
         "grade": "BB-",
         "note": ""
       },
@@ -747,7 +714,6 @@
             "cost": 2,
             "outlook": 3
           },
-          "raters": 1,
           "grade": "BB-",
           "note": ""
         }
@@ -771,7 +737,6 @@
           "cost": 6,
           "outlook": 7
         },
-        "raters": 2,
         "grade": "AA+",
         "note": "Semantic models are the governed center of Power BI: DAX measures, row-level security, calculation groups, Direct Lake, and composite models cover nearly every analytical scenario, and Git integration and XMLA endpoints let teams manage them like real engineering assets. Refresh and storage costs are reasonable for most workloads, especially when Direct Lake avoids duplicating data into the model. Day-to-day authoring and troubleshooting are less smooth, since diagnosing slow DAX, refresh failures, or fallback to DirectQuery often means leaving the main interface for external tools. Microsoft's continued investment in the model as the shared layer for reports, Copilot, and notebooks keeps its direction clearly positive."
       },
@@ -786,7 +751,6 @@
             "cost": 6,
             "outlook": 7
           },
-          "raters": 2,
           "grade": "AA+",
           "note": "Semantic models are the governed center of Power BI: DAX measures, row-level security, calculation groups, Direct Lake, and composite models cover nearly every analytical scenario, and Git integration and XMLA endpoints let teams manage them like real engineering assets. Refresh and storage costs are reasonable for most workloads, especially when Direct Lake avoids duplicating data into the model. Day-to-day authoring and troubleshooting are less smooth, since diagnosing slow DAX, refresh failures, or fallback to DirectQuery often means leaving the main interface for external tools. Microsoft's continued investment in the model as the shared layer for reports, Copilot, and notebooks keeps its direction clearly positive."
         }
@@ -812,7 +776,6 @@
           "cost": null,
           "outlook": 5.5
         },
-        "raters": 2,
         "grade": "A-",
         "note": "A polished, intuitive way to turn a semantic model into interactive pages, with cross-filtering, drill-through, and bookmarks that business users pick up quickly. Authoring in Desktop and the service is easy to follow. A few niche layout and formatting needs still call for workarounds, but momentum remains strong."
       },
@@ -827,7 +790,6 @@
             "cost": null,
             "outlook": 5.5
           },
-          "raters": 2,
           "grade": "A-",
           "note": "A polished, intuitive way to turn a semantic model into interactive pages, with cross-filtering, drill-through, and bookmarks that business users pick up quickly. Authoring in Desktop and the service is easy to follow. A few niche layout and formatting needs still call for workarounds, but momentum remains strong."
         }
@@ -853,7 +815,6 @@
           "cost": null,
           "outlook": 1.5
         },
-        "raters": 2,
         "grade": "B-",
         "note": "A quick way to pull key metrics from several semantic models onto one page, with data alerts and natural-language questions on top. It has no filters or slicers, can only be built in the Power BI service, and tile refreshes count as background queries. Little suggests it is getting investment."
       },
@@ -868,7 +829,6 @@
             "cost": null,
             "outlook": 1.5
           },
-          "raters": 2,
           "grade": "B-",
           "note": "A quick way to pull key metrics from several semantic models onto one page, with data alerts and natural-language questions on top. It has no filters or slicers, can only be built in the Power BI service, and tile refreshes count as background queries. Little suggests it is getting investment."
         }
@@ -892,7 +852,6 @@
           "cost": 4,
           "outlook": 4.5
         },
-        "raters": 2,
         "grade": "BBB-",
         "note": "Still the right tool for pixel-perfect invoices and multi-page tables that must print or export cleanly to PDF and Excel. Report Builder authoring is familiar and viewing is straightforward, but the feature set trails modern Power BI reports and rendering draws on capacity for every view and export."
       },
@@ -907,7 +866,6 @@
             "cost": 4,
             "outlook": 4.5
           },
-          "raters": 2,
           "grade": "BBB-",
           "note": "Still the right tool for pixel-perfect invoices and multi-page tables that must print or export cleanly to PDF and Excel. Report Builder authoring is familiar and viewing is straightforward, but the feature set trails modern Power BI reports and rendering draws on capacity for every view and export."
         }
@@ -933,7 +891,6 @@
           "cost": null,
           "outlook": 4
         },
-        "raters": 1,
         "grade": "BBB-",
         "note": ""
       },
@@ -948,7 +905,6 @@
             "cost": null,
             "outlook": 4
           },
-          "raters": 1,
           "grade": "BBB-",
           "note": ""
         }
@@ -974,7 +930,6 @@
           "cost": null,
           "outlook": 4
         },
-        "raters": 2,
         "grade": "BBB+",
         "note": "Org apps package reports, paginated reports, notebooks, and real-time dashboards into one shareable item for people outside the workspace, and a workspace can hold several. The experience is still rough and the item remains in preview, so treat it as promising rather than settled. This is its first review."
       },
@@ -989,7 +944,6 @@
             "cost": null,
             "outlook": 4
           },
-          "raters": 2,
           "grade": "BBB+",
           "note": "Org apps package reports, paginated reports, notebooks, and real-time dashboards into one shareable item for people outside the workspace, and a workspace can hold several. The experience is still rough and the item remains in preview, so treat it as promising rather than settled. This is its first review."
         }
@@ -1013,7 +967,6 @@
           "cost": 3.5,
           "outlook": 2
         },
-        "raters": 2,
         "grade": "BBB+",
         "note": "Dataflow Gen1 is still an approachable way to share reusable Power Query logic across several semantic models, and the authoring experience is easy to work with. But Microsoft labels it legacy and points Premium and Fabric users to Dataflow Gen2. Refreshes also consume more capacity than they should."
       },
@@ -1028,7 +981,6 @@
             "cost": 3.5,
             "outlook": 2
           },
-          "raters": 2,
           "grade": "BBB+",
           "note": "Dataflow Gen1 is still an approachable way to share reusable Power Query logic across several semantic models, and the authoring experience is easy to work with. But Microsoft labels it legacy and points Premium and Fabric users to Dataflow Gen2. Refreshes also consume more capacity than they should."
         }
@@ -1052,7 +1004,6 @@
           "cost": 5,
           "outlook": 1
         },
-        "raters": 1,
         "grade": "D",
         "note": ""
       },
@@ -1067,7 +1018,6 @@
             "cost": 5,
             "outlook": 1
           },
-          "raters": 1,
           "grade": "D",
           "note": ""
         }
@@ -1093,7 +1043,6 @@
           "cost": null,
           "outlook": 3.5
         },
-        "raters": 2,
         "grade": "BBB",
         "note": "A handy way to poke at a semantic model with a matrix and visuals, then save the result without building a full report. It is still in preview and needs a Fabric or Premium workspace to save, and the experience and long-term direction are not yet settled."
       },
@@ -1108,7 +1057,6 @@
             "cost": null,
             "outlook": 3.5
           },
-          "raters": 2,
           "grade": "BBB",
           "note": "A handy way to poke at a semantic model with a matrix and visuals, then save the result without building a full report. It is still in preview and needs a Fabric or Premium workspace to save, and the experience and long-term direction are not yet settled."
         }
@@ -1132,7 +1080,6 @@
           "cost": 2,
           "outlook": 4
         },
-        "raters": 2,
         "grade": "B-",
         "note": "Ontology gives Fabric a shared business vocabulary, with entity types, relationships, and properties mapped onto OneLake data, so that agents and downstream tools can reason over the same definitions. The idea is sound, but the preview still has gaps in modeling and binding that stop it from covering many everyday scenarios. Setup is also hard to follow, and errors give little help in finding the cause."
       },
@@ -1147,7 +1094,6 @@
             "cost": 2,
             "outlook": 4
           },
-          "raters": 2,
           "grade": "B-",
           "note": "Ontology gives Fabric a shared business vocabulary, with entity types, relationships, and properties mapped onto OneLake data, so that agents and downstream tools can reason over the same definitions. The idea is sound, but the preview still has gaps in modeling and binding that stop it from covering many everyday scenarios. Setup is also hard to follow, and errors give little help in finding the cause."
         }
@@ -1173,7 +1119,6 @@
           "cost": null,
           "outlook": 4
         },
-        "raters": 1,
         "grade": "BB-",
         "note": ""
       },
@@ -1188,7 +1133,6 @@
             "cost": null,
             "outlook": 4
           },
-          "raters": 1,
           "grade": "BB-",
           "note": ""
         }
@@ -1212,7 +1156,6 @@
           "cost": 2,
           "outlook": 4.5
         },
-        "raters": 2,
         "grade": "BB-",
         "note": "A conversational layer that turns plain-English questions into read-only SQL, DAX, or KQL across up to five sources, including lakehouses, semantic models, and ontologies. Still in preview, with capability gaps for real scenarios, and token-metered AI query charges make heavier use costly."
       },
@@ -1227,7 +1170,6 @@
             "cost": 2,
             "outlook": 4.5
           },
-          "raters": 2,
           "grade": "BB-",
           "note": "A conversational layer that turns plain-English questions into read-only SQL, DAX, or KQL across up to five sources, including lakehouses, semantic models, and ontologies. Still in preview, with capability gaps for real scenarios, and token-metered AI query charges make heavier use costly."
         }
@@ -1251,7 +1193,6 @@
           "cost": 3,
           "outlook": 2
         },
-        "raters": 1,
         "grade": "B",
         "note": ""
       },
@@ -1266,7 +1207,6 @@
             "cost": 3,
             "outlook": 2
           },
-          "raters": 1,
           "grade": "B",
           "note": ""
         }
@@ -1292,7 +1232,6 @@
           "cost": null,
           "outlook": 6.5
         },
-        "raters": 2,
         "grade": "AA-",
         "note": "OneLake catalog gives you one place to discover, govern, and understand data across every workspace, with endorsement, lineage, and security insight sitting right beside the items they describe. It is quick to learn and easy to trust, and it covers the full job of finding and managing data without needing add-on tooling. The one drag is capacity: browsing and governance activity at scale uses more compute than its lightweight feel would suggest. Since this is the first review, there is no earlier direction to compare against, but Microsoft's steady investment suggests it will keep deepening."
       },
@@ -1307,7 +1246,6 @@
             "cost": null,
             "outlook": 6.5
           },
-          "raters": 2,
           "grade": "AA-",
           "note": "OneLake catalog gives you one place to discover, govern, and understand data across every workspace, with endorsement, lineage, and security insight sitting right beside the items they describe. It is quick to learn and easy to trust, and it covers the full job of finding and managing data without needing add-on tooling. The one drag is capacity: browsing and governance activity at scale uses more compute than its lightweight feel would suggest. Since this is the first review, there is no earlier direction to compare against, but Microsoft's steady investment suggests it will keep deepening."
         }
@@ -1331,7 +1269,6 @@
           "cost": 5.5,
           "outlook": 5.5
         },
-        "raters": 2,
         "grade": "AA-",
         "note": "Shortcuts let you reference data in place across OneLake, ADLS, S3, and other sources without copying it, and they cover nearly every scenario that matters, including table and file sources, cross-workspace sharing, and transparent use from Spark, SQL, and Power BI. Because nothing is duplicated, there is little pipeline or storage overhead, and capacity cost stays low for most reads. Where it falls short is day-to-day handling: creating shortcuts takes more clicks than it should, and when one breaks from an expired credential, a moved target, or a permissions mismatch, the error messages rarely say which it was. Momentum is strong, with steady new source types and wider support across workloads, though this is a first review with no earlier direction to compare against."
       },
@@ -1346,7 +1283,6 @@
             "cost": 5.5,
             "outlook": 5.5
           },
-          "raters": 2,
           "grade": "AA-",
           "note": "Shortcuts let you reference data in place across OneLake, ADLS, S3, and other sources without copying it, and they cover nearly every scenario that matters, including table and file sources, cross-workspace sharing, and transparent use from Spark, SQL, and Power BI. Because nothing is duplicated, there is little pipeline or storage overhead, and capacity cost stays low for most reads. Where it falls short is day-to-day handling: creating shortcuts takes more clicks than it should, and when one breaks from an expired credential, a moved target, or a permissions mismatch, the error messages rarely say which it was. Momentum is strong, with steady new source types and wider support across workloads, though this is a first review with no earlier direction to compare against."
         }
@@ -1372,7 +1308,6 @@
           "cost": null,
           "outlook": 5
         },
-        "raters": 1,
         "grade": "BB",
         "note": ""
       },
@@ -1387,7 +1322,6 @@
             "cost": null,
             "outlook": 5
           },
-          "raters": 1,
           "grade": "BB",
           "note": ""
         }
@@ -1411,7 +1345,6 @@
           "cost": 1.5,
           "outlook": 4.5
         },
-        "raters": 2,
         "grade": "B-",
         "note": "Copilot in Fabric reaches across Power BI, Data Factory, notebooks, the warehouse, and Real-Time Intelligence, turning plain-language requests into code, queries, and reports. Output is uneven and the experience often needs rework, while token metering makes heavy use costly in capacity. Investment is clearly strong."
       },
@@ -1426,7 +1359,6 @@
             "cost": 1.5,
             "outlook": 4.5
           },
-          "raters": 2,
           "grade": "B-",
           "note": "Copilot in Fabric reaches across Power BI, Data Factory, notebooks, the warehouse, and Real-Time Intelligence, turning plain-language requests into code, queries, and reports. Output is uneven and the experience often needs rework, while token metering makes heavy use costly in capacity. Investment is clearly strong."
         }
@@ -1452,7 +1384,6 @@
           "cost": null,
           "outlook": 6
         },
-        "raters": 2,
         "grade": "A+",
         "note": "Semantic link does its job completely, bringing Power BI semantic model data and relationships into notebooks as FabricDataFrames for analysis, validation, and machine learning. Day-to-day use is less smooth, since it only runs inside notebooks and expects Python or Spark fluency. Momentum looks strong."
       },
@@ -1467,7 +1398,6 @@
             "cost": null,
             "outlook": 6
           },
-          "raters": 2,
           "grade": "A+",
           "note": "Semantic link does its job completely, bringing Power BI semantic model data and relationships into notebooks as FabricDataFrames for analysis, validation, and machine learning. Day-to-day use is less smooth, since it only runs inside notebooks and expects Python or Spark fluency. Momentum looks strong."
         }
@@ -1493,7 +1423,6 @@
           "cost": null,
           "outlook": 6.5
         },
-        "raters": 2,
         "grade": "A+",
         "note": "Solid, broadly capable source control for Fabric, with Azure DevOps and GitHub support and every item serialized as definition files that diff and sync cleanly. Day-to-day use is clunkier: only admins can connect, and one workspace maps to a single branch and folder. Investment is clearly strong."
       },
@@ -1508,7 +1437,6 @@
             "cost": null,
             "outlook": 6.5
           },
-          "raters": 2,
           "grade": "A+",
           "note": "Solid, broadly capable source control for Fabric, with Azure DevOps and GitHub support and every item serialized as definition files that diff and sync cleanly. Day-to-day use is clunkier: only admins can connect, and one workspace maps to a single branch and folder. Investment is clearly strong."
         }
@@ -1534,7 +1462,6 @@
           "cost": null,
           "outlook": 5
         },
-        "raters": 2,
         "grade": "BBB+",
         "note": "Deployment pipelines give Fabric a dependable dev, test, and production promotion path, with stage pairing that overwrites rather than duplicates and deployment rules that handle per-stage data sources. The experience is less polished, and troubleshooting a failed deployment takes more effort than it should. Momentum looks steady."
       },
@@ -1549,7 +1476,6 @@
             "cost": null,
             "outlook": 5
           },
-          "raters": 2,
           "grade": "BBB+",
           "note": "Deployment pipelines give Fabric a dependable dev, test, and production promotion path, with stage pairing that overwrites rather than duplicates and deployment rules that handle per-stage data sources. The experience is less polished, and troubleshooting a failed deployment takes more effort than it should. Momentum looks steady."
         }
@@ -1575,7 +1501,6 @@
           "cost": null,
           "outlook": 5
         },
-        "raters": 1,
         "grade": "BBB",
         "note": ""
       },
@@ -1590,7 +1515,6 @@
             "cost": null,
             "outlook": 5
           },
-          "raters": 1,
           "grade": "BBB",
           "note": ""
         }
@@ -1616,7 +1540,6 @@
           "cost": null,
           "outlook": 5
         },
-        "raters": 1,
         "grade": "BBB-",
         "note": ""
       },
@@ -1631,7 +1554,6 @@
             "cost": null,
             "outlook": 5
           },
-          "raters": 1,
           "grade": "BBB-",
           "note": ""
         }
@@ -1657,7 +1579,6 @@
           "cost": null,
           "outlook": 5
         },
-        "raters": 2,
         "grade": "A",
         "note": "A capable terminal tool that treats workspaces and items like a file system, runs jobs, and scripts CI/CD as a service principal, all on the public REST APIs and now open source. Day-to-day use is the weak point, and being new, it has no track record yet, though investment looks steady."
       },
@@ -1672,7 +1593,6 @@
             "cost": null,
             "outlook": 5
           },
-          "raters": 2,
           "grade": "A",
           "note": "A capable terminal tool that treats workspaces and items like a file system, runs jobs, and scripts CI/CD as a service principal, all on the public REST APIs and now open source. Day-to-day use is the weak point, and being new, it has no track record yet, though investment looks steady."
         }
@@ -1698,7 +1618,6 @@
           "cost": null,
           "outlook": 5.5
         },
-        "raters": 2,
         "grade": "BBB",
         "note": "A smooth, familiar way to sign in, browse workspaces, edit items as files, and work with Git-enabled workspaces without leaving VS Code. Real data engineering work depends on companion extensions, so the core extension covers only part of the job. Investment looks healthy, but this is a first review."
       },
@@ -1713,7 +1632,6 @@
             "cost": null,
             "outlook": 5.5
           },
-          "raters": 2,
           "grade": "BBB",
           "note": "A smooth, familiar way to sign in, browse workspaces, edit items as files, and work with Git-enabled workspaces without leaving VS Code. Real data engineering work depends on companion extensions, so the core extension covers only part of the job. Investment looks healthy, but this is a first review."
         }
@@ -1737,7 +1655,6 @@
           "cost": 7,
           "outlook": 5
         },
-        "raters": 1,
         "grade": "A+",
         "note": ""
       },
@@ -1752,7 +1669,6 @@
             "cost": 7,
             "outlook": 5
           },
-          "raters": 1,
           "grade": "A+",
           "note": ""
         }
@@ -1776,7 +1692,6 @@
           "cost": 5.5,
           "outlook": 6
         },
-        "raters": 2,
         "grade": "A+",
         "note": "The hosted endpoint is simple to adopt: add a URL, sign in with Entra ID, and the agent works within the caller's Fabric role, with workspace and permission management covered. It is still in preview, and the experience is less polished than the capability. Cost follows whatever operations the agent triggers."
       },
@@ -1791,7 +1706,6 @@
             "cost": 5.5,
             "outlook": 6
           },
-          "raters": 2,
           "grade": "A+",
           "note": "The hosted endpoint is simple to adopt: add a URL, sign in with Entra ID, and the agent works within the caller's Fabric role, with workspace and permission management covered. It is still in preview, and the experience is less polished than the capability. Cost follows whatever operations the agent triggers."
         }
@@ -1815,7 +1729,6 @@
           "cost": 5.5,
           "outlook": 5.5
         },
-        "raters": 2,
         "grade": "A+",
         "note": "Gives AI agents broad, hands-on control of semantic modeling, from tables, measures, and relationships to bulk edits, TMDL and Power BI Project files, and DAX validation, in both Desktop and Fabric models."
       },
@@ -1830,7 +1743,6 @@
             "cost": 5.5,
             "outlook": 5.5
           },
-          "raters": 2,
           "grade": "A+",
           "note": "Gives AI agents broad, hands-on control of semantic modeling, from tables, measures, and relationships to bulk edits, TMDL and Power BI Project files, and DAX validation, in both Desktop and Fabric models."
         }
@@ -1854,7 +1766,6 @@
           "cost": 6,
           "outlook": 5
         },
-        "raters": 1,
         "grade": "A",
         "note": ""
       },
@@ -1869,7 +1780,6 @@
             "cost": 6,
             "outlook": 5
           },
-          "raters": 1,
           "grade": "A",
           "note": ""
         }
@@ -1893,7 +1803,6 @@
           "cost": 4,
           "outlook": 5
         },
-        "raters": 1,
         "grade": "BBB",
         "note": ""
       },
@@ -1908,7 +1817,6 @@
             "cost": 4,
             "outlook": 5
           },
-          "raters": 1,
           "grade": "BBB",
           "note": ""
         }
@@ -1932,7 +1840,6 @@
           "cost": 5,
           "outlook": 6
         },
-        "raters": 2,
         "grade": "BBB",
         "note": "User data functions cover the job well: serverless Python that pipelines, notebooks, Activator, Power BI, and REST clients can all call, editable in the portal or VS Code. The experience is the weak spot, and the 15-minute minimum on portal test sessions makes iterating costlier than it should be. Momentum looks strong."
       },
@@ -1947,7 +1854,6 @@
             "cost": 5,
             "outlook": 6
           },
-          "raters": 2,
           "grade": "BBB",
           "note": "User data functions cover the job well: serverless Python that pipelines, notebooks, Activator, Power BI, and REST clients can all call, editable in the portal or VS Code. The experience is the weak spot, and the 15-minute minimum on portal test sessions makes iterating costlier than it should be. Momentum looks strong."
         }
@@ -1973,7 +1879,6 @@
           "cost": null,
           "outlook": 5
         },
-        "raters": 1,
         "grade": "BBB",
         "note": ""
       },
@@ -1988,7 +1893,6 @@
             "cost": null,
             "outlook": 5
           },
-          "raters": 1,
           "grade": "BBB",
           "note": ""
         }
@@ -2014,7 +1918,6 @@
           "cost": null,
           "outlook": 2.5
         },
-        "raters": 2,
         "grade": "B-",
         "note": "Task flows give a workspace a clear visual map of a solution, with templates, a blank canvas, and item filtering by task that make it easy to navigate. As a preview feature it is mostly organizational: connectors do not create real data connections, so it documents a design rather than builds one."
       },
@@ -2029,7 +1932,6 @@
             "cost": null,
             "outlook": 2.5
           },
-          "raters": 2,
           "grade": "B-",
           "note": "Task flows give a workspace a clear visual map of a solution, with templates, a blank canvas, and item filtering by task that make it easy to navigate. As a preview feature it is mostly organizational: connectors do not create real data connections, so it documents a design rather than builds one."
         }
@@ -2053,7 +1955,6 @@
           "cost": 3,
           "outlook": 5
         },
-        "raters": 1,
         "grade": "BBB",
         "note": ""
       },
@@ -2068,7 +1969,6 @@
             "cost": 3,
             "outlook": 5
           },
-          "raters": 1,
           "grade": "BBB",
           "note": ""
         }
@@ -2094,7 +1994,6 @@
           "cost": null,
           "outlook": 5
         },
-        "raters": 2,
         "grade": "A-",
         "note": "A single, permission-aware view of job status, duration, and errors across pipelines, notebooks, dataflows, copy jobs, and model refreshes makes it the natural first stop when something fails. Capability is only middling: the default window of 100 recent activities over 30 days limits deeper analysis and cross-workspace alerting."
       },
@@ -2109,7 +2008,6 @@
             "cost": null,
             "outlook": 5
           },
-          "raters": 2,
           "grade": "A-",
           "note": "A single, permission-aware view of job status, duration, and errors across pipelines, notebooks, dataflows, copy jobs, and model refreshes makes it the natural first stop when something fails. Capability is only middling: the default window of 100 recent activities over 30 days limits deeper analysis and cross-workspace alerting."
         }
@@ -2135,7 +2033,6 @@
           "cost": null,
           "outlook": 6
         },
-        "raters": 2,
         "grade": "A+",
         "note": "The go-to tool for seeing who is spending capacity, with 14 days of compute by item and operation, 30 days of storage, and 30-second timepoint drilldowns for diagnosing throttling. Strong momentum, though the retention windows are short and it takes a capacity admin install and some skill to read."
       },
@@ -2150,7 +2047,6 @@
             "cost": null,
             "outlook": 6
           },
-          "raters": 2,
           "grade": "A+",
           "note": "The go-to tool for seeing who is spending capacity, with 14 days of compute by item and operation, 30 days of storage, and 30-second timepoint drilldowns for diagnosing throttling. Strong momentum, though the retention windows are short and it takes a capacity admin install and some skill to read."
         }
@@ -2174,7 +2070,6 @@
           "cost": 7,
           "outlook": 5
         },
-        "raters": 1,
         "grade": "A+",
         "note": ""
       },
@@ -2189,7 +2084,6 @@
             "cost": 7,
             "outlook": 5
           },
-          "raters": 1,
           "grade": "A+",
           "note": ""
         }
@@ -2215,7 +2109,6 @@
           "cost": null,
           "outlook": 6
         },
-        "raters": 2,
         "grade": "A",
         "note": "Domains cover what governance teams need: grouping workspaces by business area, filtering in the OneLake catalog, and delegating settings like certification to domain admins. Investment looks steady. Day-to-day use is the weak spot, since setup and administration are not intuitive and are hard to troubleshoot."
       },
@@ -2230,7 +2123,6 @@
             "cost": null,
             "outlook": 6
           },
-          "raters": 2,
           "grade": "A",
           "note": "Domains cover what governance teams need: grouping workspaces by business area, filtering in the OneLake catalog, and delegating settings like certification to domain admins. Investment looks steady. Day-to-day use is the weak spot, since setup and administration are not intuitive and are hard to troubleshoot."
         }
@@ -2256,7 +2148,6 @@
           "cost": null,
           "outlook": 5.5
         },
-        "raters": 2,
         "grade": "A",
         "note": "Endorsement gives teams a simple, visible way to separate trusted items from the rest. Admin-designated certifiers give the label real weight, and endorsed items can rank higher in search. It covers only part of the job, though: Power BI dashboards cannot be certified, and the experience is basic."
       },
@@ -2271,7 +2162,6 @@
             "cost": null,
             "outlook": 5.5
           },
-          "raters": 2,
           "grade": "A",
           "note": "Endorsement gives teams a simple, visible way to separate trusted items from the rest. Admin-designated certifiers give the label real weight, and endorsed items can rank higher in search. It covers only part of the job, though: Power BI dashboards cannot be certified, and the experience is basic."
         }
@@ -2297,7 +2187,6 @@
           "cost": null,
           "outlook": 5
         },
-        "raters": 2,
         "grade": "BB+",
         "note": "Lineage is automatic in every workspace and easy to read, tracing data from external sources through to semantic models and reports. Impact analysis shows which downstream items and workspaces a change would touch. Capability is still limited to the workspace view, and Microsoft is clearly investing in it."
       },
@@ -2312,7 +2201,6 @@
             "cost": null,
             "outlook": 5
           },
-          "raters": 2,
           "grade": "BB+",
           "note": "Lineage is automatic in every workspace and easy to read, tracing data from external sources through to semantic models and reports. Impact analysis shows which downstream items and workspaces a change would touch. Capability is still limited to the workspace view, and Microsoft is clearly investing in it."
         }
@@ -2338,7 +2226,6 @@
           "cost": null,
           "outlook": 3
         },
-        "raters": 1,
         "grade": "B+",
         "note": ""
       },
@@ -2353,7 +2240,6 @@
             "cost": null,
             "outlook": 3
           },
-          "raters": 1,
           "grade": "B+",
           "note": ""
         }
@@ -2379,7 +2265,6 @@
           "cost": null,
           "outlook": 4
         },
-        "raters": 1,
         "grade": "BB",
         "note": ""
       },
@@ -2394,7 +2279,6 @@
             "cost": null,
             "outlook": 4
           },
-          "raters": 1,
           "grade": "BB",
           "note": ""
         }
