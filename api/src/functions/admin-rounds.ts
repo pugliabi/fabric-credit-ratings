@@ -15,7 +15,7 @@ import { findArtifactDescription, listArtifacts } from '../repo/catalog.ts';
 import { loadDataset } from '../repo/dataset.ts';
 import { saveNote } from '../repo/notes.ts';
 import {
-  countScorecards,
+  countSubmitted,
   createRound,
   deleteRound,
   findLatestPublishedRound,
@@ -28,6 +28,7 @@ import {
 } from '../repo/rounds.ts';
 import { replaceScorecard } from '../repo/scores.ts';
 import { markChanged } from '../repo/site.ts';
+import { submitCard } from '../repo/submissions.ts';
 import { findUserById } from '../repo/users.ts';
 
 // Every transaction locks the round row (lockRound) before site_state (markChanged), so writers can't deadlock, and
@@ -63,7 +64,7 @@ route('adminRoundCreate', 'POST', 'admin/rounds', 'admin', async (ctx) => {
   if (!ROUND_ID.test(id)) throw new HttpError(400, 'Round ids look like 2026-NOV or 2027-Q1.');
   const label = text(ctx.body, 'label', 'Label', 40);
   const open = await findOpenRound(db);
-  if (open) throw new HttpError(409, `Publish ${open.label} before starting a new round.`);
+  if (open) throw new HttpError(409, `Release ${open.label} before starting a new round.`);
   if (await findRound(db, id)) throw new HttpError(409, `Round ${id} already exists.`);
   await createRound(db, id, label);
   return listRoundsWithCounts(db);
@@ -73,19 +74,19 @@ route('adminRoundUpdate', 'PUT', 'admin/rounds/{id}', 'admin', async (ctx): Prom
   const round = await requireRound(ctx.params.id);
   const status = oneOf(ctx.body, 'status', 'Status', ['open', 'published'] as const);
   if (status === 'published') {
-    const publishedOn = text(ctx.body, 'publishedOn', 'Publish date', 10);
-    if (!isIsoDate(publishedOn)) throw new HttpError(400, 'Publish dates look like 2026-10-15.');
+    const publishedOn = text(ctx.body, 'publishedOn', 'Release date', 10);
+    if (!isIsoDate(publishedOn)) throw new HttpError(400, 'Release dates look like 2026-10-15.');
     await transaction(async (tx) => {
       const current = await lockRound(tx, round.id);
       if (!current) throw noSuchRound(round.id);
-      if (current.status === 'published') throw new HttpError(409, `${current.label} is already published.`);
-      if ((await countScorecards(tx, current.id)) === 0) {
-        throw new HttpError(400, `Nobody has scored ${current.label} yet.`);
+      if (current.status === 'published') throw new HttpError(409, `${current.label} is already released.`);
+      if ((await countSubmitted(tx, current.id)) === 0) {
+        throw new HttpError(400, `Nobody has submitted ${current.label} yet.`);
       }
       // Unlocked is enough: only an open round can be published, only one round can be open, and this one holds it.
       const latest = await findLatestPublishedRound(tx);
       if (latest?.publishedOn && publishedOn < latest.publishedOn) {
-        throw new HttpError(400, `Publish dates can't be earlier than ${latest.label}'s (${latest.publishedOn}).`);
+        throw new HttpError(400, `Release dates can't be earlier than ${latest.label}'s (${latest.publishedOn}).`);
       }
       await publishRound(tx, current.id, publishedOn);
       await markChanged(tx);
@@ -99,11 +100,11 @@ route('adminRoundUpdate', 'PUT', 'admin/rounds/{id}', 'admin', async (ctx): Prom
     if (!current) throw noSuchRound(round.id);
     if (current.status === 'open') throw new HttpError(409, `${current.label} is already open.`);
     const open = await findOpenRound(tx);
-    if (open) throw new HttpError(409, `Publish ${open.label} before reopening another round.`);
+    if (open) throw new HttpError(409, `Release ${open.label} before reopening another round.`);
     // Unlocked is enough: a round only becomes published from open, and findOpenRound refused while any was open.
     const latest = await findLatestPublishedRound(tx);
     if (latest && latest.id !== current.id) {
-      throw new HttpError(409, `Only the most recent published round (${latest.label}) can be reopened.`);
+      throw new HttpError(409, `Only the most recent released round (${latest.label}) can be reopened.`);
     }
     await reopenRound(tx, current.id);
     await markChanged(tx);
@@ -117,7 +118,7 @@ route('adminRoundDelete', 'DELETE', 'admin/rounds/{id}', 'admin', async (ctx) =>
     const current = await lockRound(tx, round.id);
     if (!current) throw noSuchRound(round.id);
     if (current.status !== 'open') {
-      throw new HttpError(409, "Published rounds can't be deleted. Reopen it first if it must change.");
+      throw new HttpError(409, "Released rounds can't be deleted. Reopen it first if it must change.");
     }
     // An open round never reached the site, so site_state is not stamped.
     await deleteRound(tx, current.id);
@@ -142,6 +143,8 @@ route('adminScoresPut', 'PUT', 'admin/rounds/{id}/scores/{userId}', 'admin', asy
     const problem = cardWriteProblem(ctx.user, current, owner.id);
     if (problem) throw new HttpError(403, problem);
     await replaceScorecard(tx, round.id, owner.id, scores);
+    // A correction to a released round is live data, so the card counts, a draft the release left out included.
+    if (current.status === 'published' && Object.keys(scores).length > 0) await submitCard(tx, round.id, owner.id);
     if (current.status === 'published') await markChanged(tx);
   });
   return reviewFor(round.id, ctx.config);

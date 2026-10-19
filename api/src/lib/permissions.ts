@@ -6,7 +6,7 @@ export function cardWriteProblem(actor: SessionUser, round: Round, ownerId: numb
   if (actor.role === 'admin') return undefined;
   if (actor.id !== ownerId) return 'You can only change your own scorecard.';
   if (round.status !== 'open') {
-    return `${round.label} is published, so scores can no longer be changed. Ask an admin if a score needs correcting.`;
+    return `${round.label} is released, so scores can no longer be changed. Ask an admin if a score needs correcting.`;
   }
   return undefined;
 }

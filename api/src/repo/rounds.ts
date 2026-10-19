@@ -53,14 +53,6 @@ export async function listRoundsWithCounts(db: Db): Promise<AdminRound[]> {
   );
 }
 
-export async function countScorecards(db: Db, id: string): Promise<number> {
-  const [row] = await db.query<{ n: number }>(
-    'SELECT COUNT(DISTINCT user_id) AS n FROM scores WHERE round_id = @id',
-    { id: varchar(id) },
-  );
-  return row?.n ?? 0;
-}
-
 /** How many cards in the round are submitted: the cards a release counts. */
 export async function countSubmitted(db: Db, id: string): Promise<number> {
   const [row] = await db.query<{ n: number }>('SELECT COUNT(*) AS n FROM submissions WHERE round_id = @id', {

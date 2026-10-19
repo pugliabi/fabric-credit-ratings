@@ -13,7 +13,7 @@ import { findArtifactDescription, listArtifacts } from '../repo/catalog.ts';
 import { loadDataset } from '../repo/dataset.ts';
 import { saveNote } from '../repo/notes.ts';
 import {
-  countScorecards,
+  countSubmitted,
   createRound,
   deleteRound,
   findLatestPublishedRound,
@@ -26,6 +26,7 @@ import {
 } from '../repo/rounds.ts';
 import { replaceScorecard } from '../repo/scores.ts';
 import { markChanged } from '../repo/site.ts';
+import { submitCard } from '../repo/submissions.ts';
 import { findUserById, type UserRecord } from '../repo/users.ts';
 import './admin-rounds.ts';
 
@@ -53,7 +54,7 @@ vi.mock(import('../repo/catalog.ts'), () => ({ findArtifactDescription: vi.fn(),
 vi.mock(import('../repo/dataset.ts'), () => ({ loadDataset: vi.fn() }));
 vi.mock(import('../repo/notes.ts'), () => ({ saveNote: vi.fn() }));
 vi.mock(import('../repo/rounds.ts'), () => ({
-  countScorecards: vi.fn(),
+  countSubmitted: vi.fn(),
   createRound: vi.fn(),
   deleteRound: vi.fn(),
   findLatestPublishedRound: vi.fn(),
@@ -66,6 +67,7 @@ vi.mock(import('../repo/rounds.ts'), () => ({
 }));
 vi.mock(import('../repo/scores.ts'), () => ({ replaceScorecard: vi.fn() }));
 vi.mock(import('../repo/site.ts'), () => ({ markChanged: vi.fn() }));
+vi.mock(import('../repo/submissions.ts'), () => ({ submitCard: vi.fn() }));
 vi.mock(import('../repo/users.ts'), () => ({ findUserById: vi.fn() }));
 
 const open: Round = { id: '2026-Q4', label: 'Q4 2026', status: 'open', publishedOn: null };
@@ -143,13 +145,13 @@ describe('adminRoundUpdate: publish', () => {
   const publish = { status: 'published', publishedOn: '2026-10-15' };
 
   it('publishes in one locked transaction that marks the site changed, then deploys after the commit', async () => {
-    vi.mocked(countScorecards).mockResolvedValue(2);
+    vi.mocked(countSubmitted).mockResolvedValue(2);
 
     const result = await call('adminRoundUpdate', { id: open.id }, publish);
 
     expect(transaction).toHaveBeenCalledTimes(1);
     expect(lockRound).toHaveBeenCalledWith(tx, open.id);
-    expect(countScorecards).toHaveBeenCalledWith(tx, open.id);
+    expect(countSubmitted).toHaveBeenCalledWith(tx, open.id);
     expect(findLatestPublishedRound).toHaveBeenCalledWith(tx);
     expect(publishRound).toHaveBeenCalledWith(tx, open.id, '2026-10-15');
     expect(markChanged).toHaveBeenCalledWith(tx);
@@ -157,7 +159,7 @@ describe('adminRoundUpdate: publish', () => {
     expectAscending(
       callOrder(
         vi.mocked(lockRound),
-        vi.mocked(countScorecards),
+        vi.mocked(countSubmitted),
         vi.mocked(findLatestPublishedRound),
         vi.mocked(publishRound),
         vi.mocked(markChanged),
@@ -170,7 +172,7 @@ describe('adminRoundUpdate: publish', () => {
   });
 
   it('still publishes, and logs why, when the deploy does not start', async () => {
-    vi.mocked(countScorecards).mockResolvedValue(2);
+    vi.mocked(countSubmitted).mockResolvedValue(2);
     const refused: DeployResult = { started: false, message: 'GitHub did not respond. Try again in a minute.' };
     vi.mocked(startDeploy).mockResolvedValue(refused);
 
@@ -179,26 +181,26 @@ describe('adminRoundUpdate: publish', () => {
     expect(log.warn).toHaveBeenCalledWith('The site deploy did not start:', refused.message);
   });
 
-  it('refuses with 409, changing nothing, when the round was published before the lock', async () => {
+  it('refuses with 409, changing nothing, when the round was released before the lock', async () => {
     vi.mocked(lockRound).mockResolvedValue(published);
 
     await expect(call('adminRoundUpdate', { id: open.id }, publish)).rejects.toMatchObject({
       status: 409,
-      message: 'Q4 2026 is already published.',
+      message: 'Q4 2026 is already released.',
     });
     expect(publishRound).not.toHaveBeenCalled();
     expect(markChanged).not.toHaveBeenCalled();
     expect(startDeploy).not.toHaveBeenCalled();
   });
 
-  it('refuses with 400, starting no deploy, when nobody has scored the round', async () => {
-    vi.mocked(countScorecards).mockResolvedValue(0);
+  it('refuses with 400, starting no deploy, when nobody has submitted the round', async () => {
+    vi.mocked(countSubmitted).mockResolvedValue(0);
 
     await expect(call('adminRoundUpdate', { id: open.id }, publish)).rejects.toMatchObject({
       status: 400,
-      message: 'Nobody has scored Q4 2026 yet.',
+      message: 'Nobody has submitted Q4 2026 yet.',
     });
-    expect(countScorecards).toHaveBeenCalledWith(tx, open.id);
+    expect(countSubmitted).toHaveBeenCalledWith(tx, open.id);
     expect(publishRound).not.toHaveBeenCalled();
     expect(markChanged).not.toHaveBeenCalled();
     expect(startDeploy).not.toHaveBeenCalled();
@@ -206,12 +208,12 @@ describe('adminRoundUpdate: publish', () => {
 
   it("refuses with 400, changing nothing, a date earlier than the latest published round's", async () => {
     const q3: Round = { id: '2026-Q3', label: 'Q3 2026', status: 'published', publishedOn: '2026-07-15' };
-    vi.mocked(countScorecards).mockResolvedValue(2);
+    vi.mocked(countSubmitted).mockResolvedValue(2);
     vi.mocked(findLatestPublishedRound).mockResolvedValue(q3);
 
     await expect(
       call('adminRoundUpdate', { id: open.id }, { status: 'published', publishedOn: '2026-07-14' }),
-    ).rejects.toMatchObject({ status: 400, message: "Publish dates can't be earlier than Q3 2026's (2026-07-15)." });
+    ).rejects.toMatchObject({ status: 400, message: "Release dates can't be earlier than Q3 2026's (2026-07-15)." });
     expect(findLatestPublishedRound).toHaveBeenCalledWith(tx);
     expect(publishRound).not.toHaveBeenCalled();
     expect(markChanged).not.toHaveBeenCalled();
@@ -220,7 +222,7 @@ describe('adminRoundUpdate: publish', () => {
 
   it('publishes on any date when the latest published round has none', async () => {
     const undated: Round = { id: '2026-Q3', label: 'Q3 2026', status: 'published', publishedOn: null };
-    vi.mocked(countScorecards).mockResolvedValue(2);
+    vi.mocked(countSubmitted).mockResolvedValue(2);
     vi.mocked(findLatestPublishedRound).mockResolvedValue(undated);
 
     await call('adminRoundUpdate', { id: open.id }, { status: 'published', publishedOn: '2026-01-01' });
@@ -229,7 +231,7 @@ describe('adminRoundUpdate: publish', () => {
 
   it("accepts the latest published round's own date and future dates", async () => {
     const q3: Round = { id: '2026-Q3', label: 'Q3 2026', status: 'published', publishedOn: '2026-07-15' };
-    vi.mocked(countScorecards).mockResolvedValue(2);
+    vi.mocked(countSubmitted).mockResolvedValue(2);
     vi.mocked(findLatestPublishedRound).mockResolvedValue(q3);
 
     for (const publishedOn of ['2026-07-15', '2099-01-01']) {
@@ -242,7 +244,7 @@ describe('adminRoundUpdate: publish', () => {
     for (const publishedOn of ['2026-02-31', '2026-13-01', '10/15/2026']) {
       await expect(
         call('adminRoundUpdate', { id: open.id }, { status: 'published', publishedOn }),
-      ).rejects.toMatchObject({ status: 400, message: 'Publish dates look like 2026-10-15.' });
+      ).rejects.toMatchObject({ status: 400, message: 'Release dates look like 2026-10-15.' });
     }
     expect(transaction).not.toHaveBeenCalled();
   });
@@ -286,7 +288,7 @@ describe('adminRoundUpdate: reopen', () => {
 
     await expect(call('adminRoundUpdate', { id: q3.id }, reopen)).rejects.toMatchObject({
       status: 409,
-      message: 'Only the most recent published round (Q4 2026) can be reopened.',
+      message: 'Only the most recent released round (Q4 2026) can be reopened.',
     });
     expect(reopenRound).not.toHaveBeenCalled();
     expect(markChanged).not.toHaveBeenCalled();
@@ -302,7 +304,7 @@ describe('adminRoundUpdate: reopen', () => {
     vi.mocked(findOpenRound).mockResolvedValue({ id: '2027-Q1', label: 'Q1 2027', status: 'open', publishedOn: null });
     await expect(call('adminRoundUpdate', { id: open.id }, reopen)).rejects.toMatchObject({
       status: 409,
-      message: 'Publish Q1 2027 before reopening another round.',
+      message: 'Release Q1 2027 before reopening another round.',
     });
 
     expect(reopenRound).not.toHaveBeenCalled();
@@ -328,7 +330,7 @@ describe('adminRoundDelete', () => {
 
     await expect(call('adminRoundDelete', { id: published.id })).rejects.toMatchObject({
       status: 409,
-      message: "Published rounds can't be deleted. Reopen it first if it must change.",
+      message: "Released rounds can't be deleted. Reopen it first if it must change.",
     });
     expect(deleteRound).not.toHaveBeenCalled();
     expect(markChanged).not.toHaveBeenCalled();
@@ -372,7 +374,7 @@ describe('adminRoundCreate', () => {
 
     await expect(call('adminRoundCreate', {}, next)).rejects.toMatchObject({
       status: 409,
-      message: 'Publish Q4 2026 before starting a new round.',
+      message: 'Release Q4 2026 before starting a new round.',
     });
     expect(createRound).not.toHaveBeenCalled();
   });
@@ -428,12 +430,40 @@ describe('adminScoresPut', () => {
     expect(markChanged).not.toHaveBeenCalled();
   });
 
+  it('submits the card after replacing it when the locked round is released, so the correction counts', async () => {
+    vi.mocked(lockRound).mockResolvedValue(published);
+
+    await call('adminScoresPut', { id: open.id, userId: '7' }, body);
+
+    expect(submitCard).toHaveBeenCalledWith(tx, open.id, 7);
+    expectAscending(
+      callOrder(vi.mocked(replaceScorecard), vi.mocked(submitCard), vi.mocked(markChanged), committed),
+    );
+  });
+
+  it('does not submit the card when the locked round is open', async () => {
+    await call('adminScoresPut', { id: open.id, userId: '7' }, body);
+
+    expect(replaceScorecard).toHaveBeenCalledTimes(1);
+    expect(submitCard).not.toHaveBeenCalled();
+  });
+
+  it('does not submit an emptied card in a released round', async () => {
+    vi.mocked(lockRound).mockResolvedValue(published);
+
+    await call('adminScoresPut', { id: open.id, userId: '7' }, { scores: {} });
+
+    expect(replaceScorecard).toHaveBeenCalledWith(tx, open.id, 7, {});
+    expect(submitCard).not.toHaveBeenCalled();
+    expect(markChanged).toHaveBeenCalledWith(tx);
+  });
+
   it('checks the card permission against the locked round', async () => {
     vi.mocked(lockRound).mockResolvedValue(published);
 
     await expect(call('adminScoresPut', { id: open.id, userId: '7' }, body, rater)).rejects.toMatchObject({
       status: 403,
-      message: 'Q4 2026 is published, so scores can no longer be changed. Ask an admin if a score needs correcting.',
+      message: 'Q4 2026 is released, so scores can no longer be changed. Ask an admin if a score needs correcting.',
     });
     expect(replaceScorecard).not.toHaveBeenCalled();
   });

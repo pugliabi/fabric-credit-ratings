@@ -19,7 +19,7 @@ describe('cardWriteProblem', () => {
 
   it('keeps raters out of published rounds', () => {
     expect(cardWriteProblem(rater, published, 2)).toBe(
-      'Q4 2026 is published, so scores can no longer be changed. Ask an admin if a score needs correcting.',
+      'Q4 2026 is released, so scores can no longer be changed. Ask an admin if a score needs correcting.',
     );
   });
 
