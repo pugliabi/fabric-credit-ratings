@@ -159,7 +159,7 @@ describe('RaterCardEditor', () => {
     expect(html).toMatch(/<span aria-live="polite"><span[^>]*> · (<!-- -->)?Checking for newer scores…<\/span><\/span>/);
   });
 
-  it('warns that a published round changes the public averages at the next site update', () => {
-    expect(editor('published')).toContain('Q4 2026 is published. Saving changes its public averages');
+  it('warns that a released round changes the public averages at the next site update', () => {
+    expect(editor('published')).toContain('Q4 2026 is released. Saving changes its public averages');
   });
 });

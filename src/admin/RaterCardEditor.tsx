@@ -177,7 +177,7 @@ export function RaterCardEditor({ review, rater, catalog, onSaved, onRefreshed, 
       </div>
       <p className={styles.hint}>
         {round.status === 'published'
-          ? `${round.label} is published. Saving changes its public averages at the next site update.`
+          ? `${round.label} is released. Saving changes its public averages at the next site update.`
           : `You are editing ${rater.name}'s card for the open round.`}{' '}
         Clear every item and save to remove the card.
       </p>

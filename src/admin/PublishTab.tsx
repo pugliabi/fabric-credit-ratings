@@ -72,7 +72,7 @@ export function PublishTab({ rounds, catalogSize, onRounds }: PublishTabProps) {
 
   const reopen = (round: AdminRound) => {
     if (busy) return;
-    if (!confirm(`Reopen ${round.label}? Raters can change their cards again until you publish it again.`)) return;
+    if (!confirm(`Reopen ${round.label}? Raters can change their cards again until you release it again.`)) return;
     void setStatus(
       round,
       { status: 'open' },
@@ -123,7 +123,7 @@ export function PublishTab({ rounds, catalogSize, onRounds }: PublishTabProps) {
           catalogSize={catalogSize}
           earliestDate={published[0]?.publishedOn ?? undefined}
           onPublish={(publishedOn) =>
-            setStatus(open, { status: 'published', publishedOn }, `${open.label} is published`)
+            setStatus(open, { status: 'published', publishedOn }, `${open.label} is released`)
           }
           onDelete={() => void remove(open)}
           deleting={busy}
@@ -137,9 +137,9 @@ export function PublishTab({ rounds, catalogSize, onRounds }: PublishTabProps) {
       )}
 
       <section className={styles.panel}>
-        <h2 className={styles.panelTitle}>Published rounds</h2>
+        <h2 className={styles.panelTitle}>Released rounds</h2>
         {published.length === 0 ? (
-          <p className={styles.muted}>No published rounds yet.</p>
+          <p className={styles.muted}>No released rounds yet.</p>
         ) : (
           <>
             <ul className={styles.roundList}>
@@ -162,7 +162,7 @@ export function PublishTab({ rounds, catalogSize, onRounds }: PublishTabProps) {
               ))}
             </ul>
             <p className={styles.hint}>
-              To fix a published score or why without reopening, edit it on the Review tab. The change reaches the
+              To fix a released score or why without reopening, edit it on the Review tab. The change reaches the
               public site at the next update.
             </p>
           </>
@@ -177,8 +177,8 @@ const cardCount = (count: number) => `${count} ${count === 1 ? 'card' : 'cards'}
 function PublishedLine({ round }: { round: AdminRound }) {
   return (
     <>
-      <strong>{round.label}</strong> · published {formatFullDate(round.publishedOn ?? '')} ·{' '}
-      {cardCount(round.scorecards)}
+      <strong>{round.label}</strong> · released {formatFullDate(round.publishedOn ?? '')} ·{' '}
+      {cardCount(round.scorecards)} · {round.submitted} submitted
     </>
   );
 }
@@ -195,8 +195,8 @@ function RoundsPanel({ open, published }: { open: AdminRound | undefined; publis
         {open && (
           <li>
             <span>
-              <strong>{open.label}</strong> · open · {cardCount(open.scorecards)}
-              <span className={styles.muted}> · raters score this round; publish or delete it below</span>
+              <strong>{open.label}</strong> · open · {cardCount(open.scorecards)} · {open.submitted} submitted
+              <span className={styles.muted}> · raters score this round; release or delete it below</span>
             </span>
           </li>
         )}
@@ -215,7 +215,7 @@ function RoundsPanel({ open, published }: { open: AdminRound | undefined; publis
       </ul>
       <p className={styles.muted}>
         {open
-          ? `Only one round can be open. Publish or delete ${open.label} to start the next one.`
+          ? `Only one round can be open. Release or delete ${open.label} to start the next one.`
           : 'Start the next round below. The form suggests the next month; the id and label can be changed.'}
       </p>
     </section>
@@ -284,7 +284,7 @@ export function SitePanel({ site, readError = '', readFailures = 0, onCheck }: S
           : site.lastSnapshotAt
             ? `The live site shows the database as of ${formatTimestamp(site.lastSnapshotAt)}.`
             : 'No deploy has confirmed a build from the database yet.'}
-        {site?.lastSnapshotAt && site.behind && ' Published ratings, notes, or the catalog changed since then.'}
+        {site?.lastSnapshotAt && site.behind && ' Released ratings, notes, or the catalog changed since then.'}
       </p>
       {/* Check again keeps its place with or without a status, so it keeps focus when a retry works. */}
       <div className={styles.fields}>
@@ -423,6 +423,13 @@ interface PublishFormProps extends OpenRoundProps {
   review: RoundReview;
 }
 
+/** The release confirm's warning about cards that won't count, or '' when all are submitted. Exported for tests. */
+export function draftWarning(names: readonly string[]): string {
+  if (names.length === 0) return '';
+  if (names.length === 1) return ` ${names[0]}'s card isn't submitted and won't count.`;
+  return ` These cards aren't submitted and won't count: ${names.join(', ')}.`;
+}
+
 /** Exported for markup tests; the page uses PublishTab. */
 export function PublishForm({
   round,
@@ -439,15 +446,17 @@ export function PublishForm({
   const [force, setForce] = useState(false);
   const [busy, setBusy] = useState(false);
 
-  const missing = review.items.filter((item) => !review.notes[item.artifact.id]?.trim());
-  const { raters } = review;
-  const blocked = busy || review.items.length === 0 || !date || (missing.length > 0 && !force);
+  // Only items a submitted card scored count; the ones only drafts scored have no point and stay off the site.
+  const counted = review.items.filter((item) => item.point !== null);
+  const missing = counted.filter((item) => !review.notes[item.artifact.id]?.trim());
+  const submitted = review.raters.filter((rater) => rater.submittedAt !== null);
+  const drafts = review.raters.filter((rater) => rater.submittedAt === null).map((rater) => rater.name);
+  const blocked = busy || submitted.length === 0 || !date || (missing.length > 0 && !force);
 
-  const publish = async () => {
+  const release = async () => {
     if (blocked) return;
-    if (!confirm(`Publish ${round.label}, dated ${formatFullDate(date)}? Raters can no longer change their cards.`)) {
-      return;
-    }
+    const question = `Release ${round.label}, dated ${formatFullDate(date)}? Raters can no longer change their cards.`;
+    if (!confirm(question + draftWarning(drafts))) return;
     setBusy(true);
     await onPublish(date);
     setBusy(false);
@@ -456,15 +465,15 @@ export function PublishForm({
   return (
     <section className={styles.panel}>
       <h2 ref={heading} tabIndex={-1} className={styles.panelTitle}>
-        Publish {round.label}
+        Release {round.label}
       </h2>
       <ul className={styles.checklist}>
-        <li data-ok={review.items.length > 0}>
-          {review.items.length} of {catalogSize} items scored
+        <li data-ok={counted.length > 0}>
+          {counted.length} of {catalogSize} items scored
         </li>
-        <li data-ok={raters.length > 0}>
-          {raters.length} {raters.length === 1 ? 'rater' : 'raters'}
-          {raters.length > 0 && `: ${raters.map((rater) => rater.name).join(', ')}`}
+        <li data-ok={submitted.length > 0 && drafts.length === 0}>
+          {submitted.length} submitted
+          {drafts.length > 0 && ` · ${drafts.length} saved but not submitted (${drafts.join(', ')})`}
         </li>
         <li data-ok={missing.length === 0}>
           {missing.length === 0
@@ -472,10 +481,10 @@ export function PublishForm({
             : `${missing.length} missing a why: ${missing.map((item) => item.artifact.name).join(', ')}`}
         </li>
       </ul>
-      <p className={styles.muted}>Items nobody scored stay off the public site.</p>
+      <p className={styles.muted}>Items with no submitted scores stay off the public site.</p>
       <div className={styles.fields}>
         <label className={styles.field}>
-          <span>Publication date</span>
+          <span>Release date</span>
           <input
             type="date"
             value={date}
@@ -487,12 +496,12 @@ export function PublishForm({
         {missing.length > 0 && (
           <label className={styles.check}>
             <input type="checkbox" checked={force} onChange={(event) => setForce(event.target.checked)} />
-            Publish without them
+            Release without them
           </label>
         )}
-        {/* aria-disabled, not disabled: focus stays on it through the publish and after a refusal. */}
-        <button type="button" className={styles.primary} aria-disabled={blocked} onClick={() => void publish()}>
-          {busy ? 'Publishing…' : `Publish ${round.label}`}
+        {/* aria-disabled, not disabled: focus stays on it through the release and after a refusal. */}
+        <button type="button" className={styles.primary} aria-disabled={blocked} onClick={() => void release()}>
+          {busy ? 'Releasing…' : `Release ${round.label}`}
         </button>
         <button type="button" className={styles.secondary} aria-disabled={busy || deleting} onClick={onDelete}>
           Delete round
